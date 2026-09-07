@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "updated": "2026-09-07",
+  "sources": [
+    {
+      "id": "rpi5-uefi",
+      "description": "EDK2 UEFI firmware for Raspberry Pi 5 (worproject/rpi5-uefi)",
+      "version": "v0.3",
+      "url": "https://github.com/worproject/rpi5-uefi/releases/download/v0.3/RPi5_UEFI_Release_v0.3.zip",
+      "sha256": "2337df318845448ebcc8a6a587d15dccec44b54c665ece21250d2f6170732724",
+      "sizeBytes": 1252807,
+      "kind": "zip",
+      "files": [
+        "RPI_EFI.fd",
+        "config.txt",
+        "bcm2712-rpi-5-b.dtb"
+      ]
+    }
+  ]
+}

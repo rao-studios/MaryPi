@@ -1,0 +1,4 @@
+# Serial console on the 3-pin debug UART (115200 8N1). The UEFI firmware and
+# the ravynOS kernel both log here.
+enable_uart=1
+uart_2ndstage=1
