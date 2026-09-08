@@ -17,6 +17,8 @@ import Testing
         #expect(ImageSpec.defaultKernelFlags(level: .bootstrapOnly, qemuVirt: false) == "-v serial=3 debug=0x8 cpus=1")
         #expect(ImageSpec.defaultKernelFlags(level: .fullSystem, qemuVirt: false).hasSuffix("rd=disk0s2"))
         #expect(!ImageSpec.defaultKernelFlags(level: .fullSystem, qemuVirt: true).contains("rd="))
+        #expect(ImageSpec.defaultKernelFlags(level: .kernelBringUp, qemuVirt: true, storageStack: true).hasSuffix("rd=disk0s2"))
+        #expect(!ImageSpec.defaultKernelFlags(level: .kernelBringUp, qemuVirt: true, storageStack: false).contains("rd="))
     }
 
     @Test func markerRenders() {

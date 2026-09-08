@@ -1,5 +1,6 @@
-import DiskArbitration
 import Foundation
+#if canImport(DiskArbitration)
+import DiskArbitration
 
 public enum DiskEvent: Sendable, Equatable {
     case appeared(String?)
@@ -7,9 +8,13 @@ public enum DiskEvent: Sendable, Equatable {
     case changed(String?)
 }
 
+#endif
+
 /// Emits an event whenever a whole disk appears, disappears or changes.
 /// Consumers re-run `DiskUtil.candidates()` in response; the event itself
-/// carries only the BSD name for logging.
+/// carries only the BSD name for logging. Off macOS there is no
+/// DiskArbitration and the stream simply never yields.
+#if canImport(DiskArbitration)
 public final class DiskArbitrationMonitor: @unchecked Sendable {
     public let events: AsyncStream<DiskEvent>
 
@@ -72,3 +77,18 @@ public final class DiskArbitrationMonitor: @unchecked Sendable {
         return String(cString: cString)
     }
 }
+#else
+public final class DiskArbitrationMonitor: @unchecked Sendable {
+    public let events: AsyncStream<DiskEvent>
+    private let continuation: AsyncStream<DiskEvent>.Continuation
+
+    public init() {
+        var captured: AsyncStream<DiskEvent>.Continuation!
+        events = AsyncStream(bufferingPolicy: .bufferingNewest(16)) { captured = $0 }
+        continuation = captured
+    }
+
+    public func start() {}
+    public func stop() { continuation.finish() }
+}
+#endif

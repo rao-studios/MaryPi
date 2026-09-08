@@ -11,7 +11,14 @@ public struct Settings: Codable, Sendable, Equatable {
     }
 
     public static func defaultURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
-        home.appending(path: "Library/Application Support/MaryPi/config.json")
+        #if os(macOS)
+        return home.appending(path: "Library/Application Support/MaryPi/config.json")
+        #else
+        if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
+            return URL(fileURLWithPath: xdg).appending(path: "marypi/config.json")
+        }
+        return home.appending(path: ".config/marypi/config.json")
+        #endif
     }
 
     public static func load(from url: URL? = nil) -> Settings {

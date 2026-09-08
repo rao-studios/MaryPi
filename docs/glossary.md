@@ -1,0 +1,24 @@
+# Glossary
+
+- **AIC** — Apple Interrupt Controller, the interrupt controller on Apple SoCs. Not present on the Pi 5.
+- **Apple device tree (ADT)** — the flattened property tree iBoot hands to XNU; a different binary format from the Linux/UEFI FDT. The booter converts one into the other.
+- **BCM2712** — the Broadcom SoC on the Raspberry Pi 5; also the name of XNU's board configuration for it.
+- **boot_args** — the structure the boot loader passes to XNU: memory layout, device tree pointer, command line, framebuffer.
+- **Booter** — `bootaa64.efi`, the UEFI application that loads XNU on the Pi 5 and QEMU. It plays iBoot's role.
+- **Basement (kext basement)** — a range of kernel virtual memory next to the kernel's text where kexts are linked, so branch instructions can reach the kernel.
+- **EDK2 / AAVMF** — the open-source UEFI firmware; QEMU uses it, and rpi5-uefi is based on it.
+- **FDT** — flattened device tree, the hardware description UEFI publishes on ARM systems.
+- **GIC** — ARM Generic Interrupt Controller. The Pi 5 has a GIC-400 (v2); QEMU can present v2 or v3.
+- **IOKit** — XNU's C++ driver framework. Drivers are IOService subclasses matched to nubs by personalities in their Info.plist.
+- **Kext** — kernel extension: a bundle with an Info.plist and a Mach-O of type KEXT_BUNDLE.
+- **Kernelcache** — a kernel with all kexts prelinked into it. Apple arm64 systems boot only from these. ravynOS arm64 does not use one yet.
+- **KPI kexts** — `System.kext/PlugIns/*.kext`, plist-only bundles that describe the kernel's own exported symbol sets (`com.apple.kpi.*`). Kexts declare dependencies on them.
+- **kxld** — XNU's kext linker. Runs in userland on macOS (kextcache) and, on ravynOS arm64, inside the kernel at boot.
+- **Level 0/1/2** — MaryPi's payload levels (chapter 1).
+- **PL011** — the ARM PrimeCell UART used by the Pi 5 and QEMU.
+- **pexpert** — XNU's platform expert: the early, pre-IOKit hardware layer (console, interrupt controller, timer).
+- **Platform expert (IOKit)** — the IOService that represents the board and publishes its devices as nubs; `RavynARMPE` here.
+- **ravyninit** — a freestanding process 1 used until the real launchd and libSystem exist for arm64.
+- **rpi5-uefi** — the UEFI firmware port for the Raspberry Pi 5 that MaryPi puts on the card.
+- **Symbol set** — the Mach-O inside a KPI kext listing the symbols the kernel exports for that KPI.
+- **virtio-mmio** — the memory-mapped virtio transport QEMU's `virt` machine uses for its disk.

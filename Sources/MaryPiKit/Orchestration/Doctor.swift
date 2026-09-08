@@ -19,13 +19,19 @@ public struct DoctorCheck: Sendable, Identifiable, Hashable {
 
 /// Checks that this Mac can do what MaryPi needs.
 public struct Doctor: Sendable {
+    #if os(macOS)
     public static let requiredTools = [
         "/usr/sbin/diskutil", "/usr/bin/hdiutil", "/usr/bin/osascript", "/bin/dd",
         "/usr/bin/ditto", "/usr/bin/du", "/bin/sync",
     ]
     public static let optionalTools = [
-        "/opt/homebrew/bin/qemu-system-aarch64", "/opt/homebrew/bin/dtc", "/opt/homebrew/bin/bmake",
+        "/opt/homebrew/bin/dtc", "/opt/homebrew/bin/bmake",
     ]
+    #else
+    /// Image building and flashing are macOS features; Linux hosts only run VMs.
+    public static let requiredTools: [String] = []
+    public static let optionalTools = ["/usr/bin/unzip"]
+    #endif
 
     private var fileManager: FileManager { .default }
 
@@ -79,6 +85,9 @@ public struct Doctor: Sendable {
         } else {
             checks.append(DoctorCheck(name: "firmware manifest", passed: false, blocking: true, detail: "could not load Manifest.json"))
         }
+
+        let host = await VMHost.detect(probe: .live())
+        checks += VMDoctor.checks(host: host, paths: VMPaths.locate())
 
         return checks
     }

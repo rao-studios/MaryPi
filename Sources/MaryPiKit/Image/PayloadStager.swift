@@ -70,9 +70,46 @@ public struct PayloadStager: Sendable {
             throw MaryPiError("Payload level \(spec.level.rawValue) requires a kernel but none was resolved")
         }
 
+        if let extensions = spec.payload.extensions {
+            let destination = ravynDir.appending(path: "Extensions")
+            try replaceItem(at: destination, with: URL(fileURLWithPath: extensions))
+            log("Copied \(spec.payload.extensionNames.count) kext(s) to ravynos/Extensions: \(spec.payload.extensionNames.joined(separator: ", "))")
+        }
+
         let plist = BootPlist(kernel: kernelEntry, kernelFlags: spec.kernelFlags)
         try plist.plistData().write(to: ravynDir.appending(path: BootPlist.fileName), options: .atomic)
         log("Wrote ravynos/\(BootPlist.fileName): Kernel=\(kernelEntry) Flags=\(spec.kernelFlags)")
+    }
+
+    /// The smallest root the bring-up kernel can start: the directories a
+    /// Darwin root needs, and ravyninit standing in for /sbin/launchd.
+    public func stageMinimalRoot(volume: URL, initProgram: URL, log: Logger) throws {
+        for directory in ["dev", "sbin", "bin", "usr/local/sbin", "private/etc", "private/var/tmp", "private/var/run", "private/tmp", "Volumes", "Users", "System/Library"] {
+            let url = volume.appending(path: directory)
+            if !fileManager.fileExists(atPath: url.path) {
+                try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+            }
+        }
+        for (link, target) in [("tmp", "private/tmp"), ("var", "private/var"), ("etc", "private/etc")] {
+            let url = volume.appending(path: link)
+            if !fileManager.fileExists(atPath: url.path) {
+                try fileManager.createSymbolicLink(atPath: url.path, withDestinationPath: target)
+            }
+        }
+        let launchd = volume.appending(path: "sbin/launchd")
+        try replaceItem(at: launchd, with: initProgram)
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: launchd.path)
+        let readme = [
+            "This is a ravynOS arm64 bring-up root filesystem written by MaryPi \(MaryPi.version).",
+            "",
+            "/sbin/launchd is ravyninit, a freestanding stand-in for launchd: the kernel",
+            "execs it as process 1 and it offers a small shell on the console (serial).",
+            "Replace it with the real launchd once the arm64 userland exists.",
+            "",
+        ].joined(separator: "\n")
+        try readme.write(to: volume.appending(path: "README-ravynos-bringup.txt"), atomically: true, encoding: .utf8)
+        try "ravynOS arm64 bring-up\n".write(to: volume.appending(path: "private/etc/motd"), atomically: true, encoding: .utf8)
+        log("Minimal root: /sbin/launchd = ravyninit (\(initProgram.lastPathComponent)), /dev, /etc, /tmp, /var")
     }
 
     /// Copy the arm64 sysroot onto the HFS+ root partition with ditto and add

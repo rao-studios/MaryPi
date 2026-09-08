@@ -70,6 +70,31 @@ public struct PayloadResolver: Sendable {
         }
         report.level = .kernelBringUp
 
+        // Kernel extensions the booter loads (System.kext plug-ins + drivers)
+        if let extensionsDir = tree.extensionsArm64, exists(extensionsDir) {
+            let names = ((try? fileManager.contentsOfDirectory(atPath: extensionsDir.path)) ?? [])
+                .filter { $0.hasSuffix(".kext") }
+                .map { String($0.dropLast(5)) }
+                .sorted()
+            if names.contains("System") {
+                report.extensions = extensionsDir.path
+                report.extensionNames = names
+                let drivers = names.filter { $0 != "System" }
+                if drivers.isEmpty {
+                    report.findings.append(Finding(.info, "Only System.kext under \(extensionsDir.path); build the drivers with: bmake TARGET_ARCH=arm64 kexts."))
+                }
+            }
+        } else {
+            report.findings.append(Finding(.info, "No arm64 kexts found; the kernel will stop at the platform-driver panic. Build them with: bmake TARGET_ARCH=arm64 kexts."))
+        }
+
+        // Freestanding process 1 for the bring-up root (bmake TARGET_ARCH=arm64 ravyninit)
+        if let initProgram = tree.sysrootArm64?.appending(path: "sbin/ravyninit"), exists(initProgram), MachO.isARM64(initProgram) {
+            report.initProgram = initProgram.path
+        } else if report.hasStorageStack {
+            report.findings.append(Finding(.info, "No sbin/ravyninit in sysroot-arm64; the kernel will mount root and stop without a process 1. Build it with: bmake TARGET_ARCH=arm64 ravyninit."))
+        }
+
         // Full system: kernelcache with kexts + arm64 root filesystem
         let kernelcache = tree.kernelcacheCandidates.first { exists($0) && MachO.isARM64($0) }
         let sysroot = tree.sysrootArm64

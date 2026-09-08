@@ -99,6 +99,8 @@ public struct BuildTree: Sendable, Equatable {
     public var sysrootX86: URL? { buildDir?.appending(path: "sysroot") }
     /// Staging root produced by `bmake TARGET_ARCH=arm64`.
     public var sysrootArm64: URL? { buildDir?.appending(path: "sysroot-arm64") }
+    /// Kexts installed by `bmake TARGET_ARCH=arm64 kexts` (plus the kernel's System.kext).
+    public var extensionsArm64: URL? { sysrootArm64?.appending(path: "System/Library/Extensions") }
     public var kernelcache: URL? { buildDir?.appending(path: "kernelcache") }
     public var kernelcacheArm64: URL? { buildDir?.appending(path: "kernelcache-arm64") }
 

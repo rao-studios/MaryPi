@@ -1,3 +1,4 @@
+#if os(macOS)
 import ArgumentParser
 import Foundation
 import MaryPiKit
@@ -34,3 +35,4 @@ struct ListCommand: AsyncParsableCommand {
         }
     }
 }
+#endif

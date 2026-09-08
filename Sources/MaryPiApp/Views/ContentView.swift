@@ -51,6 +51,20 @@ struct FooterBar: View {
             if case .finished = model.coordinator.phase {
                 Button("Reveal Image") { model.revealImage() }
             }
+            if model.vmIsRunning {
+                Button("Stop VM") {
+                    Task { await model.stopVM() }
+                }
+            } else {
+                Button("Test in VM") {
+                    Task { await model.testInVM() }
+                }
+                .help(model.vmHost?.qemu == nil ? "Install QEMU (brew install qemu) to test in a virtual machine" : "Build a QEMU image and boot it in a window (\(model.vmProfileSummary))")
+                .disabled(!model.canTestInVM)
+            }
+            if let vm = model.vm, case .exited = vm.state {
+                Button("Reveal Serial Log") { model.revealSerialLog() }
+            }
             Button("Build Image Only") {
                 Task { await model.buildImageOnly() }
             }

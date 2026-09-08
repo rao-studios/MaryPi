@@ -29,5 +29,8 @@ if [ -d Sources/MaryPiApp/AppIcon.iconset ]; then
     iconutil -c icns Sources/MaryPiApp/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
     /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP/Contents/Info.plist" 2>/dev/null || true
 fi
+# VM profiles and launcher for "Test in VM" (state goes to ~/Library/Caches/MaryPi/vm)
+mkdir -p "$APP/Contents/Resources/vm"
+cp -R vm/profiles vm/run.sh vm/README.md "$APP/Contents/Resources/vm/"
 codesign --force --sign - "$APP"
 echo "Built $APP"

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Downloads, verifies and extracts pinned firmware into
 /// `~/Library/Caches/MaryPi/<source-id>/<version>/`.
@@ -9,7 +12,14 @@ public actor FirmwareCache {
     private let fileManager = FileManager.default
 
     public static func defaultDirectory(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
-        home.appending(path: "Library/Caches/MaryPi")
+        #if os(macOS)
+        return home.appending(path: "Library/Caches/MaryPi")
+        #else
+        if let xdg = ProcessInfo.processInfo.environment["XDG_CACHE_HOME"], !xdg.isEmpty {
+            return URL(fileURLWithPath: xdg).appending(path: "marypi")
+        }
+        return home.appending(path: ".cache/marypi")
+        #endif
     }
 
     public init(rootDirectory: URL? = nil) {
@@ -95,7 +105,11 @@ public actor FirmwareCache {
         switch source.kind {
         case "zip":
             let runner = CommandRunner()
+            #if os(macOS)
             try await runner.run("/usr/bin/ditto", ["-x", "-k", archive.path, dir.path]).checkSuccess("ditto -x -k")
+            #else
+            try await runner.run("/usr/bin/unzip", ["-o", "-q", archive.path, "-d", dir.path]).checkSuccess("unzip")
+            #endif
         default:
             throw MaryPiError("Unsupported archive kind \(source.kind) for \(source.id)")
         }

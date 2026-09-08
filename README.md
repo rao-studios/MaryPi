@@ -16,17 +16,23 @@ will actually do with the card.
 | Level | Name | What is on the card | What the Pi does |
 |---|---|---|---|
 | 0 | Bootstrap only | Raspberry Pi firmware config + [rpi5-uefi](https://github.com/worproject/rpi5-uefi) UEFI | Boots into the UEFI setup screen. No ravynOS code runs. Verifies the board, EEPROM and serial console. |
-| 1 | Kernel bring-up | Level 0 + `EFI/BOOT/BOOTAA64.EFI` (ravynOS booter) + `ravynos/kernel` + boot plist | UEFI runs the booter, which loads the arm64 XNU kernel. Serial output only; the kernel bootstraps, starts IOKit and panics because no platform driver exists yet. |
+| 1 | Kernel bring-up | Level 0 + `EFI/BOOT/BOOTAA64.EFI` (ravynOS booter) + `ravynos/kernel` + boot plist, plus `ravynos/Extensions/*.kext` and a minimal root partition when the ravynOS tree has them | UEFI runs the booter, which loads the arm64 XNU kernel and its kexts. The console goes to the serial port and is mirrored on the screen. Without kexts the kernel panics at the missing platform driver; with them it links the drivers at boot, mounts the card's HFS+ partition and starts `ravyninit`, a freestanding stand-in for launchd with a small console shell. |
 | 2 | Full system | Level 1 + `ravynos/kernelcache` + an arm64 root filesystem on the HFS+ partition | Kernel mounts the root partition and starts launchd. Experimental. |
 
 The level is recomputed from the ravynOS build tree on every scan:
 
 - Level 1 needs an arm64 Mach-O kernel (`../build/sysroot-arm64/System/Library/Kernels/kernel[.development]`)
   and a booter (`../build/booter/bootaa64.efi`, `$MARYPI_BOOTER`, or `sysroot-arm64/System/Library/CoreServices/bootaa64.efi`).
+  It picks up `sysroot-arm64/System/Library/Extensions` (`bmake TARGET_ARCH=arm64 kexts`) and
+  `sysroot-arm64/sbin/ravyninit` (`bmake TARGET_ARCH=arm64 ravyninit`) when they exist; with a
+  storage stack among the kexts the kernel flags gain `rd=disk0s2`.
 - Level 2 additionally needs an arm64 `../build/kernelcache-arm64`, arm64 `sbin/launchd` and
   `usr/lib/libSystem.B.dylib` in `sysroot-arm64`, and `IOStorageFamily.kext` in its Extensions.
 
 `marypi payload` prints the level, the paths it found and why it is not higher.
+
+The full story, from an empty card to a kernel running process 1, is in
+[docs/](docs/README.md).
 
 ## Requirements
 
@@ -35,7 +41,7 @@ The level is recomputed from the ravynOS build tree on every scan:
   appears on HDMI or serial, update the EEPROM with Raspberry Pi Imager first. MaryPi
   never touches the EEPROM.
 - For kernel payloads: a ravynOS checkout built with `bmake TARGET_ARCH=arm64`.
-- For the QEMU test bed: `brew install qemu`.
+- For the VM test bed: `brew install qemu` (macOS) or `apt install qemu-system-arm qemu-efi-aarch64` (Linux).
 
 ## Quick start
 
@@ -124,19 +130,36 @@ Connect a 3.3 V USB-UART adapter to the Pi 5's 3-pin debug header (GND, TX, RX) 
 open it at 115200 8N1, for example `screen /dev/cu.usbserial-XXXX 115200`. The UEFI
 firmware and the ravynOS kernel both log there.
 
-## QEMU test bed
+## VM test bed
 
 QEMU has no Raspberry Pi 5 model, but its `virt` machine has the same building
-blocks the Pi 5 bring-up needs (GICv2, PL011 UART, generic timer, EDK2 UEFI):
+blocks the Pi 5 bring-up uses (GICv2 or GICv3, PL011 UART, generic timer, EDK2
+UEFI). The VM definition lives in `vm/` and runs on arm64 macOS and Linux:
 
 ```sh
-swift run marypi build-image --qemu --out /tmp/q.img
-scripts/qemu-virt.sh /tmp/q.img
+swift run marypi vm doctor                       # qemu, firmware, accelerator, display
+swift run marypi vm run                          # build a --qemu image and boot it in a window
+swift run marypi vm run --profile qemu-virt-gicv3   # GICv3 guest: hvf on Apple Silicon, kvm on Linux
+swift run marypi vm run --display serial         # serial console on this terminal (Ctrl-A X quits)
+swift run marypi vm run --detach                 # leave it running; then:
+swift run marypi vm status
+swift run marypi vm serial                       # follow vm/state/<profile>/serial.log
+swift run marypi vm stop                         # QMP quit, then signals
 ```
 
-`--qemu` builds the same image without the `rd=` kernel flag. The script boots it with
-`-M virt,gic-version=2 -cpu cortex-a76` and the serial console on the terminal
-(`QEMU_ACCEL=hvf` switches to hardware virtualization with `-cpu host`).
+`vm/run.sh` does the same without Swift (`vm/run.sh run --image q.img`), so a
+Linux box only needs QEMU and its EDK2 firmware package. Profiles are
+`KEY=VALUE` files in `vm/profiles/`; per-profile state (UEFI variables, disk
+image, `serial.log`, QMP socket, pid) goes to `vm/state/` in a checkout or the
+user's cache directory for the app bundle. See `vm/README.md`.
+
+Two profiles ship: `qemu-virt` (GICv2, the Pi 5's interrupt controller family;
+runs on TCG on macOS because HVF cannot emulate a GICv2) and `qemu-virt-gicv3`
+(hvf/kvm fast path; the kernel selects its virtual timer automatically under
+Apple's hypervisor). The `ramfb` device gives the booter a UEFI framebuffer,
+so the kernel's boot console appears in the QEMU window. In the app,
+**Test in VM** builds the image and opens the window; serial output streams
+into the Log pane; **Stop VM** ends it.
 
 ## Updating the pinned firmware
 
@@ -162,11 +185,12 @@ make app             # dist/MaryPi.app
 Layout:
 
 ```
-Sources/MaryPiKit      Model, Shell (CommandRunner), Disks, Payload, Firmware, Image, Flash, Orchestration
+Sources/MaryPiKit      Model, Shell (CommandRunner), Disks, Payload, Firmware, Image, Flash, Orchestration, VM
 Sources/marypi         the CLI (swift-argument-parser)
 Sources/MaryPiApp      the SwiftUI app (product MaryPiApp; bundled as MaryPi.app)
 Tests/MaryPiKitTests   unit tests and fixtures
-scripts/               bundle.sh, qemu-virt.sh, update-manifest.sh
+vm/                    profiles/, run.sh (portable launcher), README.md; vm/state/ is local
+scripts/               bundle.sh, qemu-virt.sh (wrapper), update-manifest.sh
 ```
 
 ## Relationship to the ravynOS arm64 bring-up
@@ -176,5 +200,5 @@ MaryPi lights up higher payload levels as the ravynOS tree gains arm64 support:
 | ravynOS milestone | MaryPi effect |
 |---|---|
 | `bmake TARGET_ARCH=arm64 -C Kernel xnu_all` links an arm64 kernel | `marypi payload` reports the kernel (still Level 0 without a booter) |
-| `Kernel/booter` produces `bootaa64.efi` | Level 1; `--qemu` images boot under `scripts/qemu-virt.sh` |
+| `Kernel/booter` produces `bootaa64.efi` | Level 1; `marypi vm run` boots the kernel in QEMU |
 | kernelcache with kexts + arm64 userland in `sysroot-arm64` | Level 2 |

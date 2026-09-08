@@ -31,6 +31,21 @@ struct MaryPiApp: App {
                 Button("Choose ravynOS Checkout…") { model.chooseRavynOSRoot() }
                 Button("Run Doctor…") { model.showDoctor = true }
             }
+            CommandMenu("VM") {
+                Button("Test in VM") { Task { await model.testInVM() } }
+                    .keyboardShortcut("t")
+                    .disabled(!model.canTestInVM)
+                Button("Stop VM") { Task { await model.stopVM() } }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
+                    .disabled(!model.vmIsRunning)
+                Divider()
+                Picker("Profile", selection: Binding(get: { model.vmProfile }, set: { model.vmProfile = $0 })) {
+                    ForEach(model.vmProfiles, id: \.self) { Text($0).tag($0) }
+                }
+                Button("Reveal Serial Log") { model.revealSerialLog() }
+                    .disabled(model.vm == nil)
+                Button("VM Doctor…") { model.showDoctor = true }
+            }
         }
     }
 }

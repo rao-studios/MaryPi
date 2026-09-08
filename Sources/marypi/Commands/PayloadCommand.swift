@@ -29,6 +29,8 @@ struct PayloadCommand: AsyncParsableCommand {
         Output.line("Build directory:  \(report.buildDir ?? "-")")
         Output.line("Booter:           \(report.booter ?? "-")")
         Output.line("Kernel:           \(report.kernel ?? "-")")
+        Output.line("Extensions:       \(report.extensions.map { "\($0) (\(report.extensionNames.joined(separator: ", ")))" } ?? "-")")
+        Output.line("Init program:     \(report.initProgram ?? "-")")
         Output.line("Kernelcache:      \(report.kernelcache ?? "-")")
         Output.line("Sysroot:          \(report.sysroot ?? "-")")
         if !report.findings.isEmpty {

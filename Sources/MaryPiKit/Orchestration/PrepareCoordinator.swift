@@ -51,6 +51,11 @@ public final class PrepareCoordinator {
         logSink?(line)
     }
 
+    /// Add a line to the log (used for VM serial output in the app).
+    public func log(_ line: String) {
+        append(line)
+    }
+
     private var logger: Logger {
         { [weak self] line in
             Task { @MainActor in self?.append(line) }

@@ -69,6 +69,10 @@ public struct ImageBuilder: Sendable {
                 step(.populateRoot, .running)
                 try await stager.stageRoot(volume: rootVolume, sysroot: URL(fileURLWithPath: sysroot), runner: runner, log: log)
                 step(.populateRoot, .done)
+            } else if spec.includesMinimalRoot, let initProgram = spec.payload.initProgram {
+                step(.populateRoot, .running)
+                try stager.stageMinimalRoot(volume: rootVolume, initProgram: URL(fileURLWithPath: initProgram), log: log)
+                step(.populateRoot, .done)
             }
 
             // 6. Detach

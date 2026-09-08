@@ -1,3 +1,4 @@
+#if os(macOS)
 import ArgumentParser
 import Foundation
 import MaryPiKit
@@ -44,3 +45,4 @@ extension ExitCode {
         ValidationError(message)
     }
 }
+#endif

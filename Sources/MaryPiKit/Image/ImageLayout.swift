@@ -19,18 +19,22 @@ public struct ImageSpec: Sendable {
         self.firmware = firmware
         self.outputURL = outputURL
         self.qemuVirt = qemuVirt
-        self.kernelFlags = kernelFlags ?? Self.defaultKernelFlags(level: payload.level, qemuVirt: qemuVirt)
+        self.kernelFlags = kernelFlags ?? Self.defaultKernelFlags(level: payload.level, qemuVirt: qemuVirt, storageStack: payload.hasStorageStack)
         self.ravynosGitSHA = ravynosGitSHA
     }
 
     public var level: PayloadLevel { payload.level }
     public var includesBoot: Bool { level >= .kernelBringUp }
     public var includesRoot: Bool { level >= .fullSystem && !qemuVirt }
+    /// Level 1 with a storage stack and ravyninit: a minimal root goes on the HFS+ partition.
+    public var includesMinimalRoot: Bool { !includesRoot && payload.hasMinimalRoot }
     public var targetName: String { qemuVirt ? "qemu-virt" : "raspberry-pi-5" }
 
-    public static func defaultKernelFlags(level: PayloadLevel, qemuVirt: Bool) -> String {
+    /// `rd=disk0s2` names the HFS+ partition of this very image as the root
+    /// device; it only makes sense once a block-storage stack is on board.
+    public static func defaultKernelFlags(level: PayloadLevel, qemuVirt: Bool, storageStack: Bool = false) -> String {
         var flags = ["-v", "serial=3", "debug=0x8", "cpus=1"]
-        if level >= .fullSystem && !qemuVirt { flags.append("rd=disk0s2") }
+        if (level >= .fullSystem && !qemuVirt) || storageStack { flags.append("rd=disk0s2") }
         return flags.joined(separator: " ")
     }
 

@@ -8,11 +8,20 @@ struct MaryPiCLI: AsyncParsableCommand {
         commandName: "marypi",
         abstract: "Prepare a Raspberry Pi 5 card with ravynOS from this Mac.",
         version: MaryPi.version,
-        subcommands: [
-            ListCommand.self, PayloadCommand.self, FirmwareCommand.self,
-            BuildImageCommand.self, FlashCommand.self, DoctorCommand.self, ConfigCommand.self,
-        ]
+        subcommands: MaryPiCLI.availableSubcommands
     )
+
+    /// Disk listing, image building and flashing need macOS (diskutil, hdiutil,
+    /// osascript); everything else also runs on Linux.
+    static var availableSubcommands: [ParsableCommand.Type] {
+        var commands: [ParsableCommand.Type] = [PayloadCommand.self, FirmwareCommand.self, DoctorCommand.self, ConfigCommand.self, VMCommand.self]
+        #if os(macOS)
+        commands.insert(ListCommand.self, at: 0)
+        commands.append(BuildImageCommand.self)
+        commands.append(FlashCommand.self)
+        #endif
+        return commands
+    }
 }
 
 /// Options shared by every subcommand.
