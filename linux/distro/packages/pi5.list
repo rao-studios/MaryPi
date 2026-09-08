@@ -1,0 +1,14 @@
+# Packages only the Raspberry Pi 5 image gets. The kernel is Ubuntu's
+# "raspi" flavour (BCM2712 support, Raspberry Pi device trees and overlays).
+# flash-kernel keeps /boot/firmware up to date when the kernel is upgraded on
+# the device; the builder copies the first kernel there itself.
+linux-raspi
+linux-firmware
+linux-firmware-raspi
+rpi-eeprom
+flash-kernel
+
+# Wireless
+wpasupplicant
+wireless-regdb
+bluez

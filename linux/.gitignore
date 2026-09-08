@@ -1,0 +1,11 @@
+.build/
+dist/
+.swiftpm/
+Package.resolved.bak
+out/
+cache/
+work/
+state/
+*.img
+*.log
+.DS_Store

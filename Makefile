@@ -1,19 +1,8 @@
-# Convenience wrapper around SwiftPM. Works with GNU make and bmake.
-SWIFT ?= swift
+# MaryPi: two kits, each with its own Makefile.
+#   make ravynos-build | ravynos-test | ravynos-app
+#   make linux-build | linux-test | linux-image TARGET=vm | linux-vm | linux-flash DISK=disk4
+ravynos-%:
+	$(MAKE) -C ravynos $*
 
-build:
-	$(SWIFT) build
-
-test:
-	$(SWIFT) test
-
-release:
-	$(SWIFT) build -c release
-
-app: release
-	sh scripts/bundle.sh
-
-clean:
-	rm -rf .build dist
-
-.PHONY: build test release app clean
+linux-%:
+	$(MAKE) -C linux $*

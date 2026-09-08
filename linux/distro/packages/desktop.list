@@ -1,0 +1,3 @@
+# Placeholder for a desktop flavour. Not installed by any target yet; when a
+# desktop target exists it will install base.list + this list + its kernel.
+# Candidates: ubuntu-desktop-minimal, gnome-shell, gdm3, or a lighter stack.

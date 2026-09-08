@@ -1,0 +1,19 @@
+# MaryOS default network: every wired interface asks for DHCP (IPv4 and
+# IPv6). Wi-Fi is configured on the device by adding a "wifis:" section here
+# (see `netplan set` / `man netplan`); wpasupplicant is installed on the Pi.
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    all-en:
+      match:
+        name: "en*"
+      dhcp4: true
+      dhcp6: true
+      optional: true
+    all-eth:
+      match:
+        name: "eth*"
+      dhcp4: true
+      dhcp6: true
+      optional: true

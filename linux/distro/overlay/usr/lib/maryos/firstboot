@@ -1,0 +1,45 @@
+#!/bin/sh
+# MaryOS first boot. Runs once (maryos-firstboot.service), before getty and
+# ssh: grows the root partition to the whole card or disk, resizes the ext4
+# filesystem, creates the ssh host keys the image ships without, and leaves a
+# stamp so it never runs again. Everything it does is printed on the console.
+set -u
+STAMP=/var/lib/maryos/firstboot-done
+log() { echo "maryos-firstboot: $*"; }
+
+grow_root() {
+    part=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+    case $part in
+        /dev/*) ;;
+        *) log "root is not a block device ($part); not resizing"; return 0 ;;
+    esac
+    # lsblk pads its columns with spaces; growpart wants bare values.
+    disk=$(lsblk -n -o PKNAME "$part" 2>/dev/null | head -n 1 | tr -d '[:space:]')
+    num=$(lsblk -n -o PARTN "$part" 2>/dev/null | head -n 1 | tr -d '[:space:]')
+    if [ -z "$disk" ] || [ -z "$num" ]; then
+        log "cannot find the disk behind $part; not resizing"
+        return 0
+    fi
+    log "growing /dev/$disk partition $num ($part)"
+    growpart "/dev/$disk" "$num"
+    case $? in
+        0) log "partition grown; resizing filesystem"; resize2fs "$part" ;;
+        1) log "partition already fills the disk" ;;
+        *) log "growpart failed; the root stays at its build size" ;;
+    esac
+}
+
+host_keys() {
+    if ls /etc/ssh/ssh_host_*_key >/dev/null 2>&1; then
+        log "ssh host keys present"
+    else
+        log "creating ssh host keys"
+        ssh-keygen -A
+    fi
+}
+
+grow_root
+host_keys
+mkdir -p "$(dirname "$STAMP")"
+date -u +%Y-%m-%dT%H:%M:%SZ > "$STAMP"
+log "done"

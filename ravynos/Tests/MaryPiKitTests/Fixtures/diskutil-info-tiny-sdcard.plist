@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BusProtocol</key>
+	<string>Secure Digital</string>
+	<key>DeviceIdentifier</key>
+	<string>disk5</string>
+	<key>DeviceNode</key>
+	<string>/dev/disk5</string>
+	<key>Internal</key>
+	<false/>
+	<key>MediaName</key>
+	<string>Tiny Card</string>
+	<key>RemovableMediaOrExternalDevice</key>
+	<true/>
+	<key>TotalSize</key>
+	<integer>1073741824</integer>
+	<key>VirtualOrPhysical</key>
+	<string>Physical</string>
+	<key>WholeDisk</key>
+	<true/>
+</dict>
+</plist>

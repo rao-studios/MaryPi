@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BusProtocol</key>
+	<string>Disk Image</string>
+	<key>DeviceIdentifier</key>
+	<string>disk9</string>
+	<key>DeviceNode</key>
+	<string>/dev/disk9</string>
+	<key>Internal</key>
+	<false/>
+	<key>MediaName</key>
+	<string>Apple UDIF read-only compressed (zlib) Media</string>
+	<key>RemovableMediaOrExternalDevice</key>
+	<true/>
+	<key>TotalSize</key>
+	<integer>8589934592</integer>
+	<key>VirtualOrPhysical</key>
+	<string>Virtual</string>
+	<key>WholeDisk</key>
+	<true/>
+</dict>
+</plist>

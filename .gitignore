@@ -1,8 +1,1 @@
-.build/
-dist/
-*.img
-*.log
 .DS_Store
-.swiftpm/
-/Package.resolved.bak
-vm/state/

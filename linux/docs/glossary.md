@@ -1,0 +1,29 @@
+# Glossary
+
+- **arm64 / aarch64**: the 64-bit ARM architecture of the Raspberry Pi 5 and of Apple silicon; Ubuntu calls it `arm64`, the kernel `aarch64`.
+- **BCM2712**: the Broadcom SoC on the Raspberry Pi 5.
+- **chroot**: running commands with another directory as `/`; how the builder installs packages into the rootfs tree.
+- **debootstrap**: Debian/Ubuntu's tool that installs a minimal system into a directory from an archive.
+- **deb822 sources**: the multi-line `Types:/URIs:/Suites:/Components:` format of `/etc/apt/sources.list.d/*.sources`.
+- **device tree (DTB)**: the hardware description the firmware hands to the kernel; `bcm2712-rpi-5-b.dtb` plus overlays on the Pi.
+- **dpkg diversion**: a rule that makes dpkg install a package's file under another name, so a local replacement survives upgrades.
+- **EEPROM bootloader**: the Raspberry Pi 5's first-stage firmware, stored on the board, which reads `config.txt`.
+- **flash-kernel**: the Debian/Ubuntu package that copies a new kernel and initrd to the boot partition on ARM boards.
+- **flavour**: an Ubuntu kernel variant (`generic`, `raspi`) built from the same source with a different configuration.
+- **hvc0**: the virtio console device; the guest's serial console in the VM.
+- **initramfs / initrd**: the small in-memory filesystem the kernel boots first, which finds and mounts the real root.
+- **kit**: one of the two directories of this repository (`ravynos/`, `linux/`) with everything for one system.
+- **MBR**: the classic partition table; what the Pi firmware and the builder use.
+- **minbase**: `debootstrap`'s smallest variant (essential packages plus apt).
+- **netplan**: Ubuntu's network configuration front end; MaryOS renders it with `systemd-networkd`.
+- **Noble**: Ubuntu 24.04 LTS (Noble Numbat), MaryOS's base.
+- **overlay**: a directory tree copied onto the rootfs as is.
+- **ports.ubuntu.com**: Ubuntu's archive for arm64 and other non-x86 architectures.
+- **raspi kernel**: Ubuntu's `linux-raspi`, the Raspberry Pi kernel with Ubuntu's packaging.
+- **rootfs**: the root filesystem tree of the system being built.
+- **serial0**: the Raspberry Pi alias for the primary UART; the 3-pin debug header on the Pi 5.
+- **sparse file**: a file whose unwritten regions take no disk space; disk images here are sparse.
+- **target**: what an image is built for, `pi5` or `vm`.
+- **virtio / virtiofs**: paravirtual devices Linux and Virtualization.framework agree on; virtiofs shares a host directory.
+- **Virtualization.framework (VZ)**: Apple's framework for running Linux (and macOS) virtual machines natively on Apple silicon.
+- **zboot**: the EFI wrapper around a compressed arm64 kernel that newer Ubuntu kernels ship as `vmlinuz`.

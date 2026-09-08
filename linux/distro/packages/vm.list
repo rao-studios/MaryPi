@@ -1,0 +1,4 @@
+# Packages only the Virtualization.framework image gets. Ubuntu's generic
+# kernel carries the virtio drivers (block, net, console, gpu, fs) as modules
+# and initramfs-tools' MODULES=most puts them in the initrd.
+linux-generic

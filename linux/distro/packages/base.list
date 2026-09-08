@@ -1,0 +1,48 @@
+# Packages installed on every MaryOS target, on top of a debootstrap
+# --variant=minbase Ubuntu Noble. One package per line, "#" comments.
+#
+# Deliberately explicit: no ubuntu-minimal / ubuntu-server metapackages and
+# no snapd, so the image contains what this list says and nothing more.
+
+# Init, device management, kernel module tooling
+systemd
+systemd-sysv
+systemd-resolved
+systemd-timesyncd
+udev
+dbus
+kmod
+initramfs-tools
+
+# Storage and filesystems (growpart for the first-boot resize lives in cloud-guest-utils)
+e2fsprogs
+dosfstools
+parted
+cloud-guest-utils
+util-linux
+
+# Networking
+netplan.io
+iproute2
+iputils-ping
+openssh-server
+ca-certificates
+curl
+wget
+
+# Users, locale, console
+sudo
+locales
+tzdata
+console-setup
+keyboard-configuration
+bash-completion
+
+# Editors and basics
+nano
+vim-tiny
+less
+apt-utils
+gnupg
+lsb-release
+ubuntu-keyring

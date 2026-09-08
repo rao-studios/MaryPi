@@ -21,5 +21,5 @@ Read them top to bottom the first time; each chapter assumes the previous one.
 | – | [Glossary](glossary.md) | Terms used throughout |
 
 Conventions: paths like `Kernel/xnu/...` are inside the ravynOS checkout;
-paths like `Sources/MaryPiKit/...` are inside this repository. Commands are
+paths like `Sources/MaryPiKit/...` are inside `ravynos/` in this repository. Commands are
 run from the ravynOS checkout root unless stated otherwise.

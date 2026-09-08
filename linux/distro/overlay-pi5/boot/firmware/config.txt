@@ -1,0 +1,37 @@
+# MaryOS Raspberry Pi firmware configuration. Read by the Pi 5's EEPROM
+# bootloader from the first FAT partition. Based on Ubuntu 24.04's config.txt.
+#
+# The firmware loads the kernel and initrd directly; there is no U-Boot.
+# cmdline.txt next to this file holds the kernel command line.
+
+[all]
+kernel=vmlinuz
+cmdline=cmdline.txt
+initramfs initrd.img followkernel
+arm_64bit=1
+
+# 3-pin debug UART (GND, TX, RX) at 115200 8N1: the kernel console lives here
+enable_uart=1
+
+# Audio, I2C and SPI on the GPIO header. These touch the base device tree so
+# they must come before any dtoverlay= line.
+dtparam=audio=on
+dtparam=i2c_arm=on
+dtparam=spi=on
+disable_overscan=1
+
+# Load overlays for cameras and displays found on the CSI/DSI ports
+camera_auto_detect=1
+display_auto_detect=1
+
+# Full KMS graphics; the kernel owns the display and the GPU memory
+dtoverlay=vc4-kms-v3d
+disable_fw_kms_setup=1
+
+[pi4]
+max_framebuffers=2
+arm_boost=1
+
+[all]
+# Local additions go in usercfg.txt so upgrades of this file leave them alone
+include usercfg.txt

@@ -1,0 +1,15 @@
+[Unit]
+Description=MaryOS first boot (grow the root filesystem, create ssh host keys)
+ConditionPathExists=!/var/lib/maryos/firstboot-done
+After=local-fs.target
+# Not Before=ssh.socket: sockets.target precedes basic.target and that would be a cycle.
+Before=ssh.service getty.target display-manager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/maryos/firstboot
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target
