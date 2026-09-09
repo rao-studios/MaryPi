@@ -78,8 +78,12 @@ public final class PrepareCoordinator {
         switch stage {
         case .rootfs:
             plan.set(.buildRootfs, .running)
+        case .ui:
+            plan.set(.buildRootfs, .done)
+            plan.set(.buildUI, .running)
         case .target:
             plan.set(.buildRootfs, .done)
+            plan.set(.buildUI, .done)
             plan.set(.buildTarget, .running)
         case .image:
             plan.set(.buildTarget, .done)
@@ -115,6 +119,7 @@ public final class PrepareCoordinator {
                     Task { @MainActor in self?.handleBuildLine(line) }
                 })
                 plan.set(.buildRootfs, .done)
+                plan.set(.buildUI, .done)
                 plan.set(.buildTarget, .done)
                 plan.set(.buildImage, .done, detail: artifacts.image.lastPathComponent)
             } else {

@@ -1,7 +1,12 @@
 # shellcheck shell=sh
-# Stage 2: one target. Unpack the base rootfs, add the target's packages,
-# overlay and hooks, collect the boot files, run the final hooks. Leaves
+# Stage 2: one target. Unpack the base rootfs, add the target's and the
+# desktop's packages, overlays and hooks, install the compiled desktop
+# (out/ui), collect the boot files, run the final hooks. Leaves
 # WORK_DIR/<target>/rootfs plus target.env for the image stage.
+#
+# The desktop lives here rather than in the base stage so a change to
+# packages/desktop.list, overlay-desktop/ or hooks/desktop/ costs a target
+# build, not a bootstrap.
 
 # Set by collect_boot_*: the kernel version that went onto the boot files.
 COLLECTED_KERNEL_VERSION=""
@@ -87,9 +92,12 @@ target_build() {
 
     chroot_prepare "$root"
     # shellcheck disable=SC2046
-    chroot_apt_install "$root" $(read_list "$DISTRO_DIR/packages/$target.list")
+    chroot_apt_install "$root" $(read_list "$DISTRO_DIR/packages/$target.list") $(read_list "$DISTRO_DIR/packages/desktop.list")
     copy_overlay "$root" "$DISTRO_DIR/overlay-$target"
+    copy_overlay "$root" "$DISTRO_DIR/overlay-desktop"
+    ui_install "$root"
     chroot_run_hooks "$root" "$DISTRO_DIR/hooks/$target"
+    chroot_run_hooks "$root" "$DISTRO_DIR/hooks/desktop"
     COLLECTED_KERNEL_VERSION=""
     case $target in
         pi5) collect_boot_pi5 "$root" ;;
@@ -98,6 +106,6 @@ target_build() {
     chroot_run_hooks "$root" "$DISTRO_DIR/hooks/final"
     chroot_finish
     # Read by the image stage; nothing else may write to this file.
-    printf 'KERNEL_VERSION=%s\nTARGET=%s\nBUILT=%s\n' "$COLLECTED_KERNEL_VERSION" "$target" "$(utc_now)" > "$dir/target.env"
+    printf 'KERNEL_VERSION=%s\nTARGET=%s\nBUILT=%s\nMARYUI_SHA=%s\n' "$COLLECTED_KERNEL_VERSION" "$target" "$(utc_now)" "$(ui_git_sha)" > "$dir/target.env"
     log "target $target ready: $root"
 }

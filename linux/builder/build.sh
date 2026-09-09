@@ -4,16 +4,18 @@
 # (builder/run-in-docker.sh) from a Mac.
 #
 #   builder/build.sh rootfs                base rootfs tarball (cached by content of distro/)
-#   builder/build.sh target <pi5|vm>       base + target packages, overlay, hooks -> rootfs tree
+#   builder/build.sh ui                    compile the desktop (MaryUI/linux: linux/maryui or $MARYUI_DIR) -> out/ui
+#   builder/build.sh target <pi5|vm>       base + desktop + target packages, overlay, hooks -> rootfs tree
 #   builder/build.sh image  <pi5|vm>       rootfs tree -> out/<id>-<version>-<target>.img (vm: + out/vm/)
-#   builder/build.sh all    [pi5|vm|both]  rootfs, target, image (default: both targets)
+#   builder/build.sh all    [pi5|vm|both]  rootfs, ui, target, image (default: both targets)
 #
 #   --fresh     rebuild the base rootfs even when a cached one matches
 #   --keep      leave the rootfs tree in the work directory after the image
 #   --dry-run   print the stages that would run
 #
 # Directories (overridable): MARYOS_CACHE (linux/cache), MARYOS_WORK (linux/work),
-# MARYOS_OUT (linux/out). Inside Docker, cache and work are named volumes.
+# MARYOS_OUT (linux/out), MARYUI_SRC (linux/maryui/linux). Inside Docker, cache
+# and work are named volumes.
 set -eu
 
 BUILDER_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -22,11 +24,12 @@ DISTRO_DIR=$KIT_DIR/distro
 CACHE_DIR=${MARYOS_CACHE:-$KIT_DIR/cache}
 WORK_DIR=${MARYOS_WORK:-$KIT_DIR/work}
 OUT_DIR=${MARYOS_OUT:-$KIT_DIR/out}
+MARYUI_SRC=${MARYUI_SRC:-$KIT_DIR/maryui/linux}
 FRESH=0
 KEEP=0
 DRY_RUN=0
 
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 CMD=${1:-}
 [ -n "$CMD" ] || usage 1
@@ -64,6 +67,8 @@ fi
 # shellcheck disable=SC1091
 . "$BUILDER_DIR/lib/rootfs.sh"
 # shellcheck disable=SC1091
+. "$BUILDER_DIR/lib/ui.sh"
+# shellcheck disable=SC1091
 . "$BUILDER_DIR/lib/target.sh"
 # shellcheck disable=SC1091
 . "$BUILDER_DIR/lib/image.sh"
@@ -91,6 +96,8 @@ stage() {
 case $CMD in
     rootfs)
         stage rootfs_build ;;
+    ui)
+        stage ui_build ;;
     target)
         t=$(targets_of "${1:?usage: build.sh target <pi5|vm>}")
         [ "$t" = "pi5 vm" ] && die "target takes one of pi5, vm"
@@ -100,13 +107,14 @@ case $CMD in
         [ "$t" = "pi5 vm" ] && die "image takes one of pi5, vm"
         stage image_build "$t" ;;
     all)
+        stage rootfs_build
+        stage ui_build
         for t in $(targets_of "${1:-both}"); do
-            stage rootfs_build
             stage target_build "$t"
             stage image_build "$t"
         done ;;
     -h|--help|help)
         usage 0 ;;
     *)
-        die "unknown command $CMD (rootfs, target, image, all)" ;;
+        die "unknown command $CMD (rootfs, ui, target, image, all)" ;;
 esac

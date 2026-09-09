@@ -1,0 +1,8 @@
+# PAM service for maryos-desktop.service (PAMName=maryos-desktop). systemd only
+# runs the account and session stacks: no password is asked, pam_systemd
+# registers the logind session on seat0/tty1 that libseat takes control of.
+auth      required   pam_permit.so
+account   include    common-account
+session   required   pam_loginuid.so
+session   optional   pam_keyinit.so force revoke
+session   include    common-session

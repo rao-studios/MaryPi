@@ -1,0 +1,4 @@
+[submodule "linux/maryui"]
+	path = linux/maryui
+	url = git@github.com:rao-studios/MaryUI.git
+	branch = main

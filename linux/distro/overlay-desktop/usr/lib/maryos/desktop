@@ -1,0 +1,64 @@
+#!/bin/sh
+# ExecStart of maryos-desktop.service: runs as DEFAULT_USER on tty1 with a
+# logind session. A normal boot execs /usr/bin/maryui-desktop. With
+# maryos.ui=dev on the kernel command line (ui.sh --dev) the desktop is run
+# from the tree `make ui` writes to the host share (/mnt/maryos-out/ui) and is
+# restarted whenever that binary changes, so a C edit shows up in the VM
+# window without rebuilding the image.
+set -u
+DEV=/mnt/maryos-out/ui
+log() { echo "maryos-desktop: $*"; }
+
+dev=0
+for arg in $(cat /proc/cmdline); do [ "$arg" = maryos.ui=dev ] && dev=1; done
+
+# virtio-gpu has no 3D: software rendering in the VM. The Pi's vc4/v3d gets
+# GLES2 from wlroots' autodetection.
+if ls /sys/bus/virtio/drivers/virtio_gpu/virtio* > /dev/null 2>&1; then
+    export WLR_RENDERER=${WLR_RENDERER:-pixman}
+fi
+export XDG_SESSION_TYPE=wayland
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+
+if [ "$dev" = 0 ]; then
+    log "starting /usr/bin/maryui-desktop (renderer ${WLR_RENDERER:-auto})"
+    exec /usr/bin/maryui-desktop
+fi
+
+pick() {
+    if [ -x "$DEV/usr/bin/maryui-desktop" ]; then echo "$DEV/usr/bin/maryui-desktop"; else echo /usr/bin/maryui-desktop; fi
+}
+mtime() { stat -c %Y "$1" 2>/dev/null || echo 0; }
+
+while :; do
+    bin=$(pick)
+    stamp=$(mtime "$bin")
+    case $bin in
+        "$DEV"/*) export MARYUI_DATA_DIR=$DEV/usr/share/maryui ;;
+        *) unset MARYUI_DATA_DIR ;;
+    esac
+    log "starting $bin (dev mode, maryui $(sed -n 's/^MARYUI_GIT_SHA=//p' "${MARYUI_DATA_DIR:-/usr/share/maryui}/maryui.env" 2>/dev/null), renderer ${WLR_RENDERER:-auto})"
+    # The compositor's output reaches the journal and the serial console
+    # (ui.sh serial on the Mac). No pipeline here: $! must be the compositor.
+    "$bin" &
+    pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 1
+        if [ "$(pick)" != "$bin" ] || [ "$(mtime "$(pick)")" != "$stamp" ]; then
+            sleep 1
+            log "binary changed; restarting"
+            kill -TERM "$pid" 2>/dev/null
+            n=0
+            while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+            kill -0 "$pid" 2>/dev/null && { log "compositor did not stop; killing it"; kill -KILL "$pid" 2>/dev/null; }
+            wait "$pid" 2>/dev/null
+            break
+        fi
+    done
+    wait "$pid" 2>/dev/null
+    status=$?
+    if [ "$status" -ne 0 ]; then
+        log "exited with status $status; restarting in 2 s"
+        sleep 2
+    fi
+done

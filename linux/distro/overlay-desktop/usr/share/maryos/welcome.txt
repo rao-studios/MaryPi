@@ -1,0 +1,17 @@
+Welcome to MaryOS
+
+This is Liquid Platinum, the MaryOS desktop. A few things to try:
+
+  Finder      Double-click a folder to open it, a text file to edit it.
+              ⌘↑ goes up a folder, ⌘[ and ⌘] go back and forward.
+              Return renames, ⇧⌘N makes a folder, ⌘⌫ moves to the Trash.
+              Drag files onto folders, other windows, or the Trash.
+              Right-click for the rest.
+
+  TextEdit    Edit this note and press ⌘S: the Finder sees the change at once.
+
+  Spotlight   Ctrl+Space (or ⌘+Space) searches your apps and windows.
+
+  Terminal    ⌘T opens one.
+
+The ⌘ key is the Super (Windows) key on your keyboard.

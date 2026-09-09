@@ -37,6 +37,9 @@ import Testing
         #expect(config.imageName(for: .pi5) == "maryos-24.04-pi5.img")
         #expect(config.imageName(for: .vm) == "maryos-24.04-vm.img")
         #expect(config.vmCommandLine == "console=hvc0 root=LABEL=maryos-root rootfstype=ext4 rw rootwait")
+        #expect(config.vmCommandLine(mode: .console) == config.vmCommandLine)
+        #expect(config.vmCommandLine(mode: .desktop(dev: false)) == "console=hvc0 root=LABEL=maryos-root rootfstype=ext4 rw rootwait systemd.unit=graphical.target")
+        #expect(config.vmCommandLine(mode: .desktop(dev: true)) == "console=hvc0 root=LABEL=maryos-root rootfstype=ext4 rw rootwait systemd.unit=graphical.target maryos.ui=dev")
         #expect(config.prettyName == "MaryOS 24.04")
         #expect(config.codenamePretty == "noble", "the pretty codename defaults to the codename")
         #expect(config.fullName == "MaryOS 24.04 (noble)")
@@ -75,8 +78,8 @@ import Testing
         #expect(config.arch == "arm64")
         #expect(config.baseSuite == "noble")
         #expect(config.version == "0.0")
-        #expect(config.codename == "bonnie")
-        #expect(config.fullName == "MaryOS 0.0 (Bonnie)")
+        #expect(config.codename == "liquid-platinum")
+        #expect(config.fullName == "MaryOS 0.0 (Liquid Platinum)")
         #expect(config.imageName(for: .vm) == "maryos-0.0-vm.img")
     }
 }

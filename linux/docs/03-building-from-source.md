@@ -22,10 +22,11 @@ it with `--privileged`, which the chroot mounts need. Three mounts:
 Keeping the trees in a volume matters: bind mounts through Docker Desktop
 are slow for millions of small files and do not keep sparse files sparse.
 
-## The three stages
+## The four stages
 
-`build.sh rootfs`, `build.sh target <pi5|vm>`, `build.sh image <pi5|vm>`;
-`build.sh all [pi5|vm|both]` runs them in order. `--dry-run` prints the
+`build.sh rootfs`, `build.sh ui`, `build.sh target <pi5|vm>`, `build.sh image
+<pi5|vm>`; `build.sh all [pi5|vm|both]` runs them in order (the `ui` stage once,
+before the targets). `--dry-run` prints the
 stages, `--fresh` ignores the cached base, `--keep` leaves the tree.
 
 **rootfs** (`lib/rootfs.sh`): `debootstrap --arch=arm64 --variant=minbase
@@ -35,8 +36,15 @@ noble` with the Ubuntu keyring, then the apt sources in deb822 form
 `zstd` into `cache/rootfs/base-noble-arm64-<key>.tar.zst`, where the key is a
 hash of everything that went in.
 
-**target** (`lib/target.sh`): unpack, install the target list, apply the
-target overlay and hooks, collect the boot files, run the final hooks. For
+**ui** (`lib/ui.sh`): compiles MaryUI's `linux/` (the submodule, or
+`MARYUI_DIR`) in the same container — `make all`, `make test`, `make install`
+into `out/ui`, plus PNG renders and a `maryui.env` with the commit. Chapter 9
+has the details; the point here is that it produces a tree, not packages, and
+the target stage unpacks that tree into the rootfs.
+
+**target** (`lib/target.sh`): unpack, install the target list and
+`desktop.list`, apply the target overlay, `overlay-desktop/` and `out/ui`,
+run the target and desktop hooks, collect the boot files, run the final hooks. For
 the Pi that means copying the raspi `vmlinuz`, `initrd.img`, the BCM2712
 device trees and `overlays/` into `/boot/firmware`, the same names Ubuntu
 and `flash-kernel` use. For the VM it means extracting the raw kernel
@@ -107,6 +115,7 @@ The builder image and the chroot's `apt-get` are pinned to IPv4
 out/maryos-0.0-pi5.img(.sha256, .txt)     the card image and its manifest
 out/maryos-0.0-vm.img(.sha256, .txt)      the VM disk image
 out/vm/Image, initrd.img, boot.json         what the VM boots directly
+out/ui/usr/{bin,lib,include,share}           the desktop as installed (ui stage); out/ui/renders/ for parity
 ```
 
 `maryos build` and the app run the same script and stream its log; the

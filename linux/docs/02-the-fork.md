@@ -9,7 +9,7 @@ directory, as data. The builder reads it; nothing else does.
 The name, id, version and codename drive every use: image file names,
 `os-release` (`VERSION_ID`, `VERSION_CODENAME`, `PRETTY_NAME`), the login
 banner, the manifest on the boot partition. MaryOS starts at version 0.0,
-codename `bonnie` (written "Bonnie" through `DISTRO_CODENAME_PRETTY`);
+codename `liquid-platinum` (written "Liquid Platinum" through `DISTRO_CODENAME_PRETTY`);
 these are MaryOS's numbers, not Ubuntu's. The Ubuntu base is
 `BASE_SUITE` (noble) from `BASE_MIRROR` (ports.ubuntu.com, where arm64
 lives). The first user, its password, the locale and timezone are here too,
@@ -24,16 +24,21 @@ tools, netplan and ssh, sudo, locales, editors. It deliberately names
 packages rather than pulling `ubuntu-minimal` or `ubuntu-server`, so the
 image contains what the list says; in particular there is no snapd.
 `pi5.list` adds the raspi kernel, Raspberry Pi firmware and `flash-kernel`,
-Wi-Fi and Bluetooth; `vm.list` adds the generic kernel. `desktop.list` is
-an empty placeholder for a desktop flavour.
+Wi-Fi and Bluetooth; `vm.list` adds the generic kernel. `desktop.list` is the
+Liquid Platinum desktop's runtime — wlroots and its seat, input and keymap
+libraries, Cairo and Pango, the fonts, `polkitd` for the logind session, and
+`foot`, the terminal. Every target gets it, so one image boots to a console
+or to the desktop (chapter 9).
 
-## overlay/, overlay-pi5/, overlay-vm/
+## overlay/, overlay-desktop/, overlay-pi5/, overlay-vm/
 
 Files copied verbatim onto the rootfs, root-owned, modes kept. The shared
 overlay carries the netplan default (DHCP on every wired interface) and the
-first-boot service with its script. `overlay-pi5/boot/firmware/` holds
-`config.txt` and `usercfg.txt`; whatever ends up under `/boot/firmware` in
-the tree becomes the content of the FAT partition.
+first-boot service with its script. `overlay-desktop/` carries the desktop
+launcher (`/usr/lib/maryos/desktop`, chapter 9) and the PAM service the
+desktop unit logs in with. `overlay-pi5/boot/firmware/` holds `config.txt`
+and `usercfg.txt`; whatever ends up under `/boot/firmware` in the tree
+becomes the content of the FAT partition.
 
 ## hooks/
 
@@ -44,6 +49,7 @@ in name order:
 |---|---|---|
 | base (after `base.list`) | `hooks/` | `10-locale-tz` generates the locale and sets the timezone; `20-user` creates the first user with sudo; `30-branding` writes `os-release`, `lsb-release`, hostname, hosts, issue and motd; `40-services` enables networkd, resolved, timesyncd and the first-boot service; `50-fstab` writes `/etc/fstab` by label |
 | target (after `<target>.list`) | `hooks/pi5/`, `hooks/vm/` | `pi5/20-boot-config` writes `cmdline.txt` from the root label; `vm/10-shared-folder` adds the virtiofs share to `fstab` |
+| target (after `desktop.list`, every target) | `hooks/desktop/` | `60-desktop` writes and enables `maryos-desktop.service`, keeps `multi-user.target` the default so `vm.sh` still reaches a login prompt, and refreshes the font cache |
 | final (end of every target build) | `hooks/final/` | `90-cleanup` removes package lists, temporary files, ssh host keys, the machine id and logs |
 
 Hooks are ordinary `sh -e` scripts. To add behaviour, add a file; to change
@@ -64,9 +70,9 @@ alone once it differs from the package's version.
 `ID=maryos` with `ID_LIKE="ubuntu debian"` and `UBUNTU_CODENAME=noble` is
 what third-party installers and `apt-add-repository`-style tools look at;
 most read `ID_LIKE` and `UBUNTU_CODENAME` and keep working.
-`VERSION_CODENAME` is MaryOS's (`bonnie`) and so is what `lsb_release -c`
+`VERSION_CODENAME` is MaryOS's (`liquid-platinum`) and so is what `lsb_release -c`
 prints, since it reads `os-release`; a script that builds an apt suite name
-from `lsb_release -cs` (some vendor install scripts do) gets `bonnie` and
+from `lsb_release -cs` (some vendor install scripts do) gets `liquid-platinum` and
 needs `UBUNTU_CODENAME` from `/etc/os-release` instead. That is the same
 trade-off Linux Mint makes, and the price of having a codename of one's own. Tools that insist on
 `ID=ubuntu` are the first place a fork shows.

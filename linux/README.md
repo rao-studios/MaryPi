@@ -33,10 +33,14 @@ cd linux
 ./vm.sh                         # one command: build the CLI, build the VM image if missing, boot it in a window
 ./vm.sh --console               # same, with this terminal on the serial console (Ctrl-] stops the VM)
 ./vm.sh stop                    # ask the guest to shut down
+./ui.sh                         # the same image, booted to the Liquid Platinum desktop (builds out/ui if missing); Ctrl+Space opens Spotlight
+./ui.sh --dev                   # desktop from out/ui over virtiofs, restarted whenever `make ui` replaces it
 
 make build                      # swift build, then scripts/sign.sh on the binaries
 make cli ARGS=doctor            # tools, kit, Docker, Virtualization, entitlement, built images
 make image TARGET=vm            # builder/build.sh all vm -> out/maryos-0.0-vm.img + out/vm/
+make ui                         # builder/build.sh ui: compile + test MaryUI/linux -> out/ui (MARYUI_DIR=… for a sibling checkout)
+make desktop / make ui-dev      # ui.sh / ui.sh --dev
 make vm                         # vm.sh; log in as mary (password in distro.conf)
 make image TARGET=pi5           # out/maryos-0.0-pi5.img
 make cli ARGS=list              # removable disks the flasher is willing to erase
@@ -51,10 +55,10 @@ The CLI, once built and signed (`.build/debug/maryos`):
 ```
 maryos doctor                       what this Mac can do
 maryos config                       distro.conf, directories, built images
-maryos build [--target pi5|vm|both] [--stage rootfs|target|image|all] [--fresh] [--dry-run]
+maryos build [--target pi5|vm|both] [--stage rootfs|ui|target|image|all] [--fresh] [--dry-run]
 maryos list [--all]                 removable disks
 maryos flash --disk diskN [--image PATH] [--target pi5] [--build] [--yes]
-maryos vm run [--headless] [--console] [--memory MiB] [--cpus N] [--share tag=/dir] [--fresh] [--disk-size GiB] [--dry-run]
+maryos vm run [--desktop [--dev]] [--headless] [--console] [--memory MiB] [--cpus N] [--share tag=/dir] [--fresh] [--disk-size GiB] [--dry-run]
 maryos vm stop | status | serial [--no-follow] | reset
 ```
 
@@ -68,7 +72,7 @@ binary on its first use after a build and starts again.
 Everything MaryOS-specific is data in `distro/`:
 
 ```
-distro.conf          name, id, version and codename (0.0 "Bonnie"), Ubuntu suite and mirror, first user, labels, sizes
+distro.conf          name, id, version and codename (0.0 "Liquid Platinum"), Ubuntu suite and mirror, first user, labels, sizes
 packages/base.list   every target: an explicit list, no ubuntu-* metapackages, no snapd
 packages/pi5.list    linux-raspi, Raspberry Pi firmware, flash-kernel, Wi-Fi and Bluetooth
 packages/vm.list     linux-generic (virtio drivers as modules)
@@ -180,13 +184,15 @@ swift build && sh scripts/sign.sh .build/debug/maryos .build/debug/MaryOSApp   #
 swift test                                                                       # MaryOSKit unit tests
 python3 builder/tests/unzboot_test.py                                            # the kernel extractor
 builder/build.sh all vm --dry-run                                                # the stages, in Docker
+MARYUI_DIR=../../MaryUI builder/build.sh ui                                      # the desktop from a sibling MaryUI checkout
 ```
 
 Layout:
 
 ```
 distro/                the MaryOS definition (see above)
-builder/               Dockerfile, run-in-docker.sh, build.sh, lib/{common,chroot,rootfs,target,image}.sh, unzboot.py, tests/
+builder/               Dockerfile, run-in-docker.sh, build.sh, lib/{common,chroot,rootfs,ui,target,image}.sh, unzboot.py, tests/
+maryui/                MaryUI (git submodule): web/ is the design system, linux/ the C library + compositor the ui stage builds
 Sources/MaryOSKit      Distro (config, paths), Build (runner, artifacts), VM (spec, configuration, runner,
                        controller, window), Disks, Flash, Shell, Model, Orchestration (doctor, coordinator)
 Sources/maryos         the CLI (swift-argument-parser); synchronous commands that pump the main run loop
@@ -194,6 +200,7 @@ Sources/MaryOSApp      the SwiftUI app (product MaryOSApp; bundled as MaryOS.app
 Tests/MaryOSKitTests   unit tests and diskutil fixtures
 scripts/               sign.sh, bundle.sh
 vm.sh                  one command to build what is missing and boot the VM
+ui.sh                  the same, booted to the desktop (--dev for the live-reload loop)
 docs/                  the MaryOS journey
 out/ cache/ work/ state/   build output, caches, VM state (gitignored)
 ```

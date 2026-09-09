@@ -20,6 +20,7 @@ kernel:  ${KERNEL_VERSION}
 base:    Ubuntu ${BASE_SUITE} from ${BASE_MIRROR}
 built:   ${BUILT}
 source:  ${MARYOS_GIT_SHA:-unknown} ${DISTRO_HOME_URL} (linux/)
+desktop: maryui ${MARYUI_SHA:-unknown} (boots with systemd.unit=graphical.target)
 layout:  MBR; p1 FAT32 "${BOOT_LABEL}" ${BOOT_PARTITION_MIB} MiB at 4 MiB; p2 ext4 "${ROOT_LABEL}", grows on first boot
 login:   ${DEFAULT_USER} (see distro.conf)
 MANIFEST

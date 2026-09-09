@@ -54,6 +54,26 @@ import Testing
         #expect(explicit.outDirectory.path == "/tmp/home/Library/Caches/MaryOS/out")
     }
 
+    @Test func maryUISourcesDefaultToTheSubmoduleUnlessOverridden() throws {
+        let root = try makeKit(checkout: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let home = URL(fileURLWithPath: "/tmp/home")
+        let plain = try #require(KitPaths.locate(explicitRoot: root.path, environment: [:], currentDirectory: URL(fileURLWithPath: "/"), bundleResources: nil, home: home))
+        #expect(plain.maryUISource.path == root.standardizedFileURL.appending(path: "maryui/linux").path)
+        #expect(!plain.maryUIIsOverride)
+        #expect(!plain.hasMaryUISources)
+        #expect(plain.uiBinary.path.hasSuffix("out/ui/usr/bin/maryui-desktop"))
+        let checkout = FileManager.default.temporaryDirectory.appending(path: "maryui-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: checkout.appending(path: "linux"), withIntermediateDirectories: true)
+        try "all:\n".write(to: checkout.appending(path: "linux/Makefile"), atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: checkout) }
+        let overridden = try #require(KitPaths.locate(explicitRoot: root.path, environment: [KitPaths.maryUIEnvironmentKey: checkout.path],
+                                                      currentDirectory: URL(fileURLWithPath: "/"), bundleResources: nil, home: home))
+        #expect(overridden.maryUIIsOverride)
+        #expect(overridden.maryUISource.path == checkout.standardizedFileURL.appending(path: "linux").path)
+        #expect(overridden.hasMaryUISources)
+    }
+
     @Test func fallsBackToThisCheckout() throws {
         let paths = try #require(KitPaths.locate(environment: [:], currentDirectory: URL(fileURLWithPath: "/"), bundleResources: nil))
         #expect(FileManager.default.fileExists(atPath: paths.distroConfig.path))

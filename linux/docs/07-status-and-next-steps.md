@@ -10,7 +10,7 @@ built and inspected but has not yet been booted on a board.
 |---|---|
 | Builder | `builder/build.sh all both` in Docker Desktop: debootstrap of Noble arm64, base packages, overlay and hooks, a 222 MB cached base tarball; two targets; two images (about 2.9 GB each, 1.8 GB on disk) with manifests and checksums. About 10 minutes from nothing, 3 minutes per target with the cache |
 | Kernel extraction | `unzboot.py` unpacks Ubuntu's `vmlinuz-6.8.0-139-generic` (an EFI zboot image) into a 59 MB raw arm64 `Image` that Virtualization.framework accepts |
-| VM boot | `maryos vm run` boots the image in about 4 seconds to `maryos login:` on `hvc0` and on `tty1` in the window: virtio disk `vda` with both partitions, root mounted by label, `Welcome to MaryOS 0.0 (Bonnie)!` |
+| VM boot | `maryos vm run` boots the image in about 4 seconds to `maryos login:` on `hvc0` and on `tty1` in the window: virtio disk `vda` with both partitions, root mounted by label, `Welcome to MaryOS 0.0 (Liquid Platinum)!` |
 | Identity | `/etc/os-release` says MaryOS with `ID_LIKE="ubuntu debian"`, hostname `maryos`, MaryOS motd and issue |
 | First boot | `maryos-firstboot` runs once: grows the root partition to the disk, creates the ssh host keys, stamps itself |
 | Networking | `enp0s1` gets `192.168.64.2/24` from the NAT network; `systemd-networkd`, `systemd-resolved` and `systemd-timesyncd` active; names resolve through the stub resolver and `apt-get update` reaches ports.ubuntu.com (36 MB of lists in 4 s) |
@@ -20,6 +20,9 @@ built and inspected but has not yet been booted on a board.
 | Pi 5 image | MBR with a bootable FAT32 `MARYOS` partition holding `config.txt`, `cmdline.txt`, `usercfg.txt`, the gzip `vmlinuz` (6.8.0-1064-raspi), `initrd.img`, `bcm2712-rpi-5-b.dtb` and the other BCM2711/2712 device trees, 324 overlays, the Pi 4 firmware blobs and `MARYOS.txt`; an ext4 `maryos-root` partition with the raspi kernel installed and `flash-kernel` ready |
 | Flasher | `maryos list`, `maryos flash --disk diskN` and the app's Prepare flow: the same verified-target, one-admin-prompt `dd` as the ravynOS kit |
 | App | `MaryOS.app` builds, is signed with the entitlement, and bundles the kit so it runs outside a checkout |
+| Desktop | `./ui.sh` boots the same image to the Liquid Platinum desktop in about a second after `graphical.target`: wallpaper, menu bar and clock, Finder and Gallery, menus, window drag with the jelly, eight-handle resize, shade, zoom with the flight, close, `foot` as a decorated Wayland client with keyboard focus; an idle desktop handles no frames (chapter 9) |
+| Spotlight and TextEdit | `Ctrl+Space` opens the search bar that is also the dock; typing filters apps and open windows, `Enter` launches. TextEdit, the first application, is reached from it alone and saves to `~/Documents/<name>.txt`; with it the compositor gained key repeat for its own controls and an I-beam cursor |
+| Dev loop | `MARYUI_DIR=… make ui` rebuilds and tests the desktop in about 20 s incrementally; a VM booted with `./ui.sh --dev` restarts it within three seconds |
 
 ## What is still plain Ubuntu
 
@@ -39,9 +42,9 @@ updates unchanged.
 - **No Wi-Fi configuration in the image.** The firmware and `wpasupplicant`
   are there; the netplan file only covers wired interfaces.
 - **The window has no clipboard or resize integration.** Virtualization's
-  virtio-gpu gives a fixed 1280×800 scanout; the guest console works, a
-  desktop would want `spice-vdagent`-style integration that does not exist
-  for this framework.
+  virtio-gpu gives a fixed 1280×800 scanout and no 3D; the desktop runs on the
+  pixman software renderer there, and nothing like `spice-vdagent` exists for
+  this framework.
 - **Ubuntu tools that check `ID=ubuntu`.** A few (e.g. some third-party
   install scripts) refuse `ID=maryos` even with `ID_LIKE`. Nothing in the
   base list does.
@@ -50,9 +53,11 @@ updates unchanged.
 
 1. **Boot the Pi 5 image on hardware**, watch the UART, confirm the root
    grows to the card and ssh works over Ethernet; then Wi-Fi.
-2. **A desktop flavour**: fill `packages/desktop.list`, add a `desktop`
-   target (the `pi5` build plus that list and a hook enabling the display
-   manager), test it in the window.
+2. **The desktop on the Pi**: boot `./ui.sh`'s counterpart on hardware —
+   `cmdline.txt` already selects `graphical.target` — and watch the GLES2
+   renderer on vc4/v3d; then the parity follow-ups in MaryUI's `PARITY.md`
+   (raster wallpaper, menu blur, the jelly on clients, promoting the last
+   code constants to `tokens.json`).
 3. **A MaryOS apt repository**: `reprepro` or `aptly` in the builder, signed
    with a MaryOS key, one more `Types: deb` stanza in the sources, so
    MaryOS packages (starting with a `maryos-base-files` that owns the

@@ -1,3 +1,34 @@
-# Placeholder for a desktop flavour. Not installed by any target yet; when a
-# desktop target exists it will install base.list + this list + its kernel.
-# Candidates: ubuntu-desktop-minimal, gnome-shell, gdm3, or a lighter stack.
+# The Liquid Platinum desktop: what maryui-desktop (compiled by the builder's
+# ui stage from MaryUI/linux) needs at runtime. Installed at the target stage
+# for every target, so a change here costs a target build, not a bootstrap.
+#
+# Compositor: wlroots 0.17 and its seat/input/keymap libraries.
+libwlroots12t64
+libseat1
+libinput10
+libxkbcommon0
+xkb-data
+libwayland-server0
+libwayland-client0
+libpixman-1-0
+# Drawing: Cairo and Pango draw every surface, FreeType/fontconfig shape the text.
+libcairo2
+libpango-1.0-0
+libpangocairo-1.0-0
+libfontconfig1
+# DRM/KMS and the GPU path (GLES2 on the Pi's vc4/v3d; the VM uses pixman).
+libdrm2
+libgbm1
+libegl1
+libgles2
+libgl1-mesa-dri
+# The desktop runs as a logind session started by a systemd unit (PAMName=);
+# libseat activates that session through logind, which asks polkit.
+libpam-systemd
+polkitd
+# Fonts standing in for the web's system stacks (font.ui, font.display, font.mono).
+fonts-inter
+fonts-urw-base35
+fonts-jetbrains-mono
+# A Wayland terminal, opened from File > New Terminal.
+foot

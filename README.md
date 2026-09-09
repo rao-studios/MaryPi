@@ -26,6 +26,7 @@ swift run marypi vm run                 # build an image and boot it in a QEMU w
 # MaryOS kit (Docker Desktop for the image build, Xcode for the VM and the flasher)
 cd linux
 ./vm.sh                                 # build what is missing, then boot MaryOS in a Virtualization.framework window
+./ui.sh                                 # the same image booted to the Liquid Platinum desktop (MaryUI, compiled by the builder's ui stage)
 make image TARGET=vm                    # just the image: rootfs from Ubuntu's archive + MaryOS -> out/maryos-0.0-vm.img
 make image TARGET=pi5                   # the Raspberry Pi 5 image
 make flash DISK=disk4                   # erase disk4 and write it (asks first)
@@ -35,7 +36,7 @@ make flash DISK=disk4                   # erase disk4 and write it (asks first)
 
 ```
 ravynos/   Swift package MaryPi (MaryPiKit, marypi CLI, MaryPi.app), vm/ QEMU profiles, docs/
-linux/     distro/ (the MaryOS definition), builder/ (image pipeline), Swift package MaryOS
-           (MaryOSKit, maryos CLI, MaryOS.app with the VZ window), docs/
+linux/     distro/ (the MaryOS definition), builder/ (image pipeline), maryui/ (the MaryUI submodule: the
+           Liquid Platinum desktop in C), Swift package MaryOS (MaryOSKit, maryos CLI, MaryOS.app with the VZ window), docs/
 Makefile   make ravynos-<target> / make linux-<target> delegate to the kits
 ```

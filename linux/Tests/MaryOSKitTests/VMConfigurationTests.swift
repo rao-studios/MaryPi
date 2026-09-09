@@ -70,6 +70,11 @@ import Virtualization
         #expect(paths.pidFile.path == "/s/vm/vm/vm.pid")
         let spec = VMSpec(name: "MaryOS", cpus: 1, memoryMiB: 2048, disk: paths.disk, kernel: paths.kernel, initrd: nil, commandLine: "", headless: true)
         #expect(spec.summary == "1 CPU, 2048 MiB, disk disk.img, kernel Image, headless")
+        let desktop = VMSpec(name: "MaryOS", cpus: 2, memoryMiB: 4096, disk: paths.disk, kernel: paths.kernel, initrd: nil,
+                             commandLine: VMBootMode.desktop(dev: true).commandLine(base: "console=hvc0"), bootMode: .desktop(dev: true))
+        #expect(desktop.commandLine == "console=hvc0 systemd.unit=graphical.target maryos.ui=dev")
+        #expect(desktop.summary == "2 CPUs, 4096 MiB, disk disk.img, kernel Image, 1280x800 window, boots to the desktop (dev: out/ui over virtiofs)")
+        #expect(VMBootMode.console.kernelArguments.isEmpty)
     }
 
     @Test func macAddressIsPersisted() throws {

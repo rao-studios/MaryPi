@@ -5,6 +5,8 @@
 #   linux/               -> /work    distro/ and builder/ are read, out/ is written
 #   volume maryos-cache  -> /cache   apt downloads and base rootfs tarballs (survive rebuilds)
 #   volume maryos-work   -> /build   rootfs trees and partition images (fast, never on the bind mount)
+#   MARYUI_DIR           -> /maryui  (read-only) a MaryUI checkout to build the desktop from, instead of
+#                                    the submodule linux/maryui; sets MARYUI_SRC=/maryui/linux
 set -eu
 BUILDER_DIR=$(cd "$(dirname "$0")" && pwd)
 KIT_DIR=$(cd "$BUILDER_DIR/.." && pwd)
@@ -32,13 +34,28 @@ else
     mkdir -p "$KIT_DIR/out"
 fi
 
+# The desktop's sources: the submodule (inside /work) unless MARYUI_DIR names
+# another MaryUI checkout, which is mounted read-only; the build is out-of-tree.
+maryui_mount=""
+maryui_env=""
+maryui_src="$KIT_DIR/maryui"
+if [ -n "${MARYUI_DIR:-}" ]; then
+    maryui_src=$(cd "$MARYUI_DIR" 2>/dev/null && pwd) || { echo "build: MARYUI_DIR=$MARYUI_DIR is not a directory" >&2; exit 1; }
+    [ -f "$maryui_src/linux/Makefile" ] || { echo "build: $maryui_src/linux/Makefile not found; MARYUI_DIR must be a MaryUI checkout" >&2; exit 1; }
+    maryui_mount="-v $maryui_src:/maryui:ro"
+    maryui_env="-e MARYUI_SRC=/maryui/linux"
+fi
+maryui_sha=$(git -C "$maryui_src" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+if [ "$maryui_sha" != unknown ] && [ -n "$(git -C "$maryui_src" status --porcelain -- . 2>/dev/null)" ]; then maryui_sha="$maryui_sha-dirty"; fi
+
 # shellcheck disable=SC2086
 exec "$DOCKER" run --rm $tty_flags --privileged --platform linux/arm64 \
     -v "$KIT_DIR:/work" \
     $out_mount \
+    $maryui_mount \
     -v maryos-cache:/cache \
     -v maryos-work:/build \
     -e MARYOS_IN_CONTAINER=1 \
     -e MARYOS_CACHE=/cache -e MARYOS_WORK=/build -e MARYOS_OUT=/out \
-    -e MARYOS_GIT_SHA="$git_sha" \
+    -e MARYOS_GIT_SHA="$git_sha" -e MARYUI_GIT_SHA="$maryui_sha" $maryui_env \
     "$IMAGE" "$@"

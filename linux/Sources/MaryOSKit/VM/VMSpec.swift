@@ -40,6 +40,36 @@ public struct SharedDirectory: Sendable, Equatable, Hashable {
     }
 }
 
+/// How the guest boots. The image's default target is multi-user (a login
+/// prompt on tty1 and hvc0); `desktop` appends `systemd.unit=graphical.target`
+/// so maryos-desktop.service starts the Liquid Platinum desktop, and `dev`
+/// adds `maryos.ui=dev` so the desktop runs from `out/ui` over virtiofs and
+/// restarts whenever `make ui` replaces it.
+public enum VMBootMode: Sendable, Equatable, Hashable {
+    case console
+    case desktop(dev: Bool)
+
+    public var kernelArguments: [String] {
+        switch self {
+        case .console: return []
+        case .desktop(let dev): return ["systemd.unit=graphical.target"] + (dev ? ["maryos.ui=dev"] : [])
+        }
+    }
+
+    /// The builder's command line with this mode's arguments appended.
+    public func commandLine(base: String) -> String {
+        ([base] + kernelArguments).joined(separator: " ")
+    }
+
+    public var title: String {
+        switch self {
+        case .console: return "console"
+        case .desktop(false): return "desktop"
+        case .desktop(true): return "desktop (dev: out/ui over virtiofs)"
+        }
+    }
+}
+
 /// Everything needed to boot one MaryOS VM: kernel files, disk, resources,
 /// shares and display. A pure value, so it can be printed, compared and tested.
 public struct VMSpec: Sendable, Equatable {
@@ -65,10 +95,13 @@ public struct VMSpec: Sendable, Equatable {
     public var displayWidth: Int
     public var displayHeight: Int
     public var headless: Bool
+    /// Informational: `commandLine` already carries the mode's arguments.
+    public var bootMode: VMBootMode
 
     public init(name: String, cpus: Int, memoryMiB: Int, disk: URL, kernel: URL, initrd: URL?, commandLine: String,
                 macAddress: String? = nil, sharedDirectories: [SharedDirectory] = [],
-                displayWidth: Int = VMSpec.defaultDisplayWidth, displayHeight: Int = VMSpec.defaultDisplayHeight, headless: Bool = false) {
+                displayWidth: Int = VMSpec.defaultDisplayWidth, displayHeight: Int = VMSpec.defaultDisplayHeight, headless: Bool = false,
+                bootMode: VMBootMode = .console) {
         self.name = name
         self.cpus = cpus
         self.memoryMiB = memoryMiB
@@ -81,12 +114,14 @@ public struct VMSpec: Sendable, Equatable {
         self.displayWidth = displayWidth
         self.displayHeight = displayHeight
         self.headless = headless
+        self.bootMode = bootMode
     }
 
     public var summary: String {
         var parts = ["\(cpus) CPU\(cpus == 1 ? "" : "s")", "\(memoryMiB) MiB", "disk \(disk.lastPathComponent)", "kernel \(kernel.lastPathComponent)"]
         parts.append(headless ? "headless" : "\(displayWidth)x\(displayHeight) window")
         if !sharedDirectories.isEmpty { parts.append("shares " + sharedDirectories.map(\.tag).joined(separator: ",")) }
+        if bootMode != .console { parts.append("boots to the \(bootMode.title)") }
         return parts.joined(separator: ", ")
     }
 }

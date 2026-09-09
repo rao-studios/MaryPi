@@ -117,12 +117,17 @@ public struct DistroConfig: Sendable, Equatable, Codable {
     /// `MaryOS 0.0`
     public var prettyName: String { "\(name) \(version)" }
 
-    /// `MaryOS 0.0 (Bonnie)`
+    /// `MaryOS 0.0 (Liquid Platinum)`
     public var fullName: String { "\(name) \(version) (\(codenamePretty))" }
 
     /// The kernel command line the builder records for direct boot in the VM.
     public var vmCommandLine: String {
         "console=hvc0 root=LABEL=\(rootLabel) rootfstype=ext4 rw rootwait"
+    }
+
+    /// The same, with the boot mode's arguments (`systemd.unit=graphical.target maryos.ui=dev`).
+    public func vmCommandLine(mode: VMBootMode) -> String {
+        mode.commandLine(base: vmCommandLine)
     }
 
     public var vmDiskBytes: Int64 { Int64(vmDiskGiB) << 30 }

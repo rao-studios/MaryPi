@@ -5,7 +5,7 @@
 #                                is missing (Docker), boot it in a window
 #   linux/vm.sh --console        also attach this terminal to the serial console (Ctrl-] stops)
 #   linux/vm.sh --headless       no window
-#   linux/vm.sh --rebuild        rebuild the image first, then boot
+#   linux/vm.sh --rebuild        rebuild the image first, then boot from a fresh disk
 #   linux/vm.sh stop|status|serial|reset
 #
 # Any other option goes to `maryos vm run` (see `maryos vm run --help`).
@@ -45,5 +45,7 @@ done
 if [ "$REBUILD" = 1 ] || "$CLI" config | grep -q '^vm: *not built'; then
     echo "vm.sh: building the VM image from source (Docker Desktop must be running)" >&2
     "$CLI" build --target vm
+    # A rebuilt image needs a fresh disk, or the VM keeps booting the old one.
+    set -- --fresh "$@"
 fi
 exec "$CLI" vm run "$@"

@@ -10,7 +10,7 @@ struct BuildCommand: ParsableCommand {
     @Option(name: .long, help: "pi5, vm or both (default vm).")
     var target: String = "vm"
 
-    @Option(name: .long, help: "rootfs, target, image or all (default all).")
+    @Option(name: .long, help: "rootfs, ui (compile the desktop from MaryUI), target, image or all (default all).")
     var stage: String = "all"
 
     @Flag(name: .long, help: "Rebuild the base rootfs even when the cache matches distro/.")
@@ -32,10 +32,11 @@ struct BuildCommand: ParsableCommand {
             guard let one = ImageTarget(rawValue: target) else { throw ValidationError("--target must be pi5, vm or both") }
             targets = [one]
         }
-        guard ["rootfs", "target", "image", "all"].contains(stage) else { throw ValidationError("--stage must be rootfs, target, image or all") }
+        guard ["rootfs", "ui", "target", "image", "all"].contains(stage) else { throw ValidationError("--stage must be rootfs, ui, target, image or all") }
         let builder = BuildRunner(paths: paths)
         for one in targets {
-            Output.line("maryos: building \(config.imageName(for: one)) (\(stage)) with \(paths.buildScript.path)")
+            Output.line(stage == "ui" ? "maryos: compiling the desktop from \(paths.maryUISource.path) with \(paths.buildScript.path)"
+                        : "maryos: building \(config.imageName(for: one)) (\(stage)) with \(paths.buildScript.path)")
             do {
                 try runBlocking {
                     try await builder.build(target: one, stage: stage, fresh: fresh, keep: keep, dryRun: dryRun, log: Output.stdoutLogger)
@@ -43,7 +44,11 @@ struct BuildCommand: ParsableCommand {
             } catch {
                 throw ValidationError(error.localizedDescription)
             }
-            if stage == "rootfs" { break }
+            if BuildRunner.targetlessStages.contains(stage) { break }
+        }
+        if !dryRun && (stage == "all" || stage == "ui") {
+            let ui = UIArtifacts.locate(paths: paths)
+            Output.line(ui.isBuilt ? "maryos: \(ui.binary.path) (\(ui.summary))" : "maryos: warning, \(ui.binary.path) is missing after the build")
         }
         if !dryRun && (stage == "all" || stage == "image") {
             for one in targets {

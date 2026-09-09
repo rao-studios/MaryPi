@@ -49,10 +49,10 @@ exist. Consider keys and `PasswordAuthentication no` in
 
 ```
 $ cat /etc/os-release
-PRETTY_NAME="MaryOS 0.0 (Bonnie)"
+PRETTY_NAME="MaryOS 0.0 (Liquid Platinum)"
 NAME="MaryOS"
 VERSION_ID="0.0"
-VERSION_CODENAME=bonnie
+VERSION_CODENAME=liquid-platinum
 ID=maryos
 ID_LIKE="ubuntu debian"
 UBUNTU_CODENAME=noble

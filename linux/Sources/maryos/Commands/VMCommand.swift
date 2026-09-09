@@ -23,6 +23,12 @@ struct VMCommand: ParsableCommand {
         @Flag(name: .long, help: "Attach this terminal to the guest's serial console (hvc0). Ctrl-] stops the VM.")
         var console = false
 
+        @Flag(name: .long, help: "Boot to the Liquid Platinum desktop (systemd.unit=graphical.target) instead of the login prompt.")
+        var desktop = false
+
+        @Flag(name: .long, help: "With --desktop: run the desktop from out/ui over virtiofs and restart it whenever `make ui` replaces it (maryos.ui=dev).")
+        var dev = false
+
         @Option(name: .long, help: "Guest memory in MiB (default \(VMSpec.defaultMemoryMiB)).")
         var memory: Int?
 
@@ -54,9 +60,15 @@ struct VMCommand: ParsableCommand {
             } catch {
                 throw ValidationError(error.localizedDescription)
             }
+            if dev && !desktop { throw ValidationError("--dev needs --desktop") }
+            if desktop && headless { throw ValidationError("--desktop needs a window; drop --headless") }
+            let mode: VMBootMode = desktop ? .desktop(dev: dev) : .console
             let paths = try kit.paths()
             let config = try kit.config(paths)
             let artifacts = BuildArtifacts.locate(target: .vm, config: config, paths: paths)
+            if dev, !UIArtifacts.locate(paths: paths).isBuilt {
+                Output.line("vm: warning, \(paths.uiBinary.path) is not built (make ui); the guest falls back to the desktop in the image")
+            }
             let state = paths.state(for: .vm)
             if let pid = VMController.runningPID(state) {
                 throw ValidationError("a VM is already running (pid \(pid)); maryos vm stop")
@@ -78,12 +90,13 @@ struct VMCommand: ParsableCommand {
             do { boot = try VMBootInfo.load(from: bootInfoURL) } catch { throw ValidationError("\(error.localizedDescription); build the vm target first") }
             let spec = VMSpec(
                 name: config.fullName, cpus: cpus ?? VMSpec.defaultCPUs, memoryMiB: memory ?? VMSpec.defaultMemoryMiB,
-                disk: state.disk, kernel: state.kernel, initrd: state.initrd, commandLine: boot.cmdline,
+                disk: state.disk, kernel: state.kernel, initrd: state.initrd, commandLine: mode.commandLine(base: boot.cmdline),
                 macAddress: dryRun ? nil : try VMStateManager.macAddress(state),
-                sharedDirectories: shares, headless: headless
+                sharedDirectories: shares, headless: headless, bootMode: mode
             )
             if dryRun {
                 Output.line("vm: \(spec.name): \(spec.summary)")
+                Output.line("vm: boot mode \(mode.title)")
                 Output.line("vm: kernel \(boot.kernelVersion) (built \(boot.built)), cmdline: \(spec.commandLine)")
                 for directory in shares { Output.line("vm: share \(directory.tag) = \(directory.url.path)\(directory.readOnly ? " (read-only)" : "")") }
                 Output.line("vm: state \(state.directory.path)")

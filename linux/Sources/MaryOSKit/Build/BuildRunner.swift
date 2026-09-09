@@ -3,6 +3,8 @@ import Foundation
 /// One of the builder's stages, as announced on its log (`==> stage: ...`).
 public enum BuildStage: Sendable, Equatable {
     case rootfs
+    /// The desktop (MaryUI/linux) compiled into `out/ui`.
+    case ui
     case target(ImageTarget)
     case image(ImageTarget)
 }
@@ -22,6 +24,7 @@ public enum BuildLog {
         let target = words.dropFirst().first.flatMap(ImageTarget.init(rawValue:))
         switch name {
         case "rootfs_build": return .rootfs
+        case "ui_build": return .ui
         case "target_build": return target.map(BuildStage.target)
         case "image_build": return target.map(BuildStage.image)
         default: return nil
@@ -60,10 +63,13 @@ public struct BuildRunner: Sendable {
         )
     }
 
+    /// Stages that take no target: they run once for every image.
+    public static let targetlessStages = ["rootfs", "ui"]
+
     /// `build.sh all <target>` (or a single stage); throws when the builder fails.
     public func build(target: ImageTarget, stage: String = "all", fresh: Bool = false, keep: Bool = false, dryRun: Bool = false, log: @escaping Logger) async throws {
         var arguments = [stage]
-        if stage != "rootfs" { arguments.append(target.rawValue) }
+        if !Self.targetlessStages.contains(stage) { arguments.append(target.rawValue) }
         if fresh { arguments.append("--fresh") }
         if keep { arguments.append("--keep") }
         if dryRun { arguments.append("--dry-run") }
@@ -96,6 +102,50 @@ public struct VMBootInfo: Codable, Sendable, Equatable {
         } catch {
             throw MaryOSError("cannot read \(url.path): \(error.localizedDescription)")
         }
+    }
+}
+
+/// What the builder's `ui` stage leaves in `out/ui`: the compiled desktop as a
+/// DESTDIR tree with PREFIX=/usr, plus `usr/share/maryui/maryui.env` naming the
+/// MaryUI commit it came from.
+public struct UIArtifacts: Sendable, Equatable {
+    public let directory: URL
+    public let binary: URL
+    public let versionFile: URL
+    public let renders: URL
+
+    public static func locate(paths: KitPaths) -> UIArtifacts {
+        UIArtifacts(directory: paths.uiOutDirectory, binary: paths.uiBinary,
+                    versionFile: paths.uiOutDirectory.appending(path: "usr/share/maryui/maryui.env"),
+                    renders: paths.uiOutDirectory.appending(path: "renders"))
+    }
+
+    public init(directory: URL, binary: URL, versionFile: URL, renders: URL) {
+        self.directory = directory
+        self.binary = binary
+        self.versionFile = versionFile
+        self.renders = renders
+    }
+
+    public var isBuilt: Bool { FileManager.default.isExecutableFile(atPath: binary.path) }
+
+    /// `MARYUI_GIT_SHA`, `SOURCE`, `BUILT` from maryui.env.
+    public var info: [String: String] {
+        guard let text = try? String(contentsOf: versionFile, encoding: .utf8) else { return [:] }
+        return (try? ConfParser.parse(text)) ?? [:]
+    }
+
+    public var gitSHA: String? { info["MARYUI_GIT_SHA"] }
+    public var built: String? { info["BUILT"] }
+
+    public var binaryDate: Date? {
+        try? FileManager.default.attributesOfItem(atPath: binary.path)[.modificationDate] as? Date
+    }
+
+    /// `maryui abc123def456, built 2026-09-08T16:00:00Z` or `not built yet`.
+    public var summary: String {
+        guard isBuilt else { return "not built yet (maryos build --stage ui)" }
+        return "maryui \(gitSHA ?? "unknown"), built \(built ?? "?")"
     }
 }
 

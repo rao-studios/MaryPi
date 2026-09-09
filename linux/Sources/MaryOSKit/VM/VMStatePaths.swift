@@ -40,7 +40,13 @@ public enum VMStateManager {
             throw MaryOSError("no complete VM build in \(artifacts.image.deletingLastPathComponent().path); missing \(missing.map(\.lastPathComponent).joined(separator: ", ")). Build it first: maryos build --target vm")
         }
         if !fresh, paths.hasDisk {
-            log("Disk: reusing \(paths.disk.path) (--fresh starts again from the built image)")
+            let diskDate = (try? fm.attributesOfItem(atPath: paths.disk.path)[.creationDate] as? Date) ?? .distantPast
+            let imageDate = (try? fm.attributesOfItem(atPath: artifacts.image.path)[.modificationDate] as? Date) ?? .distantPast
+            if imageDate > diskDate {
+                log("Disk: reusing \(paths.disk.path), which predates the built image; --fresh boots the new image")
+            } else {
+                log("Disk: reusing \(paths.disk.path) (--fresh starts again from the built image)")
+            }
             return
         }
         for url in [paths.disk, paths.kernel, paths.initrd, paths.bootInfo] where fm.fileExists(atPath: url.path) {

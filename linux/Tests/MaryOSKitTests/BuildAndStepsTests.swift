@@ -5,6 +5,7 @@ import Testing
 @Suite struct BuildLogTests {
     @Test func recognisesBuilderStages() {
         #expect(BuildLog.stage(in: "==> stage: rootfs_build") == .rootfs)
+        #expect(BuildLog.stage(in: "==> stage: ui_build") == .ui)
         #expect(BuildLog.stage(in: "==> stage: target_build vm") == .target(.vm))
         #expect(BuildLog.stage(in: "\u{1B}[1;36m==> stage: image_build pi5\u{1B}[0m") == .image(.pi5))
         #expect(BuildLog.stage(in: "==> stage: target_build moon") == nil)
@@ -27,6 +28,16 @@ import Testing
         #expect(!vm.isComplete)
     }
 
+    @Test func desktopArtifacts() {
+        let paths = KitPaths(root: URL(fileURLWithPath: "/kit"), isCheckout: true, outDirectory: URL(fileURLWithPath: "/kit/out"), stateRoot: URL(fileURLWithPath: "/kit/state"))
+        let ui = UIArtifacts.locate(paths: paths)
+        #expect(ui.binary.path == "/kit/out/ui/usr/bin/maryui-desktop")
+        #expect(ui.versionFile.path == "/kit/out/ui/usr/share/maryui/maryui.env")
+        #expect(!ui.isBuilt)
+        #expect(ui.summary.hasPrefix("not built yet"))
+        #expect(BuildRunner.targetlessStages.contains("ui") && !BuildRunner.targetlessStages.contains("image"))
+    }
+
     @Test func bootInfoDecodes() throws {
         let json = #"{"kernelVersion":"6.8.0-79-generic","kernel":"Image","initrd":"initrd.img","cmdline":"console=hvc0 root=LABEL=maryos-root rootfstype=ext4 rw rootwait","built":"2026-09-07T00:00:00Z"}"#
         let url = FileManager.default.temporaryDirectory.appending(path: "boot-\(UUID().uuidString).json")
@@ -41,9 +52,9 @@ import Testing
 @Suite struct StepPlanTests {
     @Test func buildAndFlash() {
         let plan = StepPlan.standard(build: true, hasTarget: true)
-        #expect(plan.steps.map(\.kind) == [.doctor, .buildRootfs, .buildTarget, .buildImage, .verifyTarget, .unmount, .write, .eject])
+        #expect(plan.steps.map(\.kind) == [.doctor, .buildRootfs, .buildUI, .buildTarget, .buildImage, .verifyTarget, .unmount, .write, .eject])
         #expect(StepPlan.standard(build: false, hasTarget: true).steps.map(\.kind) == [.doctor, .verifyTarget, .unmount, .write, .eject])
-        #expect(StepPlan.standard(build: true, hasTarget: false).steps.map(\.kind) == [.doctor, .buildRootfs, .buildTarget, .buildImage])
+        #expect(StepPlan.standard(build: true, hasTarget: false).steps.map(\.kind) == [.doctor, .buildRootfs, .buildUI, .buildTarget, .buildImage])
     }
 
     @Test func setUpdatesStatusAndProgress() {
@@ -54,7 +65,7 @@ import Testing
         #expect(plan[.buildImage]?.progress == 1)
         #expect(plan[.buildImage]?.detail == "maryos-24.04-vm.img")
         #expect(!plan.isFinished)
-        plan.set(.doctor, .done); plan.set(.buildRootfs, .done); plan.set(.buildTarget, .failed("x"))
+        plan.set(.doctor, .done); plan.set(.buildRootfs, .done); plan.set(.buildUI, .done); plan.set(.buildTarget, .failed("x"))
         #expect(plan.isFinished)
         #expect(plan.failedStep?.kind == .buildTarget)
         #expect(StepKind.write.isPrivileged && !StepKind.buildImage.isPrivileged)

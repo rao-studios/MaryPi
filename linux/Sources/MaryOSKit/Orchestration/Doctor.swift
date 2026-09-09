@@ -71,6 +71,14 @@ public struct Doctor: Sendable {
                 && fileManager.isWritableFile(atPath: paths.outDirectory.path)
             checks.append(DoctorCheck(name: "output directory", passed: outOK, blocking: false,
                                       detail: outOK ? paths.outDirectory.path : "\(paths.outDirectory.path) is not writable"))
+            let sources = paths.hasMaryUISources
+            let origin = paths.maryUIIsOverride ? "\(KitPaths.maryUIEnvironmentKey) override" : "submodule maryui/"
+            checks.append(DoctorCheck(name: "MaryUI sources", passed: sources, blocking: false,
+                                      detail: sources ? "\(paths.maryUISource.path) (\(origin))"
+                                          : "\(paths.maryUISource.path) has no Makefile (\(origin)); run `git submodule update --init` or set \(KitPaths.maryUIEnvironmentKey) to a MaryUI checkout"))
+            let ui = UIArtifacts.locate(paths: paths)
+            checks.append(DoctorCheck(name: "desktop build", passed: ui.isBuilt, blocking: false,
+                                      detail: ui.isBuilt ? "\(ui.binary.path): \(ui.summary)" : ui.summary))
         } else {
             checks.append(DoctorCheck(name: "kit directory", passed: false, blocking: true,
                                       detail: "not found: run from the checkout (linux/), pass --kit, or set \(KitPaths.environmentKey)"))

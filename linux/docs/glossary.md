@@ -3,27 +3,44 @@
 - **arm64 / aarch64**: the 64-bit ARM architecture of the Raspberry Pi 5 and of Apple silicon; Ubuntu calls it `arm64`, the kernel `aarch64`.
 - **BCM2712**: the Broadcom SoC on the Raspberry Pi 5.
 - **chroot**: running commands with another directory as `/`; how the builder installs packages into the rootfs tree.
-- **debootstrap**: Debian/Ubuntu's tool that installs a minimal system into a directory from an archive.
+- **compositor**: the program that owns the display and input under Wayland and composes every window; `maryui-desktop` is one, and draws the desktop itself as well.
 - **deb822 sources**: the multi-line `Types:/URIs:/Suites:/Components:` format of `/etc/apt/sources.list.d/*.sources`.
+- **debootstrap**: Debian/Ubuntu's tool that installs a minimal system into a directory from an archive.
+- **dev mode (`maryos.ui=dev`)**: the kernel argument that makes the desktop launcher run `maryui-desktop` from `/mnt/maryos-out/ui` and restart it when that binary changes.
 - **device tree (DTB)**: the hardware description the firmware hands to the kernel; `bcm2712-rpi-5-b.dtb` plus overlays on the Pi.
 - **dpkg diversion**: a rule that makes dpkg install a package's file under another name, so a local replacement survives upgrades.
 - **EEPROM bootloader**: the Raspberry Pi 5's first-stage firmware, stored on the board, which reads `config.txt`.
 - **flash-kernel**: the Debian/Ubuntu package that copies a new kernel and initrd to the boot partition on ARM boards.
 - **flavour**: an Ubuntu kernel variant (`generic`, `raspi`) built from the same source with a different configuration.
+- **foot**: the Wayland terminal MaryOS ships; File › New Terminal opens it.
 - **hvc0**: the virtio console device; the guest's serial console in the VM.
 - **initramfs / initrd**: the small in-memory filesystem the kernel boots first, which finds and mounts the real root.
 - **kit**: one of the two directories of this repository (`ravynos/`, `linux/`) with everything for one system.
+- **libmaryui / maryui-desktop**: the design system as a C library, and the compositor built on it; both come from MaryUI's `linux/` directory.
+- **libseat / logind session**: how a compositor gets the GPU and input devices without root: `systemd-logind` hands them to the session on the seat; `polkitd` must be present for the activation call.
+- **Liquid Platinum**: MaryUI's design system — brushed metal, liquid traffic lights, springs — defined by `tokens.json`; also the codename of MaryOS 0.0 (`DISTRO_CODENAME=liquid-platinum`, shown as "Liquid Platinum" in `/etc/os-release`).
+- **MaryUI**: the sibling repository with the design system: `web/` (React, the reference) and `linux/` (C); imported as the `linux/maryui` submodule or through `MARYUI_DIR`.
 - **MBR**: the classic partition table; what the Pi firmware and the builder use.
 - **minbase**: `debootstrap`'s smallest variant (essential packages plus apt).
 - **netplan**: Ubuntu's network configuration front end; MaryOS renders it with `systemd-networkd`.
 - **Noble**: Ubuntu 24.04 LTS (Noble Numbat), MaryOS's base.
 - **overlay**: a directory tree copied onto the rootfs as is.
+- **pixman**: the software renderer wlroots falls back to; the VM uses it (`WLR_RENDERER=pixman`) because virtio-gpu has no 3D.
 - **ports.ubuntu.com**: Ubuntu's archive for arm64 and other non-x86 architectures.
 - **raspi kernel**: Ubuntu's `linux-raspi`, the Raspberry Pi kernel with Ubuntu's packaging.
 - **rootfs**: the root filesystem tree of the system being built.
 - **serial0**: the Raspberry Pi alias for the primary UART; the 3-pin debug header on the Pi 5.
+- **server-side decorations (SSD)**: window frames drawn by the compositor rather than the client; every client window gets a Liquid Platinum frame.
+- **Spotlight**: the desktop's search bar and dock (`Ctrl+Space`): a blank query shows the apps as tiles, typing filters apps, commands and windows.
 - **sparse file**: a file whose unwritten regions take no disk space; disk images here are sparse.
 - **target**: what an image is built for, `pi5` or `vm`.
+- **TextArea / TextEdit**: MaryUI's multi-line editing component, and the first application built on it — a plain-text editor reached from Spotlight that writes `~/Documents/<name>.txt`.
+- **tokens.json**: MaryUI's W3C design-tokens file, the contract between the web and C sides; `npm run tokens` regenerates `lp_tokens.h`.
+- **ui stage**: the builder stage between `rootfs` and `target` that compiles MaryUI's `linux/` and installs it to `out/ui`.
+- **uinput / lp-input**: the kernel's virtual input-device interface, and the small tool that drives it to script pointer and keyboard input inside the guest.
 - **virtio / virtiofs**: paravirtual devices Linux and Virtualization.framework agree on; virtiofs shares a host directory.
 - **Virtualization.framework (VZ)**: Apple's framework for running Linux (and macOS) virtual machines natively on Apple silicon.
+- **Wayland**: the display protocol; clients draw into buffers and the compositor composes them.
+- **wlroots**: the compositor library (0.17 in Noble) `maryui-desktop` is built on: DRM/KMS output, libinput, a scene graph, xdg-shell.
+- **xdg-shell / xdg-decoration**: the Wayland protocols for application windows (toplevels, popups) and for negotiating who draws the frame.
 - **zboot**: the EFI wrapper around a compressed arm64 kernel that newer Ubuntu kernels ship as `vmlinuz`.
