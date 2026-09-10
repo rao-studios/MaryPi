@@ -29,8 +29,13 @@ TTYReset=yes
 TTYVHangup=yes
 TTYVTDisallocate=yes
 StandardInput=tty-fail
-StandardOutput=journal+console
-StandardError=journal+console
+# journal only: the console is a virtio serial port the host drains, and every
+# wlr_log line was a blocking write to it — a frame-hitch source. journalctl -u
+# maryos-desktop still has everything.
+StandardOutput=journal
+StandardError=journal
+# The compositor is the session; it should not queue behind background units.
+Nice=-5
 UtmpIdentifier=tty1
 UtmpMode=user
 Environment=XDG_SESSION_TYPE=wayland
