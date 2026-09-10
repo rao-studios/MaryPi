@@ -22,6 +22,9 @@ libgbm1
 libegl1
 libgles2
 libgl1-mesa-dri
+# The molten wallpaper renders through a surfaceless EGL context: on the Pi
+# that is v3d, in the VM it is llvmpipe. Both arrive through mesa's EGL driver.
+libegl-mesa0
 # The desktop runs as a logind session started by a systemd unit (PAMName=);
 # libseat activates that session through logind, which asks polkit.
 libpam-systemd

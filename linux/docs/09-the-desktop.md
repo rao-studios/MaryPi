@@ -43,9 +43,9 @@ The kit imports MaryUI in two ways, resolved by one rule everywhere (`build.sh`,
 | `$MARYUI_DIR/linux` (a sibling checkout) | `MARYUI_DIR` is set | live edits: `MARYUI_DIR=~/repos/MaryUI make ui`; `run-in-docker.sh` mounts it read-only at `/maryui` |
 
 `maryos doctor` reports which one is in use and whether `out/ui` is built;
-`maryos config` prints the MaryUI path and the built desktop's commit. Until
-MaryUI's `linux/` is pushed, the submodule is older than the sibling checkout,
-so `MARYUI_DIR` is the way to build.
+`maryos config` prints the MaryUI path and the built desktop's commit. The
+submodule carries MaryUI's `linux/` tree, so `make ui` works from a clean clone;
+`MARYUI_DIR` is for editing the design system and the distro together.
 
 ## The `ui` stage
 
@@ -55,11 +55,16 @@ so `MARYUI_DIR` is the way to build.
    has the wlroots, Wayland, Cairo, Pango and font development packages;
 2. `make test` — the C tests (`MARYUI_SKIP_TESTS=1` skips them);
 3. `make install DESTDIR=out/ui.tmp PREFIX=/usr`, `lp-render --all` into
-   `renders/` (PNGs of the brush, wallpaper, menu bar, a window, the Finder,
-   every Gallery tab, TextEdit, and Spotlight as the dock and with results, for
-   comparing with the web), and
+   `renders/` (PNGs of the brush, both wallpapers, menu bar, a window, the
+   Finder, every Gallery tab, TextEdit, and Spotlight as the dock and with
+   results, for comparing with the web), and
    `usr/share/maryui/maryui.env` with the MaryUI commit and build time;
-4. an atomic rename to `out/ui`.
+4. the two 1280×800 wallpapers copied out of `renders/` into
+   `usr/share/maryui/`. They are the only renders that ship: `lp_wallpaper`
+   looks there before rendering its own, and the molten one costs about 7.5
+   seconds under llvmpipe, so baking it here means neither a first boot nor a
+   dev-mode restart ever pays for it;
+5. an atomic rename to `out/ui`.
 
 `build.sh all` runs it once before the targets. The `target` stage then installs
 `packages/desktop.list`, copies `overlay-desktop/`, unpacks `out/ui` into the
@@ -80,9 +85,13 @@ out/ui/renders/*.png
 ## What the image carries
 
 - **`packages/desktop.list`**: `libwlroots12t64`, libseat, libinput, xkbcommon,
-  Wayland, pixman, Cairo, Pango, fontconfig, the DRM/GBM/GLES libraries for the
-  Pi's GPU, `libpam-systemd` and `polkitd` for the logind session, the fonts
-  (Inter, URW base35 for P052, JetBrains Mono) and `foot`, the terminal.
+  Wayland, pixman, Cairo, Pango, fontconfig, the DRM/GBM/EGL/GLES libraries
+  (`libegl-mesa0` among them: the molten wallpaper renders through a surfaceless
+  EGL context, v3d on a Pi and llvmpipe in the VM), `libpam-systemd` and
+  `polkitd` for the logind session, the fonts (Inter, URW base35 for P052,
+  JetBrains Mono) and `foot`, the terminal.
+- **`usr/share/maryui/`**: `README.md`, `PARITY.md`, `maryui.env` and the two
+  prerendered 1280×800 wallpapers.
 - **`overlay-desktop/usr/lib/maryos/desktop`**: the launcher. It sets
   `WLR_RENDERER=pixman` when the GPU is virtio (no 3D in Virtualization.framework),
   then either `exec`s `/usr/bin/maryui-desktop` or, when the kernel command line
@@ -255,8 +264,11 @@ brings the scene in step after every action.
 
 Motion is the web's engine, ported: one loop that steps every window's springs
 while any still moves and stops when settled. Drags feed a pointer tracker;
-velocity becomes the sheen position, the tilt, a jelly scale about the grab point
-and the traffic lights' slosh; zooming flies from the old rect (FLIP); closing
+velocity becomes the sheen position, the tilt, a jelly scale about the grab
+point, four independent corner radii, the lag of the brushed grain behind the
+frame, and the traffic lights' slosh — which is driven by shear, the velocity
+the liquid has not caught up with, so the surface stays banked through the
+middle of a drag and not only at its ends; zooming flies from the old rect (FLIP); closing
 scales to 0.96 and fades; shading crops the frame over 360 ms; menus fade and
 slide in. The compositor applies these as node positions, buffer scale and crop
 (`wlr_scene_buffer_set_dest_size`, `set_source_box`) and opacity, and paces
@@ -286,6 +298,18 @@ the mid-drag jelly, the zoom flight and the shade crop in this chapter's
 verification were captured. The compositor logs `libseat … Could not close
 device: Device not taken` when those virtual devices vanish; it is noise.
 
+## Settings and the wallpaper cache
+
+The View menu writes `$XDG_CONFIG_HOME/maryui/settings.conf` (accent, liquid
+merge, wallpaper mode, molten tone, reduced motion) — MaryPi ships no defaults
+for it, so an unwritten file means the compiled defaults, which mirror the web's
+`settings.ts`. The wallpaper is looked up in three places before it is rendered:
+`$MARYUI_DATA_DIR` (dev mode points this at `out/ui/usr/share/maryui` over
+virtiofs), then `/usr/share/maryui/`, then `$XDG_CACHE_HOME/maryui/`; a render
+that had to happen is written to the last of those. That is why the `ui` stage
+bakes `wallpaper-1280x800.png` and `molten-platinum-1280x800.png` into the tree:
+at the VM's scanout size both are already there, and nothing renders at boot.
+
 ## Limitations
 
 - Virtualization.framework gives a fixed 1280×800 scanout and no 3D, so the VM
@@ -294,15 +318,23 @@ device: Device not taken` when those virtual devices vanish; it is noise.
   (the title strip repaint is most of it), the worst frames — a full-size window
   repainted after a zoom — about 30 ms once, and an idle desktop handles no frames
   at all unless an ambient animation (the Gallery's indeterminate progress bar)
-  is on screen, which repaints its own rectangle at 30 Hz. The Pi uses GLES2 on
-  vc4/v3d (not yet booted).
+  is on screen, which repaints its own rectangle at 30 Hz. Those numbers predate
+  the liquid pass — the merge filter and the corner repaints have not been
+  measured against them yet. The Pi uses GLES2 on vc4/v3d (not yet booted).
+- The molten wallpaper renders through a *surfaceless EGL* context, which is
+  independent of the scene renderer: mesa serves it with llvmpipe in the VM and
+  with v3d on a Pi. A 1280×800 frame takes about 7.5 seconds under llvmpipe, so
+  the compositor refuses to animate it on a software renderer and shows the
+  still bake the `ui` stage shipped. The animated flow — `molten.flow` shader
+  seconds per second of window motion, then a full-resolution still after
+  `molten.settle-ms` — is written but has never run, because no Pi has booted.
 - No clipboard between host and guest, no Xwayland, one keyboard layout (`us`),
   no screen locking, no greeter: the desktop is the session.
 - Clients that insist on client-side decorations get a frame around their frame.
 - The jelly skew is computed but not applied (scene nodes translate and scale
-  only); the moving sheen repaints the title bar, not body surfaces; the
-  wallpaper's slow drift and the menu's backdrop blur are not ported; View ›
-  Raster Wallpaper is remembered but not yet rendered.
+  only); the moving sheen and the moving grain repaint the title bar, not body
+  surfaces; the procedural wallpaper's slow drift and the menu's backdrop blur
+  are not ported; View › Raster Wallpaper is remembered but not yet rendered.
 - A client window that closes vanishes at once; built-in windows fade out.
 - The Finder has no column view, no “Put Back” from the Trash, no icons on the
   wallpaper, and drags stay between built-in windows (no `wl_data_device`, so
@@ -389,3 +421,33 @@ Scripted input in this environment proved unreliable in two ways worth knowing:
 the first `lp-input` session after the compositor restarts is ignored (run a
 throwaway one first), and events can arrive tens of seconds after the tool exits,
 so a screenshot taken on a `mark` may still show the state before them.
+
+### September 9, 2026 — the liquid pass
+
+MaryUI's `linux/` tree caught up with the web's design pass (`liquid-platinum-linux-parity`,
+`cb862f4`) and the submodule was moved onto it, so `make ui` builds from a clean clone again —
+`==> maryui ready: … (cb862f43fce0)`, no `MARYUI_DIR` and no `-dirty`.
+
+Verified in the C library on the Mac: 124 tests pass (`test_radius` is new; `test_slosh` carries
+the two shear cases from `slosh.test.ts`), `make gen-check` and `make parity` are green, and
+`npm test` still passes its 70 on the web side. The refactor that moved `feSpecularLighting` out
+of the wallpaper and into `lp_specular_at` was checked by rendering the wallpaper before and
+after: the PNGs are byte-identical.
+
+Verified by rendering: the beads are 18px pale glass with a drop shadow and no platinum rim, the
+waterline sits where `liquid.fill-traffic` puts it, and hovering the group merges the three
+liquids into one lit ribbon while the beads themselves stay put — hovering the first light
+bridges only its neighbour, which is the `goo.attract` reach. Finder tiles and Spotlight dock
+tiles lost their raised plates.
+
+Verified in the VM (`./ui.sh --dev`, dev mode over virtiofs): the desktop starts on the new
+compositor, the wallpaper is the molten still and loads in 21 ms because the `ui` stage baked it
+(rendering it there would have taken about 7.5 seconds under llvmpipe), the title bars are 42px
+with the lights at their new pitch, and the Finder's folder icons are flat and accent-coloured.
+The VM process sat at 0.0% CPU while the desktop was idle, which is what the "an idle desktop
+schedules zero animation frames" rule requires of the new corner, grain and lag springs.
+
+Not verified, and worth knowing before trusting them: the animated molten flow (it is gated off
+on software renderers, so only a Pi can exercise it), the frame cost of the merge filter and the
+corner repaints during a drag against the 2 ms figure above, and the drag-driven slosh and corner
+deformation as seen on screen rather than in the unit tests.

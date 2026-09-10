@@ -192,7 +192,7 @@ Layout:
 ```
 distro/                the MaryOS definition (see above)
 builder/               Dockerfile, run-in-docker.sh, build.sh, lib/{common,chroot,rootfs,ui,target,image}.sh, unzboot.py, tests/
-maryui/                MaryUI (git submodule): web/ is the design system, linux/ the C library + compositor the ui stage builds
+maryui/                MaryUI (git submodule): web/ is the design system, linux/ the C library + compositor the ui stage builds (pinned to a commit that carries both)
 Sources/MaryOSKit      Distro (config, paths), Build (runner, artifacts), VM (spec, configuration, runner,
                        controller, window), Disks, Flash, Shell, Model, Orchestration (doctor, coordinator)
 Sources/maryos         the CLI (swift-argument-parser); synchronous commands that pump the main run loop

@@ -19,7 +19,8 @@
 - **libmaryui / maryui-desktop**: the design system as a C library, and the compositor built on it; both come from MaryUI's `linux/` directory.
 - **libseat / logind session**: how a compositor gets the GPU and input devices without root: `systemd-logind` hands them to the session on the seat; `polkitd` must be present for the activation call.
 - **Liquid Platinum**: MaryUI's design system — brushed metal, liquid traffic lights, springs — defined by `tokens.json`; also the codename of MaryOS 0.0 (`DISTRO_CODENAME=liquid-platinum`, shown as "Liquid Platinum" in `/etc/os-release`).
-- **MaryUI**: the sibling repository with the design system: `web/` (React, the reference) and `linux/` (C); imported as the `linux/maryui` submodule or through `MARYUI_DIR`.
+- **MaryUI**: the sibling repository with the design system: `web/` (React, the reference) and `linux/` (C); imported as the `linux/maryui` submodule, or through `MARYUI_DIR` when editing both repositories together.
+- **molten wallpaper**: the desktop's default background — a domain-warped height field lit by two lights, the same GLSL as the web's, rendered through an offscreen EGL/GLES2 context and read back into a Cairo surface. Baked once at build time; only animated on real GPU hardware.
 - **MBR**: the classic partition table; what the Pi firmware and the builder use.
 - **minbase**: `debootstrap`'s smallest variant (essential packages plus apt).
 - **netplan**: Ubuntu's network configuration front end; MaryOS renders it with `systemd-networkd`.

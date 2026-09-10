@@ -26,6 +26,14 @@ ui_build() {
     rm -rf "$out.tmp"
     make -C "$src" O="$build" DESTDIR="$out.tmp" PREFIX=/usr install > /dev/null
     "$build/lp-render" --all "$out.tmp/renders"
+    # The renders are previews and do not ship — except the wallpapers at the
+    # VM's scanout size, which are what lp_wallpaper looks for before rendering
+    # its own. The molten one costs ~7s under llvmpipe, so baking it here means
+    # neither a first boot nor a dev-mode restart ever pays for it.
+    for wp in wallpaper-1280x800 molten-platinum-1280x800; do
+        [ -f "$out.tmp/renders/$wp.png" ] || continue
+        install -D -m 0644 "$out.tmp/renders/$wp.png" "$out.tmp/usr/share/maryui/$wp.png"
+    done
     printf 'MARYUI_GIT_SHA=%s\nSOURCE=%s\nBUILT=%s\n' "${MARYUI_GIT_SHA:-unknown}" "$src" "$(utc_now)" > "$out.tmp/usr/share/maryui/maryui.env"
     # One rename: a VM in dev mode watches this tree over virtiofs and must
     # never see it half-copied.
@@ -40,7 +48,7 @@ ui_install() {
     root=$1
     [ -x "$OUT_DIR/ui/usr/bin/maryui-desktop" ] || die "no compiled desktop in $OUT_DIR/ui (run: build.sh ui)"
     log "maryui: installing $(sed -n 's/^MARYUI_GIT_SHA=//p' "$OUT_DIR/ui/usr/share/maryui/maryui.env")"
-    tar -C "$OUT_DIR/ui" --owner=0 --group=0 --numeric-owner --exclude=./renders -cf - . | tar -C "$root" -xf -
+    tar -C "$OUT_DIR/ui" --owner=0 --group=0 --numeric-owner --exclude=./renders --exclude=.DS_Store -cf - . | tar -C "$root" -xf -
     chroot_sh "$root" ldconfig
 }
 
