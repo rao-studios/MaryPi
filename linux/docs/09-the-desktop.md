@@ -167,13 +167,16 @@ seconds while frames run.
 
 `Ctrl+Space` (or `Super+Space`) opens Spotlight: a platinum panel centred on the
 desktop, its pill-shaped search bar reading “Say “Hey Mary” or type something…”.
-The bar is also the dock. With nothing typed, a row of tiles below it shows every
-application — Finder, Gallery, About, TextEdit, Terminal — with a dot under the
-ones that have a window open. Typing filters: titles that start with the text
-rank first, then words that start with it, then anything containing it; open
-windows are listed too (“Window · Finder”), eight results at most. `↑`/`↓` move
-the selection (and `←`/`→` in the dock), `Enter` launches — an app opens, a
-window comes forward, Terminal spawns `foot` — `Esc` or a click outside closes.
+The bar is also the dock. With nothing typed, a row of tiles below it shows the
+pinned applications — each `lp_app` with `dock` set: Finder and TextEdit today,
+plus Terminal — with a dot under the ones that have a window open. Every other
+app (Gallery, About, and the system apps as they arrive) is one keystroke away:
+typing ranks all of them — titles that start with the text first, then words that
+start with it, then anything containing it; open windows are listed too
+(“Window · Finder”), eight results at most. `↑`/`↓` move the selection (and `←`/`→`
+in the dock), `Enter` launches — an app opens, a window comes forward, Terminal
+spawns `foot` until the native Terminal app is registered and then opens that —
+`Esc` or a click outside closes.
 While it is up, the window shortcuts stand down and clients receive no keys.
 
 It lives in its own scene layer above the menus (`z.spotlight`), appears with the
