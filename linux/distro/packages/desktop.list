@@ -35,3 +35,28 @@ fonts-urw-base35
 fonts-jetbrains-mono
 # A Wayland terminal, opened from File > New Terminal.
 foot
+# The system apps (MaryUI/linux src/apps): the libraries libmaryui links for
+# them, and what they need at run time. The builder image carries the -dev
+# packages; a library listed here must match one there, or the desktop will
+# not start on an image that lacks it.
+# Terminal: libvterm's screen model.
+libvterm0
+# Preview: pictures through gdk-pixbuf (SVG through librsvg's loader), PDFs through poppler.
+libgdk-pixbuf-2.0-0
+librsvg2-common
+libpoppler-glib8t64
+# Calendar: .ics files through libical.
+libical3t64
+# System Settings and Disk Utility speak to system services over sd-bus; udisks2 mounts and ejects.
+libsystemd0
+udisks2
+# Media Player: GStreamer's playbin and the common codecs, played out through PipeWire.
+libgstreamer1.0-0
+libgstreamer-plugins-base1.0-0
+gstreamer1.0-plugins-base
+gstreamer1.0-plugins-good
+gstreamer1.0-libav
+gstreamer1.0-pipewire
+pipewire
+wireplumber
+rtkit

@@ -14,6 +14,9 @@ RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
         libxkbcommon-dev libinput-dev libpixman-1-dev libcairo2-dev libpango1.0-dev \
         libfontconfig1-dev libseat-dev libdrm-dev \
         libegl-dev libgles2-mesa-dev libgbm-dev \
+        libvterm-dev libgdk-pixbuf-2.0-dev librsvg2-dev libpoppler-glib-dev \
+        libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libical-dev libsystemd-dev \
+        gstreamer1.0-plugins-base gstreamer1.0-plugins-good librsvg2-common \
         libgl1-mesa-dri libegl-mesa0 \
         fonts-inter fonts-urw-base35 fonts-jetbrains-mono \
     && rm -rf /var/lib/apt/lists/*
