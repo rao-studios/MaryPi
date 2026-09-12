@@ -33,14 +33,15 @@ cd linux
 ./vm.sh                         # one command: build the CLI, build the VM image if missing, boot it in a window
 ./vm.sh --console               # same, with this terminal on the serial console (Ctrl-] stops the VM)
 ./vm.sh stop                    # ask the guest to shut down
-./ui.sh                         # the same image, booted to the Liquid Platinum desktop (builds out/ui if missing); Ctrl+Space opens Spotlight
-./ui.sh --dev                   # desktop from out/ui over virtiofs, restarted whenever `make ui` replaces it
+./ui.sh                         # compile the desktop, then boot it (from out/ui over virtiofs, restarted on every rebuild); Ctrl+Space opens Spotlight
+./ui.sh                         # again while it runs: recompile, and the running VM restarts the desktop on the new build
+./ui.sh --image                 # the desktop embedded in the image instead (--rebuild re-embeds the fresh one)
 
 make build                      # swift build, then scripts/sign.sh on the binaries
 make cli ARGS=doctor            # tools, kit, Docker, Virtualization, entitlement, built images
 make image TARGET=vm            # builder/build.sh all vm -> out/maryos-0.0-vm.img + out/vm/
 make ui                         # builder/build.sh ui: compile + test MaryUI/linux -> out/ui (MARYUI_DIR=… for a sibling checkout)
-make desktop / make ui-dev      # ui.sh / ui.sh --dev
+make desktop / make ui-dev      # both ui.sh
 make vm                         # vm.sh; log in as mary (password in distro.conf)
 make image TARGET=pi5           # out/maryos-0.0-pi5.img
 make cli ARGS=list              # removable disks the flasher is willing to erase
@@ -200,7 +201,7 @@ Sources/MaryOSApp      the SwiftUI app (product MaryOSApp; bundled as MaryOS.app
 Tests/MaryOSKitTests   unit tests and diskutil fixtures
 scripts/               sign.sh, bundle.sh
 vm.sh                  one command to build what is missing and boot the VM
-ui.sh                  the same, booted to the desktop (--dev for the live-reload loop)
+ui.sh                  compile the desktop and boot to it, live-reloading on each rebuild (--image for the embedded one)
 docs/                  the MaryOS journey
 out/ cache/ work/ state/   build output, caches, VM state (gitignored)
 ```

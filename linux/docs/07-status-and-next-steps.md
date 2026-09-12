@@ -22,7 +22,7 @@ built and inspected but has not yet been booted on a board.
 | App | `MaryOS.app` builds, is signed with the entitlement, and bundles the kit so it runs outside a checkout |
 | Desktop | `./ui.sh` boots the same image to the Liquid Platinum desktop in about a second after `graphical.target`: the molten wallpaper, the ambient clock (View › Show Clock hides it), Finder and Gallery, lit metal object icons, 42px title bars with glass-bead traffic lights, window drag with the jelly and the liquid corners, eight-handle resize, shade, zoom with the flight, close, `foot` as a decorated Wayland client with keyboard focus; an idle desktop handles no frames (chapter 9) |
 | Spotlight and TextEdit | `Ctrl+Space` opens the search bar that is also the dock, with the frontmost app's File / Edit / View / Window / Help as pills under it (there is no menu bar); typing filters apps and open windows, `Enter` launches. TextEdit, the first application, is reached from it alone and saves to `~/Documents/<name>.txt`; with it the compositor gained key repeat for its own controls and an I-beam cursor |
-| Dev loop | `make ui` rebuilds and tests the desktop in about 20 s incrementally (`MARYUI_DIR=…` to build a sibling checkout instead of the submodule); a VM booted with `./ui.sh --dev` restarts it within three seconds |
+| Dev loop | `make ui` rebuilds and tests the desktop in about 20 s incrementally (`MARYUI_DIR=…` to build a sibling checkout instead of the submodule); `./ui.sh` compiles on every run and boots that build, and a VM it booted restarts the desktop within three seconds of each rebuild |
 
 ## What is still plain Ubuntu
 

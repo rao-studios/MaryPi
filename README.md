@@ -26,7 +26,7 @@ swift run marypi vm run                 # build an image and boot it in a QEMU w
 # MaryOS kit (Docker Desktop for the image build, Xcode for the VM and the flasher)
 cd linux
 ./vm.sh                                 # build what is missing, then boot MaryOS in a Virtualization.framework window
-./ui.sh                                 # the same image booted to the Liquid Platinum desktop (MaryUI, compiled by the builder's ui stage)
+./ui.sh                                 # compile the Liquid Platinum desktop (MaryUI) and boot the VM to it; run again to rebuild into the running VM
 make image TARGET=vm                    # just the image: rootfs from Ubuntu's archive + MaryOS -> out/maryos-0.0-vm.img
 make image TARGET=pi5                   # the Raspberry Pi 5 image
 make flash DISK=disk4                   # erase disk4 and write it (asks first)

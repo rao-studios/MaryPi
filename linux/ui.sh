@@ -2,13 +2,16 @@
 # Boot MaryOS's desktop (Liquid Platinum, maryui-desktop) in a Virtualization.framework
 # window with one command. vm.sh boots the same image to a login prompt.
 #
-#   linux/ui.sh                  build the CLI, the desktop (make ui) and the VM image if missing, boot to the desktop
-#   linux/ui.sh --dev            dev loop: the guest runs out/ui over virtiofs and restarts it when `make ui` replaces it
-#   linux/ui.sh --rebuild-ui     recompile the desktop (maryos build --stage ui) first
-#   linux/ui.sh --rebuild        rebuild the image (which embeds the desktop) first, then boot from a fresh disk
+#   linux/ui.sh                  compile the desktop (make ui), build the VM image if missing, boot the fresh desktop
+#   linux/ui.sh --no-build       boot without compiling, running whatever out/ui already holds
+#   linux/ui.sh --image          boot the desktop embedded in the image instead of out/ui (no live reload)
+#   linux/ui.sh --rebuild        rebuild the image (embedding the fresh desktop) and boot it from a fresh disk
 #   linux/ui.sh stop|status|serial|reset
 #
-# Any other option goes to `maryos vm run --desktop` (see `maryos vm run --help`).
+# Every run compiles first, so what boots is what MaryUI holds now. The desktop runs from
+# out/ui over virtiofs and restarts whenever `make ui` replaces it; with a VM already
+# running, ui.sh only compiles and that VM picks the new build up. --dev and --rebuild-ui
+# are still accepted and are the default. Any other option goes to `maryos vm run --desktop`.
 # MARYUI_DIR=/path/to/MaryUI compiles that checkout instead of the submodule.
 set -eu
 cd "$(dirname "$0")"
@@ -16,7 +19,7 @@ SWIFT=${SWIFT:-swift}
 CLI=.build/debug/maryos
 UI=out/ui/usr/bin/maryui-desktop
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 case ${1:-} in
     -h|--help|help) usage 0 ;;
 esac
@@ -34,8 +37,8 @@ esac
 
 # Take our own flags out of the arguments, keep everything else for `vm run`.
 REBUILD=0
-REBUILD_UI=0
-DEV=0
+BUILD=1
+IMAGE=0
 n=$#
 i=0
 while [ "$i" -lt "$n" ]; do
@@ -43,26 +46,52 @@ while [ "$i" -lt "$n" ]; do
     shift
     i=$((i + 1))
     case $a in
-        --rebuild) REBUILD=1 ;;
-        --rebuild-ui) REBUILD_UI=1 ;;
-        --dev) DEV=1 ;;
+        --rebuild) REBUILD=1; IMAGE=1 ;;
+        --no-build) BUILD=0 ;;
+        --image) IMAGE=1 ;;
+        --dev|--rebuild-ui) ;;
         *) set -- "$@" "$a" ;;
     esac
 done
 
-if [ "$REBUILD_UI" = 1 ] || [ ! -x "$UI" ]; then
-    echo "ui.sh: compiling the desktop from MaryUI (Docker Desktop must be running)" >&2
+# Docker Desktop is often not running; start it rather than fail the build.
+need_docker() {
+    docker info > /dev/null 2>&1 && return 0
+    echo "ui.sh: starting Docker Desktop" >&2
+    open -a Docker 2> /dev/null || { echo "ui.sh: Docker Desktop is not installed" >&2; exit 1; }
+    tries=0
+    until docker info > /dev/null 2>&1; do
+        tries=$((tries + 1))
+        [ "$tries" -le 90 ] || { echo "ui.sh: Docker did not come up; start it and retry" >&2; exit 1; }
+        sleep 2
+    done
+}
+
+running=0
+"$CLI" vm status 2> /dev/null | grep -q '^status: *running' && running=1
+
+if [ "$BUILD" = 1 ] || [ ! -x "$UI" ]; then
+    need_docker
+    echo "ui.sh: compiling the desktop from MaryUI" >&2
     "$CLI" build --stage ui
 fi
+
+if [ "$running" = 1 ]; then
+    echo "ui.sh: a VM is already running; one booted by ui.sh restarts the desktop on the new build within a few seconds" >&2
+    echo "ui.sh: (a VM booted with --image keeps its embedded desktop: ./ui.sh stop, then ./ui.sh)" >&2
+    exit 0
+fi
+
 if [ "$REBUILD" = 1 ] || "$CLI" config | grep -q '^vm: *not built'; then
-    echo "ui.sh: building the VM image from source (Docker Desktop must be running)" >&2
+    need_docker
+    echo "ui.sh: building the VM image from source" >&2
     "$CLI" build --target vm
-elif [ "$DEV" = 0 ] && [ -n "$(find "$UI" -newer out/vm/boot.json 2>/dev/null)" ]; then
-    echo "ui.sh: note: $UI is newer than the image; use --dev to run it, or --rebuild to embed it" >&2
+elif [ "$IMAGE" = 1 ] && [ -n "$(find "$UI" -newer out/vm/boot.json 2>/dev/null)" ]; then
+    echo "ui.sh: note: $UI is newer than the image; drop --image to run it, or --rebuild to embed it" >&2
 fi
 # A rebuilt image needs a fresh disk, or the VM keeps booting the old one.
 [ "$REBUILD" = 1 ] && set -- --fresh "$@"
-if [ "$DEV" = 1 ]; then
-    exec "$CLI" vm run --desktop --dev "$@"
+if [ "$IMAGE" = 1 ]; then
+    exec "$CLI" vm run --desktop "$@"
 fi
-exec "$CLI" vm run --desktop "$@"
+exec "$CLI" vm run --desktop --dev "$@"

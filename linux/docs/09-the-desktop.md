@@ -130,13 +130,17 @@ what libseat needs to take the GPU and input devices without root;
 | Command | Kernel arguments added | Result |
 |---|---|---|
 | `./vm.sh` (`maryos vm run`) | — | `multi-user.target`: login prompt on `tty1` and `hvc0` |
-| `./ui.sh` (`maryos vm run --desktop`) | `systemd.unit=graphical.target` | the desktop on `tty1`, the login prompt still on `hvc0` |
-| `./ui.sh --dev` (`--desktop --dev`) | `… maryos.ui=dev` | the desktop from `out/ui` over virtiofs, restarted on change |
+| `./ui.sh` (`maryos vm run --desktop --dev`) | `systemd.unit=graphical.target maryos.ui=dev` | the desktop from `out/ui` over virtiofs, restarted on change; the login prompt still on `hvc0` |
+| `./ui.sh --image` (`--desktop`) | `systemd.unit=graphical.target` | the desktop embedded in the image, on `tty1` |
 
-`ui.sh` builds `out/ui` when it is missing (`maryos build --stage ui`), and its
-`--rebuild-ui` / `--rebuild` flags rebuild the desktop or the image first
-(`--rebuild` implies `--fresh`, so the VM does not reuse a disk older than the
-image). On the Pi, `cmdline.txt` ends with `systemd.unit=graphical.target`, so a
+`ui.sh` compiles the desktop on every run (`maryos build --stage ui`, about ten
+seconds when nothing changed, starting Docker Desktop if it is not up) and stops
+if that fails, so it never boots a stale desktop. With a VM already running it
+only compiles, and the running VM restarts its desktop on the new build.
+`--no-build` skips the compile; `--rebuild` rebuilds the image around the fresh
+desktop and boots it (`--rebuild` implies `--image` and `--fresh`, so the VM does
+not reuse a disk older than the image). `--dev` and `--rebuild-ui` are accepted
+and are now the default. On the Pi, `cmdline.txt` ends with `systemd.unit=graphical.target`, so a
 card boots to the desktop. The Swift side models this as `VMBootMode`
 (`console`, `desktop(dev:)`) and appends the arguments to `boot.json`'s command
 line.
@@ -145,14 +149,14 @@ line.
 
 ```sh
 cd linux
-./ui.sh --dev                                      # boot to the desktop, running out/ui
+./ui.sh                                            # compile, then boot to the desktop, running out/ui
 # edit C in MaryUI/linux (or tokens in MaryUI/web, then `npm run tokens` there)
-MARYUI_DIR=~/repos/MaryUI make ui                  # rebuild + tests + install to out/ui, ~20 s incremental
+MARYUI_DIR=~/repos/MaryUI ./ui.sh                  # recompile; the running VM picks it up (or: make ui)
 # within three seconds the launcher logs "binary changed; restarting" and the new desktop is up
 ```
 
-`make ui-dev` is the same as `./ui.sh --dev`; `make desktop` boots without dev
-mode. `journalctl -u maryos-desktop -b` in the guest (over `hvc0` or ssh) has the
+`make desktop` and `make ui-dev` both run `./ui.sh`; `./ui.sh --image` boots the
+desktop the image carries instead. `journalctl -u maryos-desktop -b` in the guest (over `hvc0` or ssh) has the
 compositor's log: the output mode, the renderer, `xdg: foot mapped as w3`, and
 with `MARYUI_DEBUG=frames` in the service environment (`systemctl set-environment
 MARYUI_DEBUG=frames; systemctl restart maryos-desktop`) the motion engine's
