@@ -2,8 +2,12 @@
 
 MaryOS boots to a login prompt (`vm.sh`) or to a desktop (`ui.sh`) from the same
 image. The desktop is `maryui-desktop`, a Wayland compositor built on wlroots
-that draws the whole screen itself — wallpaper, menu bar, window frames, menus,
-Spotlight, and five built-in apps — from the Liquid Platinum design system. This chapter
+that draws the whole screen itself — wallpaper, an ambient clock, window frames,
+Spotlight with the app commands as pills, the Finder's context menu, and five
+built-in apps — from the Liquid Platinum design system. There is no menu bar:
+File / Edit / View / Window / Help ride inside Spotlight. Icons are lit metal
+objects (a key light, a rim, the brushed grain, one contact shadow) above 19px
+and plain glyphs at or below it. This chapter
 explains where that code lives, how the builder compiles it, how the image
 starts it, and how to change it.
 
@@ -55,7 +59,7 @@ submodule carries MaryUI's `linux/` tree, so `make ui` works from a clean clone;
    has the wlroots, Wayland, Cairo, Pango and font development packages;
 2. `make test` — the C tests (`MARYUI_SKIP_TESTS=1` skips them);
 3. `make install DESTDIR=out/ui.tmp PREFIX=/usr`, `lp-render --all` into
-   `renders/` (PNGs of the brush, both wallpapers, menu bar, a window, the
+   `renders/` (PNGs of the brush, both wallpapers, the clock, a window, the
    Finder, every Gallery tab, TextEdit, and Spotlight as the dock and with
    results, for comparing with the web), and
    `usr/share/maryui/maryui.env` with the MaryUI commit and build time;
@@ -252,7 +256,7 @@ and the pointer shows an I-beam over text.
 
 ## Inside the compositor
 
-Five scene layers: wallpaper, windows, menu bar, menus, Spotlight. Everything the library
+Five scene layers: wallpaper, windows, the clock, menus, Spotlight. Everything the library
 paints is a *chrome*: a Cairo buffer wrapped as a `wlr_buffer` and shown as a
 `wlr_scene_buffer`; three rotate so the renderer never reads a buffer being
 painted. A chrome's paint function runs an EVENT pass on input (no Cairo; hit
@@ -300,10 +304,12 @@ device: Device not taken` when those virtual devices vanish; it is noise.
 
 ## Settings and the wallpaper cache
 
-The View menu writes `$XDG_CONFIG_HOME/maryui/settings.conf` (accent, liquid
-merge, wallpaper mode, molten tone, reduced motion) — MaryPi ships no defaults
-for it, so an unwritten file means the compiled defaults, which mirror the web's
-`settings.ts`. The wallpaper is looked up in three places before it is rendered:
+Spotlight's View pill writes `$XDG_CONFIG_HOME/maryui/settings.conf` (accent,
+folders, liquid merge, wallpaper mode, molten tone, reduced motion, clock) —
+MaryPi ships no defaults for it, so an unwritten file means the compiled
+defaults, which mirror the web's `settings.ts`. `clock` is the one key the web
+does not have: View › Show Clock writes `clock=off` and the time leaves the
+corner; it is on by default, and a file without the key keeps it on. The wallpaper is looked up in three places before it is rendered:
 `$MARYUI_DATA_DIR` (dev mode points this at `out/ui/usr/share/maryui` over
 virtiofs), then `/usr/share/maryui/`, then `$XDG_CACHE_HOME/maryui/`; a render
 that had to happen is written to the last of those. That is why the `ui` stage
@@ -342,7 +348,10 @@ at the VM's scanout size both are already there, and nothing renders at boot.
 
 ## Troubleshooting
 
-**The window stays platinum with no menu bar, or black** — `journalctl -u
+**No clock in the corner** — check `clock=` in `~/.config/maryui/settings.conf`
+first; View › Show Clock brings it back.
+
+**The window stays platinum with no windows, or black** — `journalctl -u
 maryos-desktop -b`. `[libseat] … Permission denied` on `Activate` means
 `polkitd` is missing; `no renderer` means the pixman fallback did not engage
 (`WLR_RENDERER=pixman` is set by the launcher only for virtio-gpu).
@@ -367,6 +376,14 @@ the desktop hook runs `fc-cache -f`.
 stop maryos-desktop` gives `tty1` back to a getty.
 
 ## Verified
+
+On September 12, 2026, with MaryUI at 00264b1 in the `--dev` loop: a guest with
+no `settings.conf` shows the ambient clock top right; `clock=off` in
+`~/.config/maryui/settings.conf` and a restart of `maryos-desktop` bring the
+desktop back with the corner empty; `clock=on` and another restart bring the
+clock back with the current time. Toggling View › Show Clock live, which disables
+the node without a restart, is covered by `test_desktop` and was not driven in the
+VM. The notes below predate the menu bar's removal.
 
 On September 8, 2026, in the Virtualization.framework test bed: the desktop boots
 in about a second after `graphical.target`; the wallpaper, menu bar and clock;
