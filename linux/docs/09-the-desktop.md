@@ -290,6 +290,22 @@ number or a clear. Every key has a keyboard twin (digits, `+ - * x /`, `=` or
 numbers through the desktop's text clipboard. `lp-render --calculator` paints it
 mid-sum.
 
+**Preview** (pinned; the Finder opens every picture and PDF in it) shows one
+document per window, fitted to the window without ever enlarging it, on a grey
+desk under a toolbar — previous/next document, page up/down for a PDF, zoom
+out/in, fit, rotate — and over a status bar with the name, the size in px or pt,
+and the scale. Pictures decode through gdk-pixbuf (SVG through librsvg's loader,
+EXIF orientation applied, anything beyond 8192px decoded smaller); PDFs render
+through poppler-glib; a build without gdk-pixbuf still opens PNGs through Cairo
+and says so for anything else. A page is drawn from a cache made at its exact
+on-screen size, so a repaint copies pixels rather than resampling them and a
+quarter turn is exact; zoomed past 4096² it is rendered straight through the
+viewport instead of cached whole. Keys: `←`/`→` through the folder's pictures and
+PDFs (wrapping, hidden files skipped), `Page Up`/`Page Down` or `Space` through
+pages, ⌘0 actual size, ⌘9 fit, ⌘+ / ⌘− (and ⌘ with the wheel) through fixed steps
+from ⅛ to 16× about the centre, ⌘L / ⌘R to turn. View, Go and File carry the same
+commands. `lp-render --preview` shows the procedural wallpaper as a picture.
+
 ## Inside the compositor
 
 Five scene layers: wallpaper, windows, the clock, menus, Spotlight. Everything the library
