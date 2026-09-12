@@ -93,7 +93,7 @@ out/ui/renders/*.png
   (`libegl-mesa0` among them: the molten wallpaper renders through a surfaceless
   EGL context, v3d on a Pi and llvmpipe in the VM), `libpam-systemd` and
   `polkitd` for the logind session, the fonts (Inter, URW base35 for P052,
-  JetBrains Mono) and `foot`, the terminal.
+  JetBrains Mono) and `foot`, a Wayland terminal kept to test clients with (Terminal is built in).
 - **`usr/share/maryui/`**: `README.md`, `PARITY.md`, `maryui.env` and the two
   prerendered 1280×800 wallpapers.
 - **`overlay-desktop/usr/lib/maryos/desktop`**: the launcher. It sets
@@ -305,6 +305,22 @@ PDFs (wrapping, hidden files skipped), `Page Up`/`Page Down` or `Space` through
 pages, ⌘0 actual size, ⌘9 fit, ⌘+ / ⌘− (and ⌘ with the wheel) through fixed steps
 from ⅛ to 16× about the centre, ⌘L / ⌘R to turn. View, Go and File carry the same
 commands. `lp-render --preview` shows the procedural wallpaper as a picture.
+
+**Terminal** (pinned; File › New Terminal and ⌘T open another) replaces `foot`
+as the desktop's terminal, drawn on the platinum well in the mono font. It runs
+your login shell on a pseudo-terminal (`lp_pty`, `TERM=xterm-256color`) that the
+compositor watches through `lp_desktop_add_fd`, and keeps the screen in libvterm
+(`lp_term`): a 2000-line scrollback under the wheel (a full-screen program gets
+arrow keys instead), rewrapping when the window resizes, bracketed paste, and a
+sixteen-colour palette darkened so "white" still reads on a light ground. A
+program's title names the window; failing that, the job in front does (`vim`),
+and closing the window hangs the shell up. It is the one app whose Ctrl chords
+are its own (`lp_app.raw_ctrl`): Ctrl+W erases a word, Ctrl+C interrupts, and
+only Super reaches the desktop's shortcuts while it is in front — ⌘W closes, ⌘T
+opens another, ⌘C / ⌘V (or Ctrl+Shift+C / V) copy the selection and paste, ⌘K
+clears the scrollback. `foot` stays in the image as a Wayland client to test the
+compositor with, and is what File › New Terminal falls back to on a host that
+registers no terminal. `lp-render --terminal` paints a short sample session.
 
 ## Inside the compositor
 
