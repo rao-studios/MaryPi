@@ -261,6 +261,35 @@ Wayland clients yet), the wheel to scroll. Two compositor gaps closed with it:
 keys a chrome consumes now repeat while held (clients always repeated their own),
 and the pointer shows an I-beam over text.
 
+## The system apps
+
+Linux grows applications the web design preview never will; each is a built-in
+`lp_app` in MaryUI (`src/apps/<name>.c`) over a model with its own tests
+(`src/core/lp_<name>.c`), recorded as PARITY D15. Only some are pinned to the
+dock; the rest are one Spotlight query away.
+
+The plumbing they share is in the desktop model. An app can ask for **event
+sources** — `lp_desktop_add_fd` for a pty or an eventfd, `lp_desktop_add_timer`
+for a refresh tick — which the compositor backs with its `wl_event_loop`
+(`src/compositor/sources.c`) and the tests with a `poll` loop, and which
+`lp-render` does not offer, so every app draws without them. **Files route by
+kind**: a picture or a PDF opens in Preview and audio or video in the Media
+Player once those are registered, and none of them ever falls through to
+TextEdit. The libraries the apps build on — vterm, gdk-pixbuf, poppler-glib,
+GStreamer, libical, libsystemd — are each optional in MaryUI's Makefile, so the
+library still builds on a Mac; the builder image has all of them, and
+`distro/packages/desktop.list` carries their runtime halves.
+
+**Calculator** (Spotlight: “calc”) is a fixed 300×420 window: a display well
+with the expression above the value, and a keypad of platinum buttons — memory
+row, AC/C, ±, %, the four operators and an accent `=`. Precedence is honoured
+(2 + 3 × 4 = 14), `%` is a percentage of what it is added to (50 + 10 % = 55),
+`=` repeats the last operation, and a division by zero reads `Error` until a
+number or a clear. Every key has a keyboard twin (digits, `+ - * x /`, `=` or
+`Return`, `%`, `Backspace`, `Esc`), and Edit › Copy / Paste (⌘C / ⌘V) move plain
+numbers through the desktop's text clipboard. `lp-render --calculator` paints it
+mid-sum.
+
 ## Inside the compositor
 
 Five scene layers: wallpaper, windows, the clock, menus, Spotlight. Everything the library
