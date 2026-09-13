@@ -7,7 +7,8 @@
  *                   skill.result{…}, world{places, focus, activity?}, selection{…}, selection.clear{applicationID},
  *                   app.state.result{…} (ambient/wire.h); maryctl adds skills.list, skill.call{app, skill, args},
  *                   app.state{app}, ambient.state, trace.list, trace.report, triage{text}, abilities.list;
- *                   the desktop answers a confirmation card with skill.confirm.reply{call_id, yes}
+ *                   the desktop answers a confirmation card with skill.confirm.reply{call_id, yes};
+ *                   config{voice_engine, skill_engine, recall{…}} (Settings › Mary › Engines and Recall), calls.list{limit}
  * maryd → clients   hello{state, key_present, wake, voice, tail}, wake, state{state}, level{rms},
  *                   transcript{text, final, source?}, reply.delta{text}, reply.end{cancelled, contribution, retrieved},
  *                   key.status{…}, error{stage, message}, skill.invoke{…} and world.request and app.state{…} (desktop only),

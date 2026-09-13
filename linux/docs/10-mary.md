@@ -1,4 +1,4 @@
-# 10. Mary: the voice, the Spotlight conversation and skills
+# 10. Mary: the voice, the Spotlight conversation and her abilities
 
 MaryOS exists to run Mary. On macOS she is a Swift app beside five sibling repositories; on MaryOS each of
 those, and each of Mary's own targets, is a C package in `mary/` (its [README](../mary/README.md) and
@@ -43,8 +43,10 @@ and how she is allowed to use the apps.
   Thread: it reconciles the home with threadd at start and every six hours (`journalctl --user -u indexd`
   reports `reconcile: N seen, 0 missing, 0 stale, 0 orphaned` when they agree) and watches the home so a
   save, a rename or a deletion reaches the graph within a second. `indexd --once` reconciles on demand.
-- **The desktop** carries the client (`lp_mary`), Spotlight's conversation and the skills. It reconnects to
-  maryd by itself whenever maryd comes back.
+- **The desktop** carries the client (`lp_mary`), Spotlight's conversation, the skills, and the three panes
+  that make Mary inspectable: **Threads** (the drive's memory, [chapter 11](11-the-thread.md)), **Ambient**
+  (the world and every turn's route) and **Abilities** (what each app lets her do). It reconnects to maryd by
+  itself whenever maryd comes back.
 
 `hooks/desktop/64-mary.sh` creates the two system users (`usr/lib/sysusers.d/mary.conf`), puts the desktop
 user in `sewn` and `thread` so it can reach their sockets, and enables both services. The desktop user is
@@ -84,6 +86,28 @@ same turn runs and the answer is spoken too. Pressing the orb with the bar empty
 the wake word. Plain Enter still launches what the search found. [Chapter 9](09-the-desktop.md) describes the
 conversation's look.
 
+**Which lane.** Between the question and the answer maryd decides how the turn runs, the way the Mac's
+TurnTriage does. The desktop is asked for the world (the next section); the ambient engine routes the words
+(the intent, the place that leads, the memory plan); and one embedding of the words is scored against the
+skill index — every skill's title, summary and trigger words, embedded once through sewnd when the desktop
+published them. Then one of three things happens:
+
+- **A dispatch with no model.** One skill is a clear winner (cosine above 0.62, 0.04 over the runner-up),
+  its arguments are safe to fill from the words (none required, one spoken string, or one enum the sentence
+  names) and the sentence is a single clause: the skill runs through the desktop's pipes, its receipt is the
+  reply and is spoken, and the words are kept in the Thread as a routing habit. "Play the music" never
+  reaches Mistral's chat model.
+- **The skills lane** (the Mac's Lane B). The turn asks for a change, or a skill won but cannot dispatch on
+  its own: sewnd's `complete` runs with every skill as a tool, up to ten rounds, each call decided by the
+  desktop's policy and performed by the app itself. A call that needs confirmation is parked on a card in
+  Spotlight — the skill, the app, the sentence, **Allow** or **Not now** (Return and Esc; a bare "yes" or
+  "no" said to Mary answers it too). The lane's answer is spoken through sewnd's `speak`, and the skills it
+  ran sit under the reply as chips (a click opens Ambient › Runs).
+- **The voice** (Lane A): everything else — a question, a conversation — runs through `turn.start` with
+  retrieval, as described above.
+
+Only one lane runs per turn, where the Mac runs both and joins them (`mary/PORTING.md`, deviation 14).
+
 **Remembered.** Each turn, spoken or typed, finished or stopped, becomes a document in Thread's
 `conversation-<you>` group with the question, the answer and when it happened, and is embedded and folded
 into the knowledge graph as soon as sewnd has a key:
@@ -95,6 +119,10 @@ threadctl search --lane conversation what did I ask about Paris
 threadctl graph --entity Paris --documents
 threadctl stats
 ```
+
+Every turn that ran a skill also seals a **behaviour** record — the request, the ambient capture, every
+action and what came of it, in the Mac's `mary.behavior` codec — and an interaction stub that joins the turn
+to it; both live in the behavioral lane of the drive.
 
 ## The ambient world
 
@@ -136,24 +164,58 @@ maryctl voices                       # the same, through maryd
 maryctl sample fr_marie_happy        # one sentence through Mary's speaker, or why not
 ```
 
-## Skills: what Mary may do with each app
+## Abilities: what Mary may do with each app
 
 Mary never reads the screen or synthesises input on MaryOS. The apps are the desktop's own, so each declares
-its skills in code — an id, a title, a JSON Schema for the arguments, and whether it reads, acts or cannot be
-undone — and performs one through the same code its menus run. The first are System Settings' `open_pane`,
-the Media Player's `play_pause` and Calendar's `events_today`. System Settings › Mary has a group per app:
-whether Mary may use it, when she asks first (never, before changes, always) and a switch per skill, saved in
-`~/.config/maryui/skills.conf`. The desktop decides every call against that policy before anything runs.
+its skills in code — an id, a title, a JSON Schema for the arguments, whether it reads, acts or cannot be
+undone, and the Mac's schema words: how it is classed, when it may run, the tokens and phrases that call it,
+what it acts on, how an enum value is said — and performs one through the same code its menus run. TextEdit
+reads, inserts, replaces the selection and saves; the Finder opens and reveals; the Calculator calculates;
+Calendar reads the day; the Media Player plays and pauses; System Settings opens a pane; and the desktop
+itself lists, closes, shades and brings forward windows. maryd writes every skill into the Thread as an
+`ability` record (one per skill, a manifest per app, one per discipline) as soon as the desktop publishes
+them, so retrieval, the graph and the Abilities app see the same declaration.
+
+System Settings › Mary › Skills has a group per app: whether Mary may use it, when she asks first (never,
+before changes, always) and a switch per skill, saved in `~/.config/maryui/skills.conf`. The desktop decides
+every call against that policy before anything runs, whether it came from maryctl, the skills lane or a
+dispatch.
+
+The **Abilities** app is the Mac's AbilityStudio over what the code declares: a rail of packages (every app
+with skills, then the disciplines they realize — writing, multimedia, awareness, system control, window
+management), the **Control surface** (the callable functions, as the Thread holds them), **Tune** (the words
+and rules the package answers to) and **Skills** (every skill's schema). There is no override to save:
+tuning a package is a change to the app. **Rehearse** sends a sentence through maryd's triage and prints who
+would answer without a model.
 
 ```sh
 maryctl skills
 maryctl skill settings open_pane '{"pane":"sound"}'
-maryctl skill calendar events_today
+maryctl skill textedit read
 maryctl skill media play_pause     # "needs_confirmation": it acts, and the default is to ask first
+maryctl triage play the music      # who would answer, the score, the argument shape, whether it dispatches
+maryctl abilities                  # the ability records, one line each
 ```
 
-The conversation does not call skills yet; that, and a confirmation card in Spotlight for calls that need
-one, are the next milestone.
+## Engines, recall and network activity
+
+System Settings › Mary › **Engines** is the Mac's pair of toggles, one per lane: Voice (Lane A) and Skills
+(Lane B), each `Mistral | Thinking Machines`. Mistral is the only engine served; the Thinking Machines
+segment is disabled, a toggle kept for a later implementation so the lanes need no redesign. The choice
+rides every wire as `provider` (`turn.start`, `complete`) and sewnd refuses anything but Mistral with an
+engine error before it opens a socket.
+
+**Recall** gates the Thread's four storage lanes globally — Personal (memory, file, style), Conversation,
+Application (ability, ability-schema, application) and Behavioral (behavior, interaction, routing). A turn's
+memory plan names the lanes each purpose may draw on (routing: application and behavioral; the skills lane:
+behavioral and application; the reply: conversation and personal, plus application when the route names an
+app), and a lane turned off here is removed from every plan. The Ambient app's Routes tab and the Threads
+app's Retrieval tab show, per turn, what each purpose asked and what came back.
+
+**Network activity** is sewnd's calls ledger, through maryd: every request that left the machine — time,
+purpose (chat, skills, embed, route, speech, stt, voices, verify), provider, path, status and how long —
+never a key, never a body. `sewnctl calls` prints the whole ring from a terminal, and `ss -tp` will show
+sewnd as the only process with a TCP socket. **Memory** shows the drive's counts and opens Threads.
 
 ## The units
 
@@ -223,7 +285,7 @@ booted before that, `wpctl set-volume @DEFAULT_AUDIO_SINK@ 100%` raises the volu
 
 ## What is not there yet
 
-- **Skills from the conversation**, and the confirmation card.
+- **Thinking Machines** as an engine: the toggle is plumbed, the key, the wire and the model are not.
 - **Barge-in by voice.** There is no echo cancellation, so Mary is stopped with Esc or the orb, not by talking
   over her.
 - **On-device speech and models.** Speech is Voxtral's through sewnd; Frigate's on-device models come later.

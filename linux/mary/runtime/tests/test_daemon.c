@@ -38,6 +38,7 @@ static char last_user[128], indexed_question[128], indexed_reply[128], indexed_s
 static atomic_int embed_calls, complete_calls;
 static char deposited[1024];                /* the families deposited on the local socket, in order */
 static char complete_tools[512];            /* the tool names the last complete offered */
+static char complete_provider[16];          /* the provider the last complete named */
 
 /* ---- fake sewnd ---- */
 
@@ -147,6 +148,7 @@ static void *sewn_connection(void *arg) {
                 acted = acted || (role && strcmp(role, "tool") == 0);
             }
             pthread_mutex_lock(&lock);
+            snprintf(complete_provider, sizeof complete_provider, "%s", mc_json_string(first, "provider") ? mc_json_string(first, "provider") : "");
             complete_tools[0] = 0;
             for (size_t i = 0; tools && i < json_object_array_length(tools); i++) {
                 const char *name = mc_json_string(mc_json_object(json_object_array_get_idx(tools, i), "function"), "name");
@@ -164,6 +166,8 @@ static void *sewn_connection(void *arg) {
             else snprintf(line, sizeof line, "{\"type\":\"complete.result\",\"text\":\"You have two events today.\",\"tool_calls\":[],\"provider\":\"mistral\"}");
             pthread_mutex_unlock(&lock);
             send_json(fd, line);
+        } else if (strcmp(type, "calls.list") == 0) {
+            send_json(fd, "{\"type\":\"calls.list.result\",\"calls\":[{\"id\":1,\"at_ms\":1757700000000,\"provider\":\"mistral\",\"host\":\"api.mistral.ai\",\"path\":\"/v1/embeddings\",\"purpose\":\"embed\",\"status\":200,\"ms\":120}]}");
         } else if (strcmp(type, "key.status") == 0) {
             send_json(fd, "{\"type\":\"key.status\",\"present\":true,\"verified_at\":1757700000000}");
         }
@@ -782,6 +786,12 @@ MARY_TEST(an_action_turn_runs_the_skills_lane_and_parks_a_protected_skill) {
         MARY_ASSERT(mc_json_bool(winner, "dispatchable", &dispatchable) && !dispatchable);
         json_object_put(rehearsal);
     }
+    /* the skills lane runs on the engine Settings chose (mistral is served; tinker only rides the wire) */
+    client_send(&ctl, "{\"type\":\"config\",\"skill_engine\":\"tinker\",\"recall\":{\"behavioral\":false}}");
+    client_send(&ctl, "{\"type\":\"config\",\"voice_engine\":\"gemini\"}");
+    struct json_object *refused = client_wait(&ctl, "error", NULL, NULL, 0);
+    MARY_ASSERT(refused && strcmp(mc_json_string(refused, "stage"), "config") == 0);
+    if (refused) json_object_put(refused);
     /* a unique winner that cannot dispatch hands the turn to the skills lane, which parks the call on the card */
     client_send(&ctl, "{\"type\":\"ask\",\"text\":\"what is on my calendar\"}");
     char before[1024] = "";
@@ -825,7 +835,15 @@ MARY_TEST(an_action_turn_runs_the_skills_lane_and_parks_a_protected_skill) {
     MARY_ASSERT_EQ(atomic_load(&complete_calls), 2);
     pthread_mutex_lock(&lock);
     MARY_ASSERT(strstr(complete_tools, "calendar__events_today") != NULL && strstr(complete_tools, "media__play_pause") != NULL);
+    MARY_ASSERT_STR(complete_provider, "tinker");
     pthread_mutex_unlock(&lock);
+    /* Settings › Mary › Network activity: sewnd's ledger through maryd */
+    client_send(&ctl, "{\"type\":\"calls.list\",\"limit\":5}");
+    struct json_object *calls = client_wait(&ctl, "calls", NULL, NULL, 0);
+    bool listed = false;
+    MARY_ASSERT(calls && mc_json_bool(calls, "ok", &listed) && listed);
+    MARY_ASSERT(calls && json_object_array_length(mc_json_array(calls, "calls")) == 1);
+    if (calls) json_object_put(calls);
     MARY_ASSERT(eventually(&index_calls, 1));
     pthread_mutex_lock(&lock);
     MARY_ASSERT_STR(indexed_reply, "You have two events today.");

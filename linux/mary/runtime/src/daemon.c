@@ -67,6 +67,7 @@ struct mr_daemon {
     bool key_present;
     int ears_session;
     char voice_id[64];              /* what turns are spoken in: config{voice}, MB_VOICE_ID until then */
+    char voice_engine[16], skill_engine[16];    /* the engine of each lane: config{voice_engine, skill_engine}; mistral until then */
     struct json_object *voices;     /* sewnd's last list of voices, served for ten minutes */
     int64_t voices_at;
 
@@ -219,13 +220,15 @@ struct key_job {
     char *key;
     size_t key_len;
     bool voices;            /* voices.list for `client`, not the key */
+    bool calls;             /* calls.list{limit} for `client`: sewnd's ledger */
+    int limit;
     unsigned client;
 };
 
 static void *key_worker(void *arg) {
     struct key_job *job = arg;
     mr_daemon *d = job->d;
-    struct json_object *reply = NULL, *event = typed(job->voices ? "voices.reply" : "key.reply");
+    struct json_object *reply = NULL, *event = typed(job->voices ? "voices.reply" : job->calls ? "calls.reply" : "key.reply");
     int fd = sewn_connect(d->sewn_path), rc = fd;
     if (fd >= 0) {
         struct timeval patience = { .tv_sec = job->voices ? 45 : 20 };   /* five pages of voices take longer */
@@ -234,6 +237,7 @@ static void *key_worker(void *arg) {
             rc = sewn_call_key_set(fd, job->key, job->key_len, &reply);
         } else {
             struct json_object *request = typed(job->type);
+            if (job->calls) json_object_object_add(request, "limit", json_object_new_int(job->limit));
             rc = sewn_call(fd, request, &reply);
             json_object_put(request);
         }
@@ -265,6 +269,17 @@ static void key_job(mr_daemon *d, const char *type, bool quiet, const char *key,
         job->key[key_len] = 0;
         job->key_len = key_len;
     }
+    spawn(d, key_worker, job);
+}
+
+static void calls_job(mr_daemon *d, mr_client *c, int limit) {
+    struct key_job *job = calloc(1, sizeof *job);
+    if (!job) return;
+    job->d = d;
+    snprintf(job->type, sizeof job->type, "calls.list");
+    job->calls = true;
+    job->limit = limit;
+    job->client = c->id;
     spawn(d, key_worker, job);
 }
 
@@ -426,6 +441,7 @@ struct lane_bridge {
     sk_registry registry;           /* frozen for the lane */
     bool implies_action;
     char request_id[64];
+    char provider[16];
 };
 
 static void bridge_free(struct lane_bridge *b) {
@@ -565,7 +581,7 @@ static void *lane_thread(void *arg) {
     struct lane_bridge *b = arg;
     mb_lane_hooks hooks = { .complete = lane_complete, .invoke = lane_invoke, .confirm = lane_confirm, .run_started = lane_run_started,
                             .run_finished = lane_run_finished, .cancelled = lane_cancelled, .user = b };
-    mb_lane_request req = { .system = b->system, .messages = b->messages, .registry = &b->registry, .scope = b->scope, .provider = "mistral",
+    mb_lane_request req = { .system = b->system, .messages = b->messages, .registry = &b->registry, .scope = b->scope, .provider = b->provider,
                             .request_id = b->request_id, .implies_action = b->implies_action };
     mb_lane_result result;
     int rc = mb_lane_run(&req, &hooks, &result);
@@ -1203,6 +1219,7 @@ static void start_lane(mr_daemon *d) {
     if (d->skills_message) sk_registry_load(&b->registry, d->skills_message);
     b->implies_action = d->turn.implies_action;
     snprintf(b->request_id, sizeof b->request_id, "%s", d->turn.request_id);
+    snprintf(b->provider, sizeof b->provider, "%s", d->skill_engine);
     d->bridge = b;
     snprintf(d->turn.lane, sizeof d->turn.lane, "orchestrator");
     snprintf(d->episode.lane, sizeof d->episode.lane, "orchestrator");
@@ -1389,7 +1406,7 @@ static void begin_turn(mr_daemon *d, const char *question, bool voice) {
     mb_memory_plan_for(route, &d->recall, d->owner, &plan);
     d->turn.lane_count = plan.context.lane_count;
     for (int i = 0; i < plan.context.lane_count; i++) snprintf(d->turn.lanes[i], sizeof d->turn.lanes[i], "%s", plan.context.lanes[i]);
-    mb_turn_request req = { .instructions = instructions, .owner_id = d->owner, .request_id = d->turn.request_id, .voice_id = d->voice_id,
+    mb_turn_request req = { .instructions = instructions, .owner_id = d->owner, .request_id = d->turn.request_id, .voice_id = d->voice_id, .provider = d->voice_engine,
                             .lanes = plan.context.lanes, .lane_count = plan.context.lane_count, .entities = plan.entities, .entity_count = plan.entity_count };
     struct json_object *start = mb_turn_start(&d->history, &req);
     d->turn.start = start;
@@ -1955,6 +1972,18 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
             mc_json_bool(recall, "application", &d->recall.application);
             mc_json_bool(recall, "behavioral", &d->recall.behavioral);
         }
+        /* the engines: mistral is served; tinker rides the wire to sewnd, which answers the engine error (PORTING 12) */
+        const char *engines[2] = { mc_json_string(msg, "voice_engine"), mc_json_string(msg, "skill_engine") };
+        char *fields[2] = { d->voice_engine, d->skill_engine };
+        for (int i = 0; i < 2; i++) {
+            if (!engines[i]) continue;
+            if (strcmp(engines[i], "mistral") == 0 || strcmp(engines[i], "tinker") == 0) snprintf(fields[i], 16, "%s", engines[i]);
+            else send_to(d, c, error_message("config", "that is not an engine: mistral or tinker"));
+        }
+    } else if (strcmp(type, "calls.list") == 0) {
+        int64_t limit = 50;
+        mc_json_int64(msg, "limit", &limit);
+        calls_job(d, c, (int)(limit > 0 && limit < 500 ? limit : 50));
     } else if (strcmp(type, "voices.list") == 0) {
         if (d->voices && mc_now_ms() - d->voices_at < 10 * 60 * 1000) {
             struct json_object *o = typed("voices");
@@ -2117,6 +2146,25 @@ static void on_voices_reply(mr_daemon *d, struct json_object *ev) {
     send_to(d, c, o);
 }
 
+/* sewnd's calls ledger, to the client that asked (Settings › Mary › Network activity). */
+static void on_calls_reply(mr_daemon *d, struct json_object *ev) {
+    int64_t id = 0;
+    mc_json_int64(ev, "client", &id);
+    mr_client *c = mr_desktop_client(&d->desktop, (unsigned)id);
+    if (!c) return;
+    struct json_object *reply = mc_json_object(ev, "reply");
+    const char *failure = mc_json_string(ev, "failure"), *type = reply ? mc_json_type(reply) : NULL;
+    struct json_object *calls = type && strcmp(type, "calls.list.result") == 0 ? mc_json_array(reply, "calls") : NULL;
+    struct json_object *o = typed("calls");
+    json_object_object_add(o, "ok", json_object_new_boolean(calls != NULL));
+    if (calls) json_object_object_add(o, "calls", json_object_get(calls));
+    else {
+        const char *said = type && strcmp(type, "error") == 0 ? mc_json_string(reply, "message") : NULL;
+        json_object_object_add(o, "message", json_object_new_string(failure ? failure : said ? said : "sewnd did not list its calls"));
+    }
+    send_to(d, c, o);
+}
+
 /* ---- the loop ---- */
 
 static void on_capture(const int16_t *frame, size_t count, void *user) { mr_daemon_hear(user, frame, count); }
@@ -2219,6 +2267,8 @@ mr_daemon *mr_daemon_new(const mr_config *config, int *error) {
         d->state = MV_STATE_IDLE;
         mb_history_init(&d->history);
         snprintf(d->voice_id, sizeof d->voice_id, "%s", MB_VOICE_ID);
+        snprintf(d->voice_engine, sizeof d->voice_engine, "mistral");
+        snprintf(d->skill_engine, sizeof d->skill_engine, "mistral");
         sk_registry_init(&d->skills);
         ma_roster_maryos(&d->roster);
         ma_focus_init(&d->focus);
@@ -2271,6 +2321,8 @@ int mr_daemon_run(mr_daemon *d) {
                 on_key_reply(d, ev);
             } else if (strcmp(type, "voices.reply") == 0) {
                 on_voices_reply(d, ev);
+            } else if (strcmp(type, "calls.reply") == 0) {
+                on_calls_reply(d, ev);
             }
             json_object_put(ev);
         }

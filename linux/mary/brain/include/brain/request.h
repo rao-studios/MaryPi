@@ -18,6 +18,7 @@ typedef struct mb_turn_request {
     const char *owner_id;       /* sewnd takes the owner from credentials; sent to match Mary's wire */
     const char *request_id;
     const char *voice_id;       /* NULL: MB_VOICE_ID */
+    const char *provider;       /* "mistral" (NULL) or "tinker" — the voice lane's engine (Settings › Mary › Engines) */
     /* The storage lanes the reply's context may draw on (thread/families.h), from the route's memory plan;
      * NULL: conversation and personal. And the relationship cues (`entities`) the plan named. */
     const char *const *lanes;

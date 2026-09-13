@@ -32,7 +32,7 @@ struct json_object *mb_turn_start(const mb_history *history, const mb_turn_reque
     json_object_object_add(request, "repetition_context_size", json_object_new_int(20));
     if (r->instructions) json_object_object_add(request, "instructions", json_object_new_string(r->instructions));
     json_object_object_add(request, "client", json_object_new_string("mary"));
-    json_object_object_add(request, "provider", json_object_new_string("mistral"));
+    json_object_object_add(request, "provider", json_object_new_string(r->provider && *r->provider ? r->provider : "mistral"));
     struct json_object *persona = json_object_new_object();
     json_object_object_add(persona, "name", json_object_new_string(MB_PERSONA_NAME));
     json_object_object_add(persona, "voice", json_object_new_string(MB_PERSONA_VOICE));
