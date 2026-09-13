@@ -7,4 +7,8 @@ reported it, and `sk_tools_json`, which will render the enabled skills as Mistra
 
 Deviation: the `.mary` ability packages and their AX-recorded recipes are not ported (PORTING.md 10).
 
-Status: planned (commit 12). Prefix `sk_`.
+The registry decides a call the way the desktop does — unknown, then denied (the app or skill is off),
+then needs confirmation (destructive, or the app asks first), else allowed — so maryd can say why before
+asking. Allowed skills render as Mistral tools named `<app>__<skill>`.
+
+Status: working. Prefix `sk_`.

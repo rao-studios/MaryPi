@@ -108,14 +108,18 @@ What Swift gets from Foundation, URLSession and swift-nio.
 
 | Swift | C | Status |
 |---|---|---|
-| `MaryPlugin/MaryAdapter.swift` | `skills/` registry + MaryUI `lp_app.skills` | planned — deviation 10 |
-| `MaryBrain/Brain/AbilityDispatching.swift` | `computer-use`'s `mcu_invoke` | planned — deviation 10 |
+| `MaryFoundation/Ability/SkillSchemas.swift` (`SkillSchema`), `MaryPlugin/MaryAdapter.swift` (`skillBindings`) | `skills/include/skills/registry.h`, `src/registry.c` | working — deviation 10 |
+| `MaryFoundation/Ability/SkillSchemas.swift` (`ModelExposureSchema`) | `sk_tools_json`, `sk_tool_lookup` | working — sent in the next milestone |
+| `Mary/Abilities/*.mary`, `MaryFoundation/Package/*`, `MaryPlugin/Adapters/*` | — | not ported — deviation 10 |
 
 ## computer-use ← MaryComputerUse
 
 | Swift | C | Status |
 |---|---|---|
-| `MaryComputerUse/Hands/*`, `Sight/*`, `Accessibility/*` | `mcu_invoke` over the desktop socket | planned — deviation 9 |
+| `MaryBrain/Brain/AbilityDispatching.swift` (`dispatch`) | `computer-use/include/computer-use/invoke.h` (`mcu_invoke`), `src/invoke.c` | working — deviation 9 |
+| `MaryComputerUse/Accessibility/*`, `Sight/*`, `Hands/*`, `Stage/*` | — | not ported — deviation 9 |
+| `MaryComputerUse/Monitor/ComputerUseMonitor.swift` | — | planned |
+| — (app state through the pipes) | `mcu_app_state` | declared — answers ENOSYS |
 
 ## brain ← MaryBrain
 
