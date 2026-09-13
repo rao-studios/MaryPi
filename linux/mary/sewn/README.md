@@ -3,7 +3,7 @@
 `sewnd`, the only process on MaryOS that holds the Mistral key, and `sewnctl`. It speaks Sewn's
 realtime turn wire (`Sources/API/Routes/Realtime/RealtimeWire.swift`: `turn.start`, `token`,
 `audio.begin`, PCM, `turn.end`, `cancel`) over length-prefixed frames on `/run/sewn/sewn.sock`, plus
-`transcribe.*` for Voxtral Realtime and `key.set/status/verify`. The sentence chunker and TTS sanitizer
+`transcribe.*` for Voxtral Realtime, `voices.list` and `speak` for voices, and `key.set/status/verify`. The sentence chunker and TTS sanitizer
 are ports of `Sources/Utilities/StreamingSentenceChunker.swift`.
 
 Deviations: callers are authorized by peer credentials on a unix socket, not Supabase; one grounded
@@ -34,6 +34,19 @@ size limit and returns `transcribe.ready`, `transcript.delta` and `transcript.do
 WebSocket, because only sewnd holds the key; libwebsockets verifies Mistral's certificate against the system
 CA bundle and sends the key once, as a header.
 
+## Voices and a sample
+
+`voices.list` reads Mistral's `GET /v1/audio/voices`, every page up to five, and answers with each voice's id to
+speak by, its name and languages, and whether it is the account's own. `speak{voice_id, text}` speaks one text
+as a turn's sentences are spoken (`audio.begin`, PCM, `speak.end`), for System Settings' Play Sample. Every
+speech request goes through `sewn_speak` (`sewn/speech.h`): a refusal becomes `tts.failed{status, message}` with
+Mistral's own reason (never the key or the words), and an answer too large to read, or with no audio, fails too.
+
+```sh
+sewnctl voices
+sewnctl speak fr_marie_neutral "Bonjour" | pw-cat --playback --format f32 --rate 24000 --channels 1 -
+```
+
 Status: the chunker, the TTS sanitizer, Mistral's wire (`sewn/mistral.h`), the key store, peer checks,
-`key.status` / `key.set` / `key.verify`, `turn.start` and `transcribe.start` are working. Prefix `sewn_`.
+`key.status` / `key.set` / `key.verify`, `turn.start`, `transcribe.start`, `voices.list` and `speak` are working. Prefix `sewn_`.
 Everything but the libwebsockets transport builds on macOS too (getpeereid stands in for SO_PEERCRED).

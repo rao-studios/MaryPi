@@ -73,6 +73,8 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `Sewn/Sources/Utilities/SentenceBoundary.swift` (`upToFirstSentence`) | `sewn_sentence_prefix_len` | working — code points stand in for Characters |
 | `Sewn/Sources/Providers/ModelProvider+Stream.swift` (`runStreamMistral` body, `handle(payload:)`) | `sewn/include/sewn/mistral.h`, `src/mistral.c` (`sewn_chat_body`, `sewn_chat_event_parse`) | working |
 | `Sewn/Sources/Utilities/MistralTTSStream.swift` (`makeRequest`, `extractPCM`) | `sewn_speech_body`, `sewn_speech_event` | working |
+| `Sewn/Sources/Utilities/MistralTTSStream.swift` (`stream`, `parseDeltaLine`'s NDJSON fallback) | `sewn/include/sewn/speech.h` (`sewn_speak`), `mc_sse_parser.bare_json` | working — a refusal carries Mistral's reason |
+| `Mary/Sources/MaryVoice/TTS/Cloud/VoiceCharacter.swift` (characters and moods) | `sewn/include/sewn/voices.h` (`voices.list`, `speak`); maryd's `config{voice}` and `voice.sample`; MaryUI's Settings › Mary › Voice | working — Mistral's whole list, Marie first |
 | — (Voxtral Realtime transcription, from mistralai client-python) | `sewn_stt_session_update`, `sewn_stt_append`, `sewn_stt_event_parse` | working — deviation 2 |
 | `Mary/Sources/MaryVoice/STT/VoiceTranscriber.swift` (the seam Mary transcribes through) | `sewn/include/sewn/transcribe.h`, `src/transcribe.c` (`transcribe.*` on sewnd's socket) | working — deviation 2 |
 | — (a WebSocket client) | `sewn/include/sewn/ws.h`, `src/ws.c` (libwebsockets) | working — Linux builds only; the relay is tested through `sewn_ws_ops` |

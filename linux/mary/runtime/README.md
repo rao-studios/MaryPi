@@ -17,13 +17,19 @@ reached again next time.
   passed, by a follow-up session; six seconds of silence ends it.
 - `runtime/transcriber.h` — sewnd's `transcribe.*` from the client side.
 - `runtime/desktop.h` — the socket: `hello`, `state`, `level`, `transcript`, `reply.delta`/`reply.end`,
-  `key.status`, `error` and `skill.invoke` out; `ask`, `listen`, `stop`, `dismiss`, `key.set`/`verify`/
-  `status`, `config{wake}`, `skills` and `skill.result` in. The Mistral key only passes through: it is
+  `key.status`, `error` and `skill.invoke` out, and `voices` and `voice.sample` to the client that asked; `ask`,
+  `listen`, `stop`, `dismiss`, `key.set`/`verify`/`status`, `config{wake, voice}`, `voices.list`, `voice.sample`,
+  `skills` and `skill.result` in. The Mistral key only passes through: it is
   checked, handed to sewnd, and every copy maryd saw is zeroed.
 
 Skills: the desktop publishes `skills{apps}`; `maryctl skill APP SKILL [JSON]` is decided against that
 policy (unknown, denied, needs_confirmation) and otherwise sent to the desktop as `skill.invoke` through
 computer-use's pipes. The conversation does not call skills yet.
+
+Voice: turns are spoken in the voice the desktop sends (`config{voice}`, Marie until then). A sample speaks one
+text through the speaker with sewnd's `speak`, with the ears muted, and stays out of the conversation and Thread.
+When Mistral refuses a reply's voice, or the speaker takes nothing for two seconds, the words are kept and
+`error{stage: speech | speaker}` says why; the speaker is opened again once Mary is idle.
 
 ```sh
 maryctl status
@@ -31,6 +37,8 @@ maryctl ask "what's the capital of France?"
 maryctl listen
 maryctl skills
 maryctl skill settings open_pane '{"pane":"sound"}'
+maryctl voices
+maryctl sample fr_marie_happy
 ```
 
 Tested end to end against a fake sewnd, a fake threadd and fake desktop clients, with audio injected where

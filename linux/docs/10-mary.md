@@ -65,7 +65,7 @@ opens on the conversation, listening, and maryd streams the last 600 ms and ever
 which relays it to Voxtral Realtime. Energy VAD and an end-of-phrase hold decide when you have finished;
 WakePlanner takes "Hey Mary" off the front, and what is left is the question. brain builds the request (the
 voice instructions, the last twelve messages), sewnd streams Mistral's answer back token by token — Spotlight
-shows it as it arrives — and cuts it into sentences for Voxtral's speech, which maryd plays. When she has
+shows it as it arrives — and cuts it into sentences for Voxtral's speech in the voice chosen in Settings, which maryd plays. When she has
 finished, a six-second follow-up window listens again; Esc stops her at any point.
 
 **Typed.** Ctrl+Space opens Spotlight; type, then Ctrl+Enter or the Ask Mary orb at the bar's right end. The
@@ -79,6 +79,21 @@ conversation's look.
 ```sh
 threadctl library
 threadctl documents mary-turn-1789264000000-3fa2
+```
+
+## Her voice
+
+Mary speaks in Marie (`fr_marie_neutral`) until you choose otherwise. System Settings › Mary › Voice asks
+Mistral for its voices, through maryd and sewnd (which holds the key), and offers them in a pop-up: Marie first,
+then Mistral's by language, then any voices of your own. A second pop-up chooses the mood where a voice has
+several (neutral, sad, happy, excited, curious, angry), and Play Sample speaks a sentence in the voice's own
+language. The choice is `mary_voice` in `~/.config/maryui/settings.conf`; the desktop sends it to maryd when it
+changes and whenever maryd starts, and the next sentence is spoken in it.
+
+```sh
+sewnctl voices                       # Mistral's list, as sewnd reads it
+maryctl voices                       # the same, through maryd
+maryctl sample fr_marie_happy        # one sentence through Mary's speaker, or why not
 ```
 
 ## Skills: what Mary may do with each app
@@ -129,6 +144,29 @@ The VM hears through the Mac. `ui.sh` boots it with `maryos vm run --microphone`
 device an input fed by this Mac's microphone; macOS asks once, and until it is allowed (System Settings › Privacy
 & Security › Microphone) the guest hears silence — typed turns work either way. `./ui.sh --no-microphone` keeps
 the microphone out of the VM.
+
+## When she says nothing
+
+A reply that arrives as text but is not heard says why under it in Spotlight ("Not spoken: …"):
+
+- **speech**: Mistral refused the voice, and its own reason follows. HTTP 403 means Mistral would not speak the
+  text (moderation, or an account without speech); 401 means the key. The words are kept.
+- **speaker**: the audio was made but never reached a speaker. PipeWire could not be opened, or the playback
+  stream took nothing for two seconds, so the rest of the reply was dropped rather than leaving Mary speaking
+  forever. maryd opens the speaker again once she is idle.
+
+Each half can be heard on its own:
+
+```sh
+sewnctl speak fr_marie_neutral "Bonjour" | pw-cat --playback --format f32 --rate 24000 --channels 1 -
+maryctl sample fr_marie_neutral      # sewnd, Mistral and maryd's speaker together
+journalctl -u sewnd -b | grep -iE "speech failed|turn ended"
+journalctl --user -u maryd -b | tail -40
+wpctl status                         # the default sink; mary-speaking under Streams while she talks
+```
+
+maryd listens and speaks through PipeWire's default devices, so System Settings › Sound chooses both. In the VM the
+output is the Mac's, at the Mac's volume, and a microphone exists only with `--microphone` and macOS's permission.
 
 ## What is not there yet
 
