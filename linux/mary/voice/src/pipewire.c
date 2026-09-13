@@ -28,6 +28,7 @@ struct mv_audio {
     void *user;
     atomic_bool reset_framer;       /* set when capture pauses; the capture callback clears the partial frame */
     atomic_llong last_played_ms;
+    atomic_bool broken;             /* a stream failed or was disconnected */
 };
 
 static void on_capture(void *data) {
@@ -65,8 +66,27 @@ static void on_playback(void *data) {
     pw_stream_queue_buffer(a->playback, b);
 }
 
-static const struct pw_stream_events capture_events = { PW_VERSION_STREAM_EVENTS, .process = on_capture };
-static const struct pw_stream_events playback_events = { PW_VERSION_STREAM_EVENTS, .process = on_playback };
+/* Every transition is logged; a stream that errors or loses PipeWire stays broken until maryd reopens the audio. */
+static void report_state(struct mv_audio *a, const char *name, enum pw_stream_state old, enum pw_stream_state state,
+                         const char *error) {
+    bool lost = state == PW_STREAM_STATE_ERROR || (state == PW_STREAM_STATE_UNCONNECTED && old != PW_STREAM_STATE_UNCONNECTED);
+    if (lost) atomic_store(&a->broken, true);
+    mc_log(lost ? MC_LOG_WARNING : MC_LOG_DEBUG, "%s: %s -> %s%s%s", name, pw_stream_state_as_string(old),
+           pw_stream_state_as_string(state), error ? ": " : "", error ? error : "");
+}
+
+static void on_capture_state(void *data, enum pw_stream_state old, enum pw_stream_state state, const char *error) {
+    report_state(data, "mary-listening", old, state, error);
+}
+
+static void on_playback_state(void *data, enum pw_stream_state old, enum pw_stream_state state, const char *error) {
+    report_state(data, "mary-speaking", old, state, error);
+}
+
+static const struct pw_stream_events capture_events = { PW_VERSION_STREAM_EVENTS, .state_changed = on_capture_state,
+                                                        .process = on_capture };
+static const struct pw_stream_events playback_events = { PW_VERSION_STREAM_EVENTS, .state_changed = on_playback_state,
+                                                         .process = on_playback };
 
 static struct pw_stream *open_stream(struct mv_audio *a, bool input, int rate, enum spa_audio_format format,
                                      const char *name, const char *app, const struct pw_stream_events *events) {
@@ -83,7 +103,9 @@ static struct pw_stream *open_stream(struct mv_audio *a, bool input, int rate, e
     struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof buffer);
     const struct spa_pod *params[1];
     params[0] = spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat,
-        &SPA_AUDIO_INFO_RAW_INIT(.format = format, .channels = 1, .rate = (uint32_t)rate));
+        /* MONO, not an unset position: PipeWire's mixer maps a mono channel onto every speaker, but has no rule for
+         * an unknown one, so an unpositioned stream can be mixed into silence. */
+        &SPA_AUDIO_INFO_RAW_INIT(.format = format, .channels = 1, .rate = (uint32_t)rate, .position = { SPA_AUDIO_CHANNEL_MONO }));
     enum pw_stream_flags flags = PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_RT_PROCESS;
     if (pw_stream_connect(stream, input ? PW_DIRECTION_INPUT : PW_DIRECTION_OUTPUT, PW_ID_ANY, flags, params, 1) < 0) {
         pw_stream_destroy(stream);
@@ -151,6 +173,7 @@ size_t mv_audio_play(mv_audio *a, const float *samples, size_t count) { return m
 void mv_audio_stop_playback(mv_audio *a) { mv_ring_request_flush(&a->ring); }
 size_t mv_audio_queued(const mv_audio *a) { return mv_ring_available(&a->ring); }
 int64_t mv_audio_last_played_ms(const mv_audio *a) { return atomic_load(&((struct mv_audio *)a)->last_played_ms); }
+bool mv_audio_broken(const mv_audio *a) { return atomic_load(&((struct mv_audio *)a)->broken); }
 
 #else
 
@@ -168,4 +191,5 @@ size_t mv_audio_play(mv_audio *audio, const float *samples, size_t count) { retu
 void mv_audio_stop_playback(mv_audio *audio) {}
 size_t mv_audio_queued(const mv_audio *audio) { return 0; }
 int64_t mv_audio_last_played_ms(const mv_audio *audio) { return 0; }
+bool mv_audio_broken(const mv_audio *audio) { return false; }
 #endif

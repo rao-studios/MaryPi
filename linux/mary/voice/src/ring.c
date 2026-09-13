@@ -12,7 +12,7 @@ int mv_ring_init(mv_ring *r, size_t capacity) {
     r->mask = cap - 1;
     atomic_init(&r->head, 0);
     atomic_init(&r->tail, 0);
-    atomic_init(&r->flush, false);
+    atomic_init(&r->flush_to, SIZE_MAX);
     return 0;
 }
 
@@ -23,8 +23,12 @@ void mv_ring_free(mv_ring *r) {
 
 size_t mv_ring_capacity(const mv_ring *r) { return r->mask + 1; }
 
+/* Loaded flush point, then tail, then head: each is no later than the next, so nothing underflows. */
 size_t mv_ring_available(const mv_ring *r) {
-    return atomic_load(&((mv_ring *)r)->head) - atomic_load(&((mv_ring *)r)->tail);
+    mv_ring *m = (mv_ring *)r;
+    size_t to = atomic_load(&m->flush_to), tail = atomic_load(&m->tail), head = atomic_load(&m->head);
+    if (to != SIZE_MAX && to > tail) tail = to;
+    return head - tail;
 }
 
 size_t mv_ring_write(mv_ring *r, const float *samples, size_t count) {
@@ -36,18 +40,16 @@ size_t mv_ring_write(mv_ring *r, const float *samples, size_t count) {
 }
 
 size_t mv_ring_read(mv_ring *r, float *out, size_t count) {
-    size_t head = atomic_load(&r->head), tail = atomic_load(&r->tail);
-    if (atomic_exchange(&r->flush, false)) {
-        atomic_store(&r->tail, head);
-        return 0;
-    }
+    size_t to = atomic_exchange(&r->flush_to, SIZE_MAX);
+    size_t tail = atomic_load(&r->tail), head = atomic_load(&r->head);
+    if (to != SIZE_MAX && to > tail) tail = to;       /* what was queued before the flush is dropped */
     size_t n = head - tail < count ? head - tail : count;
     for (size_t i = 0; i < n; i++) out[i] = r->data[(tail + i) & r->mask];
     atomic_store(&r->tail, tail + n);
     return n;
 }
 
-void mv_ring_request_flush(mv_ring *r) { atomic_store(&r->flush, true); }
+void mv_ring_request_flush(mv_ring *r) { atomic_store(&r->flush_to, atomic_load(&r->head)); }
 
 int mv_framer_init(mv_framer *f, size_t frame_samples) {
     f->frame = calloc(frame_samples ? frame_samples : 1, sizeof *f->frame);

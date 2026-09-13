@@ -40,5 +40,7 @@ void mv_audio_stop_playback(mv_audio *audio);
 size_t mv_audio_queued(const mv_audio *audio);
 /* When the speaker last had reply audio, on mc_now_ms()'s clock; 0 if never. */
 int64_t mv_audio_last_played_ms(const mv_audio *audio);
+/* A stream failed or lost PipeWire (it restarted, say): close this and open the audio again. */
+bool mv_audio_broken(const mv_audio *audio);
 
 #endif

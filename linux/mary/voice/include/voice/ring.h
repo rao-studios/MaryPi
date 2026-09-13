@@ -17,7 +17,7 @@ typedef struct mv_ring {
     size_t mask;                /* capacity - 1, a power of two */
     atomic_size_t head;         /* written by the producer */
     atomic_size_t tail;         /* written by the consumer */
-    atomic_bool flush;          /* producer asks; the consumer empties the ring */
+    atomic_size_t flush_to;     /* producer: drop what was queued before this head; SIZE_MAX: none */
 } mv_ring;
 
 /* Capacity is rounded up to a power of two. 0, or -ENOMEM. */
@@ -25,10 +25,13 @@ int mv_ring_init(mv_ring *ring, size_t capacity);
 void mv_ring_free(mv_ring *ring);
 /* Producer: as many samples as fit. */
 size_t mv_ring_write(mv_ring *ring, const float *samples, size_t count);
-/* Consumer: up to count samples; honours a pending flush first. */
+/* Consumer: up to count samples, after dropping what a pending flush asked to. */
 size_t mv_ring_read(mv_ring *ring, float *out, size_t count);
-/* Producer: drop everything queued (the consumer does it on its next read). */
+/* Producer: drop everything queued so far. Samples written afterwards still play. The consumer carries it
+ * out on its next read, but mv_ring_available counts it at once, so a consumer that has stopped reading
+ * (a stalled speaker) cannot keep the queue looking full. */
 void mv_ring_request_flush(mv_ring *ring);
+/* Samples queued and not flushed. */
 size_t mv_ring_available(const mv_ring *ring);
 size_t mv_ring_capacity(const mv_ring *ring);
 

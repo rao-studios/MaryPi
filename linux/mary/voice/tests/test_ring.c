@@ -36,6 +36,38 @@ MARY_TEST(a_flush_empties_the_ring_at_the_next_read) {
     mv_ring_free(&r);
 }
 
+MARY_TEST(a_flush_drops_only_what_was_queued_before_it) {
+    mv_ring r;
+    mv_ring_init(&r, 16);
+    const float old[4] = { 1, 1, 1, 1 }, fresh[2] = { 2, 2 };
+    mv_ring_write(&r, old, 4);
+    mv_ring_request_flush(&r);
+    mv_ring_write(&r, fresh, 2);                   /* the next reply, before the speaker reads again */
+    float out[8];
+    MARY_ASSERT_EQ(mv_ring_read(&r, out, 8), 2);
+    MARY_ASSERT_NEAR(out[0], 2, 0);
+    MARY_ASSERT_NEAR(out[1], 2, 0);
+    mv_ring_free(&r);
+}
+
+MARY_TEST(a_flush_counts_at_once_even_if_the_reader_never_runs) {
+    mv_ring r;
+    mv_ring_init(&r, 16);
+    const float in[5] = { 1, 1, 1, 1, 1 };
+    mv_ring_write(&r, in, 5);
+    mv_ring_request_flush(&r);
+    MARY_ASSERT_EQ(mv_ring_available(&r), 0);     /* a stalled speaker: nothing left to wait for */
+    mv_ring_write(&r, in, 3);
+    MARY_ASSERT_EQ(mv_ring_available(&r), 3);
+    mv_ring_request_flush(&r);
+    mv_ring_request_flush(&r);                     /* twice before a read: still just a drop */
+    MARY_ASSERT_EQ(mv_ring_available(&r), 0);
+    float out[4];
+    MARY_ASSERT_EQ(mv_ring_read(&r, out, 4), 0);
+    MARY_ASSERT_EQ(mv_ring_available(&r), 0);
+    mv_ring_free(&r);
+}
+
 static mv_ring shared;
 static float got_sum;
 
@@ -111,6 +143,8 @@ MARY_TEST(audio_defaults_are_what_voxtral_wants) {
 int main(void) {
     MARY_RUN(the_ring_keeps_order_and_refuses_what_does_not_fit);
     MARY_RUN(a_flush_empties_the_ring_at_the_next_read);
+    MARY_RUN(a_flush_drops_only_what_was_queued_before_it);
+    MARY_RUN(a_flush_counts_at_once_even_if_the_reader_never_runs);
     MARY_RUN(one_writer_and_one_reader_share_it_without_locks);
     MARY_RUN(the_framer_cuts_whatever_arrives_into_20_ms_frames);
     MARY_RUN(audio_defaults_are_what_voxtral_wants);
