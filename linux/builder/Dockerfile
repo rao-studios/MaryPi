@@ -19,7 +19,7 @@ RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
         libegl-dev libgles2-mesa-dev libgbm-dev \
         libvterm-dev libgdk-pixbuf-2.0-dev librsvg2-dev libpoppler-glib-dev \
         libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libical-dev libsystemd-dev \
-        libjson-c-dev libcurl4-openssl-dev libwebsockets-dev libssl-dev libnghttp2-dev \
+        libjson-c-dev libcurl4-openssl-dev libwebsockets-dev libssl-dev libnghttp2-dev libsqlite3-dev \
         libprotobuf-c-dev protobuf-c-compiler libpipewire-0.3-dev curl bzip2 python3-grpcio \
         gstreamer1.0-plugins-base gstreamer1.0-plugins-good librsvg2-common \
         libgl1-mesa-dri libegl-mesa0 \
