@@ -132,12 +132,14 @@ What Swift gets from Foundation, URLSession and swift-nio.
 
 | Swift | C | Status |
 |---|---|---|
-| `MaryVoice/VAD/EnergyVAD.swift` | `voice/src/vad.c` | planned |
-| `MaryVoice/VAD/EndpointHold.swift` | `voice/src/endpoint.c` | planned |
-| `MaryVoice/VAD/WakePlanner.swift` | `voice/src/wake_planner.c` | planned |
+| `MaryVoice/VAD/EnergyVAD.swift`, `VoicePipelineConfig.swift` (`VADConfig`) | `voice/include/voice/vad.h`, `src/vad.c` | working |
+| `MaryVoice/VAD/EndpointHold.swift` | `voice/include/voice/wake.h` (`mv_endpoint_extra_silence`), `src/wake.c` | working |
+| `MaryVoice/VAD/WakePlanner.swift` | `mv_wake_in`, `mv_could_still_wake`, `mv_is_stop_listening` | working |
+| `MaryVoice/VoicePipelineEvent.swift` (`VoicePipelineState`) | `voice/include/voice/state.h`, `src/state.c` | working |
+| `MaryVoice/VAD/BargeInGovernor.swift` | `voice/include/voice/barge_in.h`, `src/barge_in.c` | skeleton — deviation 6 |
 | `MaryVoice/Wake/WakeWordListener.swift` | `voice/src/kws.c` (sherpa-onnx) | planned — deviation 1 |
 | `MaryVoice/Capture/MicCapture.swift`, `TTS/Shared/KokoroStreamSpeaker.swift` (playback) | `voice/src/pipewire.c` | planned |
-| `MaryVoice/VAD/BargeInGovernor.swift` | `voice/include/voice/barge_in.h` | planned — deviation 6 |
+| `MaryVoice/STT/*`, `TTS/Kokoro/*` | — | not ported — deviations 2 and 3 |
 
 ## runtime ← MaryRuntime
 
