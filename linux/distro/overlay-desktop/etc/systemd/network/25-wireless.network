@@ -1,0 +1,8 @@
+# MaryOS: an address for any Wi-Fi link iwd has joined. iwd authenticates
+# (etc/iwd/main.conf leaves addressing to networkd); this is the DHCP half.
+[Match]
+Type=wlan
+
+[Network]
+DHCP=yes
+IgnoreCarrierLoss=3s

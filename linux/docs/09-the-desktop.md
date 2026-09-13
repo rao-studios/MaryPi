@@ -373,6 +373,27 @@ so a weekly 9:00 stays at 9:00 when the clocks change. A file another program pu
 there is shown, repeats and all, but never rewritten. The folder is watched, so a
 copied-in file appears at once, and Today moves at midnight on its own.
 
+**System Settings** (pinned, one window) gathers the desktop's preferences and
+the system's in a sidebar of panes. *General* holds the View pill's choices and
+24-hour time for the corner clock; *Dock* chooses which apps a blank Spotlight
+shows; *Keyboard & Mouse* sets key repeat, the layout (an XKB name such as
+`us(dvorak)`), pointer speed and natural scrolling, and the compositor applies
+them to every keyboard and pointer at once, libinput doing the pointer half (the
+VM's tablet is absolute, so speed and scrolling do nothing there); *Displays*
+reads each output's size, refresh and scale from the compositor and changes
+nothing. The system's panes run its own tools as background jobs and read what
+they print: *Sound* is `wpctl` on the default sink, *Network* is `ip -brief
+address` and then `iwctl` to scan and join Wi-Fi, *Date & Time* is
+`timedatectl` (zone and network time), *Users* opens `passwd` in a terminal,
+and *About* shows the release, kernel, CPU and memory and renames the computer
+through `hostnamectl`. The session has no polkit agent, so
+`/etc/polkit-1/rules.d/50-maryos-desktop.rules` lets the `sudo` group take
+those time, host-name and udisks actions from the active local session without
+asking. Wi-Fi is iwd (`/etc/iwd/main.conf` leaves addressing to networkd, and
+`25-wireless.network` gives any Wi-Fi link DHCP); `wpa_supplicant` is masked so
+the two never fight over a card, and `mary` is in `netdev` so `iwctl` works
+without root.
+
 ## Inside the compositor
 
 Five scene layers: wallpaper, windows, the clock, menus, Spotlight. Everything the library
@@ -428,7 +449,11 @@ folders, liquid merge, wallpaper mode, molten tone, reduced motion, clock) —
 MaryPi ships no defaults for it, so an unwritten file means the compiled
 defaults, which mirror the web's `settings.ts`. `clock` is the one key the web
 does not have: View › Show Clock writes `clock=off` and the time leaves the
-corner; it is on by default, and a file without the key keeps it on. The wallpaper is looked up in three places before it is rendered:
+corner; it is on by default, and a file without the key keeps it on. System
+Settings adds `key_repeat_rate`, `key_repeat_delay`, `keyboard_layout`,
+`pointer_speed`, `natural_scroll`, `clock_24h` and `dock`; an old file without
+them keeps the compiled defaults (25 a second after 600 ms, the system layout,
+each app's own dock flag), and values out of range are pulled back in on load. The wallpaper is looked up in three places before it is rendered:
 `$MARYUI_DATA_DIR` (dev mode points this at `out/ui/usr/share/maryui` over
 virtiofs), then `/usr/share/maryui/`, then `$XDG_CACHE_HOME/maryui/`; a render
 that had to happen is written to the last of those. That is why the `ui` stage
@@ -453,8 +478,8 @@ at the VM's scanout size both are already there, and nothing renders at boot.
   still bake the `ui` stage shipped. The animated flow — `molten.flow` shader
   seconds per second of window motion, then a full-resolution still after
   `molten.settle-ms` — is written but has never run, because no Pi has booted.
-- No clipboard between host and guest, no Xwayland, one keyboard layout (`us`),
-  no screen locking, no greeter: the desktop is the session.
+- No clipboard between host and guest, no Xwayland, no screen locking, no
+  greeter: the desktop is the session.
 - Clients that insist on client-side decorations get a frame around their frame.
 - The jelly skew is computed but not applied (scene nodes translate and scale
   only); the moving sheen and the moving grain repaint the title bar, not body

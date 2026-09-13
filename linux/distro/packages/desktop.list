@@ -60,3 +60,6 @@ gstreamer1.0-pipewire
 pipewire
 wireplumber
 rtkit
+# System Settings › Network: iwd joins Wi-Fi networks (configured by overlay-desktop/etc/iwd
+# and hooks/desktop/62-wifi.sh); networkd keeps addressing, as for the wired link.
+iwd
