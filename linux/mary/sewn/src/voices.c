@@ -18,6 +18,7 @@
 #include "common/secure.h"
 #include "sewn/chunker.h"
 #include "sewn/mistral.h"
+#include "sewn/outbound.h"
 #include "sewn/speech.h"
 
 static struct json_object *typed(const char *type) {
@@ -104,7 +105,8 @@ int sewn_run_voices(sewn_service *svc, int fd) {
         snprintf(path, sizeof path, SEWN_VOICES_PATH "?type=all&limit=%d&offset=%d", SEWN_VOICES_PAGE, page * SEWN_VOICES_PAGE);
         mc_buf body = { 0 };
         long status = 0;
-        int rc = svc->get(path, key, &body, SEWN_VOICES_BODY_MAX, &status, message, sizeof message, svc->get_user);
+        sewn_outbound o = { SEWN_PROVIDER_MISTRAL, "voices", NULL };
+        int rc = sewn_get(svc, &o, path, key, &body, SEWN_VOICES_BODY_MAX, &status, message, sizeof message);
         if (rc < 0) {
             stage = "network";
         } else if (status == 401) {

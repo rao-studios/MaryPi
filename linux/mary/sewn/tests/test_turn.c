@@ -19,6 +19,8 @@
 #include "sewn/speech.h"
 #include "sewn/turn.h"
 
+#define MARY_TEST_PIECE 7
+
 static const char *KEY = "abcdEFGH1234ijklMNOP5678qrst";
 
 /* MARK: - The prompt */
@@ -99,6 +101,9 @@ struct script {
     char speech_inputs[4][256];
     int speech_calls;
     atomic_bool saw_stop;
+    const char *completion;     /* the JSON body for an unstreamed chat call (compaction, memory) */
+    int completions;
+    char completion_input[4096];
 };
 
 static struct script script;
@@ -113,6 +118,15 @@ static int scripted(const char *path, const char *key, const char *body, size_t 
     struct script *s = transport_user;
     bool chat = strcmp(path, SEWN_MISTRAL_CHAT_PATH) == 0;
     if (strcmp(key, KEY) != 0) MARY_FAIL("the transport was handed another key");
+    if (chat && !strstr(body, "\"stream\":true")) {       /* the body is mc_json_compact's, NUL-terminated */
+        /* an unstreamed completion: answered whole */
+        s->completions++;
+        snprintf(s->completion_input, sizeof s->completion_input, "%.*s", (int)body_len, body);
+        *status = 200;
+        const char *answer = s->completion ? s->completion : "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"**A note**\\n\\nThe user asked about the capital of France several times over.\"}}]}";
+        on_bytes(answer, strlen(answer), 200, user);
+        return 0;
+    }
     if (chat) {
         snprintf(s->chat_body, sizeof s->chat_body, "%.*s", (int)body_len, body);
     } else {
@@ -173,6 +187,8 @@ static void setup(bool with_key) {
     sewn_service_init(&svc, dir);
     svc.post_stream = scripted;
     svc.post_stream_user = &script;
+    svc.retrieve = NULL;        /* no Thread unless a test scripts one */
+    svc.deposit = NULL;
     if (with_key) MARY_ASSERT_EQ(sewn_key_store_set(&svc.keys, KEY, strlen(KEY)), 0);
 }
 
@@ -180,6 +196,9 @@ static void teardown(void) {
     char path[128];
     snprintf(path, sizeof path, "%s/mistral.key", dir);
     unlink(path);
+    snprintf(path, sizeof path, "%s/calls.jsonl", dir);
+    unlink(path);
+    sewn_service_free(&svc);
     rmdir(dir);
 }
 
@@ -208,6 +227,8 @@ struct seen {
     long tts_status;
     char tts_message[256];
     bool saw_key;
+    char end[8192];             /* turn.end, compact */
+    char retrieval[2048];       /* the retrieval frame */
 };
 
 static int on_frame(uint8_t kind, const unsigned char *bytes, size_t len, void *user) {
@@ -246,6 +267,8 @@ static int on_frame(uint8_t kind, const unsigned char *bytes, size_t len, void *
         snprintf(s->error_stage, sizeof s->error_stage, "%s", mc_json_string(msg, "stage"));
         snprintf(s->error_message, sizeof s->error_message, "%s", mc_json_string(msg, "message"));
     }
+    if (type && strcmp(type, "turn.end") == 0) snprintf(s->end, sizeof s->end, "%s", mc_json_compact(msg, NULL));
+    if (type && strcmp(type, "retrieval") == 0) snprintf(s->retrieval, sizeof s->retrieval, "%s", mc_json_compact(msg, NULL));
     json_object_put(msg);
     return stop;
 }
@@ -467,6 +490,150 @@ MARY_TEST(a_refusal_never_repeats_the_key_or_the_words) {
     teardown();
 }
 
+/* MARK: - The Thread around the turn */
+
+static int retrieve_calls;
+static char retrieve_owner[64], retrieve_lanes[128];
+
+/* Two of the owner's own documents, whatever the query. */
+static int scripted_retrieve(const sewn_scope *scope, const char *query, int top_k, sewn_retrieval *out, char *message, size_t cap, void *user) {
+    retrieve_calls++;
+    snprintf(retrieve_owner, sizeof retrieve_owner, "%s", scope->owner_id ? scope->owner_id : "");
+    retrieve_lanes[0] = 0;
+    for (size_t i = 0; i < scope->n_lanes; i++) {
+        strcat(retrieve_lanes, i ? "," : "");
+        strcat(retrieve_lanes, scope->lanes[i]);
+    }
+    char result[1024];
+    snprintf(result, sizeof result,
+             "{\"results\":[{\"partition_id\":\"p1\",\"document_id\":\"file-1\",\"owner_id\":\"%s\",\"text\":\"Paris is the capital of France, a note I keep.\","
+             "\"name\":\"notes.txt\",\"family\":\"file\",\"lane\":\"personal\",\"group_id\":\"files-%s\",\"score\":1.5},"
+             "{\"partition_id\":\"p2\",\"document_id\":\"mary-turn-9\",\"owner_id\":\"%s\",\"text\":\"It is lovely in spring, you said.\","
+             "\"name\":\"mary-turn-9\",\"family\":\"conversation\",\"lane\":\"conversation\",\"group_id\":\"conversation-%s\",\"score\":2.5}],\"ms\":3}",
+             retrieve_owner, retrieve_owner, retrieve_owner, retrieve_owner);
+    struct json_object *o = parse(result);
+    int rc = sewn_retrieval_parse(o, out);
+    json_object_put(o);
+    return rc;
+}
+
+static int deposit_calls;
+static char deposit_owner[64], deposit_group[64], deposit_label[64], deposit_texts[1024];
+
+static int scripted_deposit(const char *owner_id, const char *group_id, const char *label, const char *family, const char *const *texts, size_t n,
+                            char *document_id, size_t cap, void *user) {
+    deposit_calls++;
+    snprintf(deposit_owner, sizeof deposit_owner, "%s", owner_id);
+    snprintf(deposit_group, sizeof deposit_group, "%s", group_id);
+    snprintf(deposit_label, sizeof deposit_label, "%s", label);
+    deposit_texts[0] = 0;
+    for (size_t i = 0; i < n; i++) {
+        strcat(deposit_texts, i ? "|" : "");
+        strncat(deposit_texts, texts[i], sizeof deposit_texts - strlen(deposit_texts) - 2);
+    }
+    snprintf(document_id, cap, "memory-doc");
+    return 0;
+}
+
+static const char *TURN_TINKER =
+    "{\"type\":\"turn.start\",\"request\":{\"messages\":[{\"role\":\"user\",\"content\":\"Hi\"}],\"provider\":\"tinker\"}}";
+
+MARY_TEST(an_engine_that_is_not_served_is_refused_before_any_call) {
+    setup(true);
+    struct seen seen = { 0 };
+    run_turn(&seen, TURN_TINKER);
+    MARY_ASSERT_STR(seen.error_stage, "engine");
+    MARY_ASSERT_STR(seen.error_message, SEWN_ENGINE_UNAVAILABLE);
+    MARY_ASSERT_EQ(index_of(&seen, "turn.end"), -1);
+    MARY_ASSERT_STR(script.chat_body, "");                      /* no transport was opened */
+    struct json_object *calls = sewn_calls_list(&svc.calls, 0);
+    MARY_ASSERT_EQ(json_object_array_length(calls), 0);         /* and the ledger has no row */
+    json_object_put(calls);
+    teardown();
+}
+
+MARY_TEST(a_turn_with_context_cites_its_sources_and_strips_the_markers) {
+    setup(true);
+    svc.retrieve = scripted_retrieve;
+    retrieve_calls = 0;
+    script.chat =
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Paris is the capital[\"},\"finish_reason\":null}]}\n\n"
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"[1]] of France. It is\"},\"finish_reason\":null}]}\n\n"
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\" **lovely**.[[2]]\"},\"finish_reason\":\"stop\"}]}\n\n"
+        "data: [DONE]\n\n";
+    struct seen seen = { 0 };
+    run_turn(&seen, TURN);
+    MARY_ASSERT_EQ(retrieve_calls, 1);
+    MARY_ASSERT_STR(retrieve_lanes, "conversation,personal");    /* the default lanes */
+    MARY_ASSERT(strlen(retrieve_owner) > 0);                      /* the connection's user, not the request's */
+    MARY_ASSERT_STR(seen.text, "Paris is the capital of France. It is **lovely**.");   /* markers gone, even split across deltas */
+    MARY_ASSERT(index_of(&seen, "retrieval") > 0 && index_of(&seen, "retrieval") < index_of(&seen, "token"));
+    MARY_ASSERT_STR(script.speech_inputs[0], "Paris is the capital of France.");
+    MARY_ASSERT_EQ(script.speech_calls, 2);
+    struct json_object *body = parse(script.chat_body);
+    struct json_object *messages = mc_json_array(body, "messages");
+    MARY_ASSERT_EQ(json_object_array_length(messages), 2);        /* verbatim: the question, then the system */
+    const char *system = mc_json_string(json_object_array_get_idx(messages, 1), "content");
+    MARY_ASSERT(strstr(system, "--- CONTEXT ---") != NULL);
+    MARY_ASSERT(strstr(system, "[1] \"notes.txt\"") != NULL);
+    MARY_ASSERT(strstr(system, "**Conversation (what was said before") != NULL);
+    MARY_ASSERT(strstr(system, "[[n]]") != NULL);                  /* the citation protocol */
+    MARY_ASSERT(strstr(system, "no retrieved memories") == NULL);
+    json_object_put(body);
+    struct json_object *end = parse(seen.end);
+    MARY_ASSERT(end != NULL);
+    MARY_ASSERT_STR(mc_json_string(end, "text"), "Paris is the capital of France. It is **lovely**.");
+    struct json_object *owners = mc_json_array(mc_json_object(end, "contribution"), "owners");
+    MARY_ASSERT_EQ(json_object_array_length(owners), 1);
+    struct json_object *owner = json_object_array_get_idx(owners, 0);
+    MARY_ASSERT_EQ(json_object_array_length(mc_json_array(owner, "document_ids")), 2);
+    MARY_ASSERT_EQ(json_object_array_length(mc_json_array(owner, "spans")), 1);   /* the two sentences touch: one span */
+    struct json_object *doc_spans = mc_json_object(owner, "document_spans");
+    MARY_ASSERT(doc_spans && mc_json_array(doc_spans, "file-1") && mc_json_array(doc_spans, "mary-turn-9"));
+    MARY_ASSERT_EQ(json_object_array_length(mc_json_array(end, "retrieved")), 2);
+    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(mc_json_array(end, "retrieved"), 1), "lane"), "conversation");
+    json_object_put(end);
+    MARY_ASSERT_EQ(script.completions, 0);                        /* small context: no briefing call */
+    teardown();
+}
+
+MARY_TEST(every_seventh_user_message_writes_a_memory) {
+    setup(true);
+    svc.retrieve = scripted_retrieve;
+    svc.deposit = scripted_deposit;
+    deposit_calls = 0;
+    mc_buf text = { 0 };
+    mc_buf_append_str(&text, "{\"type\":\"turn.start\",\"request\":{\"messages\":[");
+    for (int i = 0; i < 13; i++) {
+        char m[96];
+        snprintf(m, sizeof m, "%s{\"role\":\"%s\",\"content\":\"m%d\"}", i ? "," : "", i % 2 ? "assistant" : "user", i);
+        mc_buf_append_str(&text, m);
+    }
+    mc_buf_append_str(&text, "],\"sewn\":{\"owner_id\":\"somebody-else\",\"lanes\":[\"personal\"]}}}");
+    struct seen seen = { 0 };
+    run_turn(&seen, (const char *)text.data);          /* 7 user messages */
+    MARY_ASSERT_STR(seen.types[seen.count - 1], "turn.end");
+    MARY_ASSERT_STR(retrieve_lanes, "personal");
+    MARY_ASSERT_EQ(script.completions, 1);              /* the note */
+    MARY_ASSERT(strstr(script.completion_input, "[user]: m12") != NULL);
+    MARY_ASSERT(strstr(script.completion_input, "mistral-tiny") != NULL);
+    MARY_ASSERT_EQ(deposit_calls, 1);
+    MARY_ASSERT_STR(deposit_label, "Memory");
+    MARY_ASSERT(strncmp(deposit_group, "memory-", 7) == 0);
+    MARY_ASSERT_STR(deposit_owner, retrieve_owner);     /* the connection's user, never "somebody-else" */
+    MARY_ASSERT_STR(deposit_texts, "The user asked about the capital of France several times over.");   /* the short title is dropped */
+    mc_buf_free(&text);
+    teardown();
+    setup(true);
+    svc.deposit = scripted_deposit;
+    deposit_calls = 0;
+    seen = (struct seen){ 0 };
+    run_turn(&seen, TURN);                              /* one user message: no memory, and no embedding to check the topic */
+    MARY_ASSERT_EQ(deposit_calls, 0);
+    MARY_ASSERT_EQ(script.completions, 0);
+    teardown();
+}
+
 int main(void) {
     MARY_RUN(the_system_prompt_is_sewns_for_a_turn_with_no_context);
     MARY_RUN(request_defaults_follow_sewn);
@@ -484,5 +651,8 @@ int main(void) {
     MARY_RUN(speech_that_carries_no_audio_fails);
     MARY_RUN(bare_json_lines_are_spoken_too);
     MARY_RUN(a_refusal_never_repeats_the_key_or_the_words);
+    MARY_RUN(an_engine_that_is_not_served_is_refused_before_any_call);
+    MARY_RUN(a_turn_with_context_cites_its_sources_and_strips_the_markers);
+    MARY_RUN(every_seventh_user_message_writes_a_memory);
     MARY_TEST_MAIN_END();
 }

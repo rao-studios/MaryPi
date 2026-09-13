@@ -11,6 +11,7 @@
 #include "common/json.h"
 #include "common/sse.h"
 #include "sewn/mistral.h"
+#include "sewn/outbound.h"
 
 #define FAILURE_BODY_MAX 2048
 #define REASON_MAX 160
@@ -134,7 +135,7 @@ void sewn_speech_failure(long status, const char *body, size_t len, char *out, s
     else snprintf(out, cap, "Mistral answered HTTP %ld", status);
 }
 
-int sewn_speak(const sewn_service *svc, const char *key, const sewn_speech *speech, sewn_pcm_fn on_pcm,
+int sewn_speak(sewn_service *svc, const char *key, const sewn_speech *speech, sewn_pcm_fn on_pcm,
                sewn_stop_fn should_stop, void *user, long *status, char *message, size_t cap) {
     *status = 0;
     if (cap) message[0] = 0;
@@ -154,8 +155,8 @@ int sewn_speak(const sewn_service *svc, const char *key, const sewn_speech *spee
     mc_sse_init(&k.sse, svc->speech_line_max ? svc->speech_line_max : SEWN_SPEECH_LINE_MAX);
     k.sse.bare_json = true;                         /* MistralTTS's NDJSON fallback */
     char transport[256] = "";
-    int rc = svc->post_stream(SEWN_MISTRAL_SPEECH_PATH, key, text, body_len, on_bytes, stop_now, &k, status, transport,
-                              sizeof transport, svc->post_stream_user);
+    sewn_outbound o = { SEWN_PROVIDER_MISTRAL, "speech", NULL };
+    int rc = sewn_post(svc, &o, SEWN_MISTRAL_SPEECH_PATH, key, text, body_len, on_bytes, stop_now, &k, status, transport, sizeof transport);
     json_object_put(body);
     bool refused = *status && (*status < 200 || *status > 299);
     if (rc >= 0 && !refused && !k.done && !k.error && !stop_now(&k)) {

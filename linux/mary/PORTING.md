@@ -84,12 +84,22 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `Mary/Sources/MaryVoice/STT/VoiceTranscriber.swift` (the seam Mary transcribes through) | `sewn/include/sewn/transcribe.h`, `src/transcribe.c` (`transcribe.*` on sewnd's socket) | working — deviation 2 |
 | — (a WebSocket client) | `sewn/include/sewn/ws.h`, `src/ws.c` (libwebsockets) | working — Linux builds only; the relay is tested through `sewn_ws_ops` |
 | `Sewn/Sources/API/Routes/Realtime/RealtimeWire.swift`, `Realtime.swift`, `RealtimeTurnEngine.swift` | `sewn/include/sewn/turn.h`, `src/turn.c` (`sewn_run_turn`) | working — deviation 5 |
-| `Sewn/Sources/Core/Personality.swift` (`chatPersonaSection`), `Core/Sewn.swift` (`handleChat` prompt), `Core/Commands/Sewn+Compact.swift` (`memoryInstruction`) | `sewn_turn_system_prompt`, `sewn_turn_messages` | working |
-| `Sewn/Sources/Core/ModelConfig.swift` (Mistral model names), `API/GenerationDefaults.swift` | `sewn_turn_request_parse` | working |
+| `Sewn/Sources/Core/Sewn.swift` (`handleChat`: search → compact → persona + instructions + context + citation protocol → generate → annotate → auto-memory) | `sewn_run_turn` (`ground`, `finish_turn`, `remember`) | working — deviation 5 |
+| `Sewn/Sources/Core/Personality.swift` (`chatPersonaSection`), `Core/Commands/Sewn+Compact.swift` (`memoryInstruction`, `contextUsageGuide`) | `sewn_turn_system_prompt_with`, `sewn_memory_instruction`, `sewn_context_usage_guide` | working |
+| `Sewn/Sources/Core/Commands/Sewn+Search.swift` (`searchWithThreads`), `Sewn+ThreadFanout.swift` | `sewn/include/sewn/retrieve.h`, `src/retrieve.c` (`sewn_thread_retrieve` over threadd's local socket, with `lanes[]`) | working — deviations 5, 11; one node, no fan-out |
+| `Sewn/Sources/Core/Commands/Sewn+Compact.swift` (`compact`: verbatim ≤ 6000 chars, else the briefing) | `sewn/include/sewn/compact.h`, `src/compact.c` | working — a Conversation tier and Mary's background tier are added |
+| `Sewn/Sources/Gita/Gita+Royalty.swift` (`royalty(for:)`), `Gita+Spans.swift`, `Gita+MarkerSpans.swift` | `sewn/include/sewn/attribution.h`, `src/attribution.c` (the contribution, spans, citations, markers, the stream filter) | working — offsets are code points; pricing, the wallet and peers are not ported |
+| `Sewn/Sources/Core/Sewn+AutoMemory.swift`, `Utilities/Sanitize.swift` | `sewn/include/sewn/memory.h`, `src/memory.c` | working — the topic-change trigger is an embedding cosine, not Sinatra |
+| `Sewn/Sources/Core/LLMProvider.swift`, `ModelConfig.swift` (`resolveChatModel`, `utilityModel`) | `sewn/include/sewn/provider.h`, `src/provider.c` | working — deviation 12: Mistral only; `tinker` is refused with an engine error |
+| `Sewn/Sources/Providers/ModelProvider.swift` (`run`, `runWithTools`), `API/Routes/SkillsComplete.swift` | `sewn/include/sewn/complete.h`, `src/complete.c` (`complete` on the socket) | working |
+| `Sewn/Sources/Providers/EmbeddingModelProvider.swift` | `sewn/include/sewn/embed.h`, `src/embed.c` (`embed` on the socket, for threadd) | working |
+| `Thread/Sources/Providers/GraphExtractionProvider.swift` (`MistralGraphExtractionProvider`) | `graph.extract` in `src/server.c` (the prompt comes from threadd's policy) | working — deviation 11 |
+| — (every outbound call, inspectable) | `sewn/include/sewn/calls.h`, `src/calls.c`, `include/sewn/outbound.h`, `src/outbound.c`; `calls.list`, `calls.stats`, `sewnctl calls` | working |
+| `Sewn/Sources/Core/ModelConfig.swift` (Mistral model names), `API/GenerationDefaults.swift` | `sewn_turn_request_parse`, `sewn_provider_chat_model` | working |
 | `Sewn/Sources/Providers/ModelProvider+Stream.swift` (`sseStream`), `Utilities/MistralTTSStream.swift` (`stream`) | `sewn/include/sewn/transport.h`, `sewn_http_post_stream` | working — streams on Linux too |
 | `Sewn/Sources/API/Middleware/AuthMiddleware.swift`, `TokenValidator.swift` | `sewn/include/sewn/peer.h`, `src/peer.c` | working — deviation 4 |
 | `Sewn/Sources/API/Network/NetworkService+Center.swift` (`MISTRAL_API_KEY`) | `sewn/include/sewn/key.h`, `src/key.c` | working — a 0600 file set from System Settings, never the environment |
-| `Sewn/Sources/SewnServer.swift` (the listener) | `sewn/bin/sewnd.c`, `sewn/include/sewn/server.h`, `src/server.c` | working for `key.status`, `key.set`, `key.verify`; turns and transcription planned |
+| `Sewn/Sources/SewnServer.swift` (the listener) | `sewn/bin/sewnd.c`, `sewn/include/sewn/server.h`, `src/server.c` | working: the key ops, `turn.start`, `complete`, `embed`, `graph.extract`, `summarize`, `transcribe.start`, `voices.list`, `speak`, `calls.*` |
 | — (checking a key) | `sewn/include/sewn/http.h`, `src/http.c` (`sewn_mistral_verify`: GET `/v1/models`) | working |
 | — | `sewn/bin/sewnctl.c`, `sewn/include/sewn/client.h`, `src/client.c` (over `common/service.h`) | working |
 
@@ -186,10 +196,12 @@ What Swift gets from Foundation, URLSession and swift-nio.
 3. **Text-to-speech.** Voxtral TTS only. The Kokoro fallback waits for Frigate on Linux.
 4. **Sewn authentication.** Callers are authorized by unix-socket peer credentials; there is no Supabase
    sign-in. The owner of a turn is the local user.
-5. **Sewn's turn.** One grounded pass. No fast opener, retrieval, Sinatra tuning or Gita accounting.
-   With nothing retrieved, Sewn sends the model only the latest question and the system message; sewnd
-   never retrieves, so it keeps up to ten earlier turns as real messages, the way Sewn does when it has
-   verbatim context. Speech streams on Linux as well — Sewn's Linux build buffers each sentence whole.
+5. **Sewn's turn.** One grounded pass, with Sewn's `handleChat` around it: retrieval from threadd in the
+   lanes the request names, compaction, the citation-marker protocol, span attribution and auto-memory.
+   No fast opener, no Sinatra (its tone is fixed and its topic-change signal is an embedding cosine), no
+   Gita pricing. Retrieval fans out to one node — this machine's Thread — and is asked for the connection's
+   user, never the request's owner. Speech streams on Linux as well — Sewn's Linux build buffers each
+   sentence whole.
 6. **Barge-in.** No interrupting by voice while Mary speaks — there is no echo cancellation yet. Esc or the
    Ask Mary button stops her.
 7. **Thread.** One SQLite file (`/var/lib/thread/thread.db`) instead of Thread's property-list snapshots,
@@ -216,3 +228,8 @@ What Swift gets from Foundation, URLSession and swift-nio.
     expansion too). indexd keeps a record for every file in the home and threadd proves parity with the
     disk; a ledger records every deposit, search, enrichment and repair. `top_k` is honoured (Thread ignores
     it). Sinatra is scrapped.
+12. **The engine toggle.** `provider` is on every wire (`turn.start`, `complete`, the utility ops) and the
+    desktop offers Mistral and Thinking Machines per lane, as the Mac does, but only Mistral's row is
+    filled: a request naming `tinker` is answered with `error{stage: "engine"}` before any socket is
+    opened and leaves no row in the calls ledger. Thinking Machines is a toggle for a later
+    implementation; no key, wire or model for it exists in this phase.

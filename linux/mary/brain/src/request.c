@@ -41,6 +41,12 @@ struct json_object *mb_turn_start(const mb_history *history, const mb_turn_reque
     json_object_object_add(sewn, "owner_id", json_object_new_string(r->owner_id ? r->owner_id : ""));
     json_object_object_add(sewn, "scope", json_object_new_string("personal"));
     json_object_object_add(sewn, "aggregate", json_object_new_boolean(1));
+    /* The lanes the reply's context may draw on (the storage lanes in thread/families.h);
+     * the memory plan narrows and widens these per route. */
+    struct json_object *lanes = json_object_new_array();
+    json_object_array_add(lanes, json_object_new_string("conversation"));
+    json_object_array_add(lanes, json_object_new_string("personal"));
+    json_object_object_add(sewn, "lanes", lanes);
     json_object_object_add(sewn, "request_id", json_object_new_string(r->request_id ? r->request_id : ""));
     json_object_object_add(request, "sewn", sewn);
 

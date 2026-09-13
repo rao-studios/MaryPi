@@ -26,6 +26,11 @@ struct json_object;
 #define SEWN_STT_SAMPLE_RATE 16000                           /* pcm_s16le mono */
 #define SEWN_STT_MAX_APPEND 262144                           /* decoded bytes per input_audio.append */
 
+/* API/GenerationDefaults.swift. */
+#define SEWN_DEFAULT_MAX_TOKENS 128
+#define SEWN_DEFAULT_TEMPERATURE 0.8
+#define SEWN_DEFAULT_TOP_P 1.0
+
 /* MARK: - Chat (runStreamMistral in Providers/ModelProvider+Stream.swift) */
 
 /* {model, messages, max_tokens, temperature, top_p, stream: true} — exactly what

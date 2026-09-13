@@ -26,7 +26,7 @@ typedef struct sewn_speech {
  * event too large to read; -ENODATA when the answer carried no audio; -EIO when Mistral could not be
  * reached; -ECANCELED when should_stop or on_pcm ended it; -EINVAL for audio that would not decode;
  * -ENOMEM. `message` says why for every failure but a cancel, and never repeats the key or the text. */
-int sewn_speak(const sewn_service *svc, const char *key, const sewn_speech *speech, sewn_pcm_fn on_pcm,
+int sewn_speak(sewn_service *svc, const char *key, const sewn_speech *speech, sewn_pcm_fn on_pcm,
                sewn_stop_fn should_stop, void *user, long *status, char *message, size_t cap);
 
 /* Mistral's own reason in an error body (`message`, `detail`, `detail[0].msg`, `error.message`, or plain text that is

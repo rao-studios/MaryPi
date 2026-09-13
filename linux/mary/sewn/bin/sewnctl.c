@@ -77,8 +77,55 @@ static ssize_t read_secret_line(char *out, size_t cap) {
     return (ssize_t)n;
 }
 
+/* The calls ledger: every request sewnd has sent, newest first. */
+static int list_calls(const char *socket_path, const char *limit) {
+    int fd = sewn_connect(socket_path);
+    if (fd < 0) {
+        fprintf(stderr, "sewnctl: cannot reach sewnd at %s: %s\n", socket_path, strerror(-fd));
+        return 1;
+    }
+    struct json_object *request = json_object_new_object(), *reply = NULL;
+    json_object_object_add(request, "type", json_object_new_string("calls.list"));
+    json_object_object_add(request, "limit", json_object_new_int(limit ? atoi(limit) : 50));
+    int rc = sewn_call(fd, request, &reply);
+    json_object_put(request);
+    close(fd);
+    if (rc < 0) {
+        fprintf(stderr, "sewnctl: %s\n", strerror(-rc));
+        return 1;
+    }
+    struct json_object *calls = mc_json_array(reply, "calls");
+    if (!calls) {
+        int status = print_reply(reply);
+        json_object_put(reply);
+        return status ? status : 1;
+    }
+    size_t n = json_object_array_length(calls);
+    if (!n) printf("no calls yet\n");
+    for (size_t i = 0; i < n; i++) {
+        struct json_object *c = json_object_array_get_idx(calls, i);
+        int64_t at = 0, ms = 0, status = 0, out = 0, in = 0;
+        mc_json_int64(c, "at_ms", &at);
+        mc_json_int64(c, "ms", &ms);
+        mc_json_int64(c, "status", &status);
+        mc_json_int64(c, "bytes_out", &out);
+        mc_json_int64(c, "bytes_in", &in);
+        time_t t = (time_t)(at / 1000);
+        struct tm tm;
+        char when[32];
+        localtime_r(&t, &tm);
+        strftime(when, sizeof when, "%H:%M:%S", &tm);
+        printf("%s  %-9s %-8s %-24s %-32s %3lld  %5lld ms  %6lld out %8lld in  %s\n", when, or_else(mc_json_string(c, "purpose"), "-"),
+               or_else(mc_json_string(c, "provider"), "-"), or_else(mc_json_string(c, "host"), "-"), or_else(mc_json_string(c, "path"), "-"),
+               (long long)status, (long long)ms, (long long)out, (long long)in, or_else(mc_json_string(c, "outcome"), ""));
+    }
+    json_object_put(reply);
+    return 0;
+}
+
 static void usage(FILE *to) {
-    fprintf(to, "usage: sewnctl [--socket PATH] status | verify | set | voices | speak VOICE TEXT\n"
+    fprintf(to, "usage: sewnctl [--socket PATH] status | verify | set | voices | speak VOICE TEXT | calls [N]\n"
+                "  calls lists the last N (50) requests sewnd sent to the network: purpose, host, path, status, timing, bytes\n"
                 "  set reads the Mistral API key from standard input, never from the command line\n"
                 "  speak writes 24 kHz mono float32 to standard output:\n"
                 "    sewnctl speak fr_marie_neutral \"Bonjour\" | pw-cat --playback --format f32 --rate 24000 --channels 1 -\n");
@@ -204,6 +251,7 @@ int main(int argc, char **argv) {
         else { usage(stderr); return 2; }
     }
     if (command && strcmp(command, "voices") == 0 && count == 0) return list_voices(socket_path);
+    if (command && strcmp(command, "calls") == 0 && count <= 1) return list_calls(socket_path, operands[0]);
     if (command && strcmp(command, "speak") == 0 && count == 2) return speak(socket_path, operands[0], operands[1]);
     if (!command || count || (strcmp(command, "status") && strcmp(command, "verify") && strcmp(command, "set"))) {
         usage(stderr);

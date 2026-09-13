@@ -21,9 +21,13 @@ and how she is allowed to use the apps.
 ```
 
 - **sewnd** (`sewnd.service`, user `sewn`) is the only process that holds the Mistral API key and the only one
-  that talks to Mistral: chat, Voxtral Realtime transcription and Voxtral speech, over TLS 1.2+ with the
-  certificate and host checked. It listens on `/run/sewn/sewn.sock` (0660, group `sewn`) and never on the
-  network.
+  on the machine that talks to the network: chat, the skills lane, embeddings and graph extraction for
+  threadd, Voxtral Realtime transcription and Voxtral speech, over TLS 1.2+ with the certificate and host
+  checked. Every request it sends is a row in its calls ledger (`sewnctl calls`). It listens on
+  `/run/sewn/sewn.sock` (0660, group `sewn`) and never on the network. A turn retrieves from the Thread
+  (in the lanes maryd names), compacts what it found into the prompt, asks the model to mark the sentences
+  that drew on each source, strips the marks and hands the desktop the spans to highlight, and every seventh
+  exchange writes a memory note back into the Thread.
 - **threadd** (`threadd.service`, user `thread`) is Mary's memory, the hard drive's own record of what is on
   it: one SQLite file, `/var/lib/thread/thread.db`, with every owner's documents, their embeddings, the
   knowledge graph and a ledger. It serves Conduit's `thread.v1` gRPC on `/run/thread/thread.sock` and the

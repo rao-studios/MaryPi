@@ -1,6 +1,7 @@
-/* sewnd: the only process on MaryOS that holds the Mistral API key. It listens on
- * a unix socket — never the network — and serves one operation per connection
- * on a thread of its own. systemd runs it as the `sewn` user with its state in
+/* sewnd: the only process on MaryOS that holds the Mistral API key, and the only one
+ * that talks to the network (every call it makes is a row in its ledger). It listens
+ * on a unix socket and serves one operation per connection on a thread of its own;
+ * a turn's retrieval and its memory go to threadd over /run/thread/local.sock. systemd runs it as the `sewn` user with its state in
  * $STATE_DIRECTORY and its socket in $RUNTIME_DIRECTORY. */
 #if defined(__APPLE__)
 #define _DARWIN_C_SOURCE
@@ -42,7 +43,7 @@ static void *serve(void *arg) {
 }
 
 static void usage(FILE *to) {
-    fprintf(to, "usage: sewnd [--socket PATH] [--state-dir DIR] [--admin-group NAME] [--socket-mode OCTAL]\n");
+    fprintf(to, "usage: sewnd [--socket PATH] [--state-dir DIR] [--admin-group NAME] [--socket-mode OCTAL] [--thread-socket PATH]\n");
 }
 
 int main(int argc, char **argv) {
@@ -55,13 +56,14 @@ int main(int argc, char **argv) {
         socket_path = runtime_socket;
     }
     const char *state_dir = state && *state ? state : SEWN_STATE_DIR;
-    const char *admin_group = SEWN_ADMIN_GROUP;
+    const char *admin_group = SEWN_ADMIN_GROUP, *thread_socket = NULL;
     long mode = 0660;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--socket") == 0 && i + 1 < argc) socket_path = argv[++i];
         else if (strcmp(argv[i], "--state-dir") == 0 && i + 1 < argc) state_dir = argv[++i];
         else if (strcmp(argv[i], "--admin-group") == 0 && i + 1 < argc) admin_group = argv[++i];
         else if (strcmp(argv[i], "--socket-mode") == 0 && i + 1 < argc) mode = strtol(argv[++i], NULL, 8);
+        else if (strcmp(argv[i], "--thread-socket") == 0 && i + 1 < argc) thread_socket = argv[++i];
         else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) { usage(stdout); return 0; }
         else { usage(stderr); return 2; }
     }
@@ -78,6 +80,8 @@ int main(int argc, char **argv) {
     }
     sewn_service_init(&svc, state_dir);
     svc.admin_group = admin_group;
+    svc.retrieve_user = (void *)thread_socket;
+    svc.deposit_user = (void *)thread_socket;
     int listener = sewn_listen(socket_path, (int)mode);
     if (listener < 0) {
         mc_log(MC_LOG_ERROR, "cannot listen on %s: %s", socket_path, strerror(-listener));

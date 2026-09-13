@@ -17,6 +17,7 @@
 #include "common/log.h"
 #include "common/secure.h"
 #include "sewn/mistral.h"
+#include "sewn/outbound.h"
 
 struct session {
     sewn_service *svc;
@@ -217,7 +218,10 @@ int sewn_run_transcribe(sewn_service *svc, int fd, mc_frame_reader *reader, stru
     char path[192], message[256] = "";
     snprintf(path, sizeof path, "%s?model=%s", SEWN_MISTRAL_REALTIME_PATH, SEWN_STT_MODEL);
     int64_t started = mc_now_ms();
+    int64_t opened_at = mc_now_ms();
     s->ws = svc->ws->open(path, key, on_voxtral, on_voxtral_closed, s, message, sizeof message, svc->ws_user);
+    sewn_outbound o = { SEWN_PROVIDER_MISTRAL, "stt", NULL };
+    sewn_record_call(svc, &o, path, 0, mc_now_ms() - opened_at, 0, 0, s->ws ? "ok" : "failed");
     mc_secure_zero(key, sizeof key);
     if (!s->ws) {
         refuse(fd, "network", message[0] ? message : "Voxtral could not be reached");
