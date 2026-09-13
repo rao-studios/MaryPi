@@ -1,11 +1,17 @@
 # conduit — Swift twin: [Conduit](https://github.com/rao-studios/Conduit) (`Protos/`, `Sources/Conduit`)
 
-The wire between Thread nodes. `protos/thread.proto` and `protos/fleet.proto` are verbatim copies of
-Conduit's, compiled with protobuf-c (the generated files are committed; `make gen-check` compares the
-copies with a sibling Conduit checkout). Calls are unary gRPC over nghttp2 — HTTP/2 without TLS on a
-unix socket for now, the same bytes grpc-swift speaks, so a Swift Thread node can one day be a peer.
+The wire between Thread nodes.
 
-Deviation: plaintext over a unix socket; Conduit's own transports are plaintext TCP. mTLS is declared
-in `thread/peer.h`, not built.
+- `protos/thread.proto` and `protos/fleet.proto` are verbatim copies of Conduit's. `make gen` compiles them
+  with protobuf-c into `include/conduit/*.pb-c.h` and `src/*.pb-c.c`, which are committed; `make gen-check`
+  fails when either the generated code or the copies (against a sibling Conduit checkout) are stale.
+- `conduit/grpc.h` serves and calls gRPC's unary methods over HTTP/2 with nghttp2 — the same bytes grpc-swift
+  sends, checked against Python's grpcio in the tests: `:path` routing, length-prefixed messages capped at
+  4 MiB, and `grpc-status` / `grpc-message` trailers (trailers alone for a call that fails before a message).
 
-Status: planned (commit 8). Prefix `conduit_`. Needs libnghttp2 and libprotobuf-c.
+Deviations: HTTP/2 in the clear over unix sockets on one machine (Conduit's transports are plaintext TCP);
+mutual TLS is declared for peering in `thread/peer.h`, not built. Unary calls only: the streaming `Session`
+and `Train` RPCs answer UNIMPLEMENTED. Conduit's session manager, registration client and mothership server
+are not ported.
+
+Status: working. Prefix `conduit_`. Needs libnghttp2 and libprotobuf-c (and protoc-c for `make gen`).

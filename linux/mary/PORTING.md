@@ -60,9 +60,10 @@ What Swift gets from Foundation, URLSession and swift-nio.
 
 | Swift | C | Status |
 |---|---|---|
-| `Conduit/Protos/thread.proto`, `fleet.proto` | `conduit/protos/` (verbatim) | planned |
-| `Conduit/Sources/Conduit/Generated/*` | `conduit/src/pb/*.pb-c.[ch]` (protobuf-c) | planned |
-| `Conduit/Sources/Conduit/Client/*`, `Server/*` | `conduit_grpc_call`, `conduit_grpc_server` (unary, nghttp2) | planned |
+| `Conduit/Protos/thread.proto`, `fleet.proto` | `conduit/protos/` (verbatim; `make gen-check` compares) | working |
+| `Conduit/Sources/Conduit/Generated/*` (swift-protobuf) | `conduit/include/conduit/*.pb-c.h`, `conduit/src/*.pb-c.c` (protobuf-c) | working |
+| grpc-swift's HTTP/2 transport (`GRPCNIOTransportHTTP2`) | `conduit/include/conduit/grpc.h`, `src/grpc.c` (`conduit_serve`, `conduit_call`; nghttp2) | working — unary only, unix sockets |
+| `Conduit/Sources/Conduit/Client/*`, `Server/*`, `Session/*` (registration, sessions, the mothership) | — | not ported: nodes do not register with Sewn on MaryOS |
 
 ## sewn ← Sewn
 

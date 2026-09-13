@@ -6,6 +6,8 @@
 #   make test          build and run <pkg>/tests/test_*.c
 #   make install       DESTDIR=… PREFIX=/usr
 #   make check-deps    which optional libraries were found, and which packages they gate
+#   make gen           regenerate conduit's protobuf-c code (needs protoc-c)
+#   make gen-check     fail when that code or the proto copies are stale
 #
 # Every output goes under $(O) (default build/), so the source tree may be a
 # read-only mount (the MaryPi builder mounts it that way).
@@ -40,6 +42,11 @@ DEPS_voice := common
 DEPS_runtime := brain voice computer-use skills mary-thread conduit ambient foundation common
 DEPS_fleet := common
 DEPS_frigate := common
+
+# What a package needs beyond json-c (names from OPTIONAL_NAMES); without them it is skipped.
+NEEDS_conduit := NGHTTP2 PROTOBUFC
+NEEDS_thread := NGHTTP2 PROTOBUFC
+NEEDS_mary-thread := NGHTTP2 PROTOBUFC
 
 # json-c is the one library everything uses.
 BASE_PKGS := json-c
@@ -85,7 +92,7 @@ ALL_LIBS := $(strip $(foreach p,$(BUILT_PKGS),$(call lib_of,$(p))))
 ALL_BINS := $(strip $(foreach p,$(BUILT_PKGS),$(patsubst $(p)/bin/%.c,$(O)/bin/%,$(wildcard $(p)/bin/*.c))))
 ALL_TESTS := $(strip $(foreach p,$(BUILT_PKGS),$(patsubst $(p)/tests/%.c,$(O)/tests/$(p)/%,$(wildcard $(p)/tests/test_*.c))))
 
-.PHONY: all test install check-deps clean
+.PHONY: all test install check-deps gen gen-check clean
 all: $(ALL_LIBS) $(ALL_BINS)
 ifneq ($(SKIPPED_PKGS),)
 	@echo "make: skipped $(SKIPPED_PKGS) (make check-deps says what they need)"
@@ -129,6 +136,41 @@ check-deps:
 	@$(foreach n,$(OPTIONAL_NAMES),echo "$(n): $(if $(HAVE_$(n)),found,missing)";)
 	@echo "built: $(BUILT_PKGS)"
 	@echo "skipped: $(if $(SKIPPED_PKGS),$(foreach p,$(SKIPPED_PKGS),$(p) (needs $(NEEDS_$(p)))),none)"
+
+# conduit: Conduit's protos compiled with protobuf-c. The generated files are committed —
+# the builder image has protoc-c, a Mac may not — and moved under include/conduit/, so
+# the .c files include "conduit/<name>.pb-c.h". gen-check keeps both the generated code
+# and the proto copies (against a sibling Conduit checkout) honest.
+PROTOC_C ?= protoc-c
+CONDUIT_DIR ?= ../../../Conduit
+PROTO_NAMES := thread fleet
+# protoc-c names a service member after each RPC, and thread.proto's Register becomes a
+# member called `register` — a C keyword. conduit routes calls itself and never uses the
+# service stubs, so the headers get `register_` instead.
+PB_FIXUP := sed -e 's/(\*register)(/(*register_)(/' -e 's/function_prefix__ \#\# register,/function_prefix__ \#\# register_,/'
+
+gen:
+	@command -v $(PROTOC_C) > /dev/null || { echo "gen: $(PROTOC_C) not found (the builder image has it)"; exit 1; }
+	@rm -rf $(O)/gen && mkdir -p $(O)/gen
+	cd conduit/protos && $(PROTOC_C) --c_out=$(abspath $(O))/gen $(PROTO_NAMES:%=%.proto)
+	@for p in $(PROTO_NAMES); do \
+	  sed 's|#include "'$$p'.pb-c.h"|#include "conduit/'$$p'.pb-c.h"|' $(O)/gen/$$p.pb-c.c > conduit/src/$$p.pb-c.c; \
+	  $(PB_FIXUP) $(O)/gen/$$p.pb-c.h > conduit/include/conduit/$$p.pb-c.h; \
+	done; echo "gen: conduit/src/*.pb-c.c and conduit/include/conduit/*.pb-c.h written"
+
+gen-check:
+	@if [ -d "$(CONDUIT_DIR)/Protos" ]; then \
+	  for p in $(PROTO_NAMES); do cmp -s conduit/protos/$$p.proto "$(CONDUIT_DIR)/Protos/$$p.proto" \
+	    || { echo "gen-check: conduit/protos/$$p.proto differs from $(CONDUIT_DIR)/Protos"; exit 1; }; done; \
+	else echo "gen-check: no Conduit checkout at $(CONDUIT_DIR); the proto copies were not compared"; fi
+	@command -v $(PROTOC_C) > /dev/null || { echo "gen-check: $(PROTOC_C) not found; the generated code was not compared"; exit 0; }; \
+	tmp=$$(mktemp -d); (cd conduit/protos && $(PROTOC_C) --c_out=$$tmp $(PROTO_NAMES:%=%.proto)) || exit 1; \
+	for p in $(PROTO_NAMES); do \
+	  sed 's|#include "'$$p'.pb-c.h"|#include "conduit/'$$p'.pb-c.h"|' $$tmp/$$p.pb-c.c | cmp -s - conduit/src/$$p.pb-c.c \
+	    || { echo "gen-check: conduit/src/$$p.pb-c.c is stale (make gen)"; rm -rf $$tmp; exit 1; }; \
+	  $(PB_FIXUP) $$tmp/$$p.pb-c.h | cmp -s - conduit/include/conduit/$$p.pb-c.h \
+	    || { echo "gen-check: conduit/include/conduit/$$p.pb-c.h is stale (make gen)"; rm -rf $$tmp; exit 1; }; \
+	done; rm -rf $$tmp; echo "gen-check: the protos and generated code are current"
 
 clean:
 	rm -rf $(O)
