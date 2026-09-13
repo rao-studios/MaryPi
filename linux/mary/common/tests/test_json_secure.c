@@ -16,6 +16,11 @@ MARY_TEST(parsing_is_strict_about_what_surrounds_the_value) {
     MARY_ASSERT_EQ(at, 1757700000000LL);
     json_object_put(obj);
 
+    const char *set = "{\"type\":\"key.set\",\"key\":\"abc\"}";
+    struct json_object *secret = mc_json_parse_secret(set, strlen(set));
+    MARY_ASSERT_STR(mc_json_string(secret, "key"), "abc");
+    json_object_put(secret);
+    MARY_ASSERT(mc_json_parse_secret("{\"key\":", 7) == NULL);
     MARY_ASSERT(mc_json_parse("{\"a\":1} x", 9) == NULL);
     MARY_ASSERT(mc_json_parse("{\"a\":", 5) == NULL);
     struct json_object *number = mc_json_parse("12", 2);   /* a top-level number needs no terminator */

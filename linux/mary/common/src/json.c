@@ -5,7 +5,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct json_object *mc_json_parse(const char *text, size_t len) {
+#include <json-c/printbuf.h>
+
+#include "common/secure.h"
+
+static struct json_object *parse(const char *text, size_t len, bool secret) {
     if (!text || len >= INT_MAX) return NULL;
     /* json-c needs a terminator to finish a top-level number, so parse a copy
      * with its NUL counted. */
@@ -21,23 +25,27 @@ struct json_object *mc_json_parse(const char *text, size_t len) {
     struct json_object *obj = json_tokener_parse_ex(tok, copy, (int)len + 1);
     enum json_tokener_error err = json_tokener_get_error(tok);
     size_t end = json_tokener_get_parse_end(tok);
+    if (secret && tok->pb && tok->pb->buf) mc_secure_zero(tok->pb->buf, (size_t)tok->pb->size);
     json_tokener_free(tok);
-    if (err != json_tokener_success) {
-        json_object_put(obj);
-        free(copy);
-        return NULL;
-    }
-    for (; end < len; end++) {
+    bool trailing = false;
+    for (; err == json_tokener_success && end < len; end++) {
         if (!isspace((unsigned char)copy[end])) {
-            json_object_put(obj);
-            free(copy);
-            return NULL;
+            trailing = true;
+            break;
         }
     }
+    if (secret) mc_secure_zero(copy, len + 1);
     free(copy);
+    if (err != json_tokener_success || trailing) {
+        json_object_put(obj);
+        return NULL;
+    }
     /* A document that is only whitespace, or the literal null, parses to NULL. */
     return obj;
 }
+
+struct json_object *mc_json_parse(const char *text, size_t len) { return parse(text, len, false); }
+struct json_object *mc_json_parse_secret(const char *text, size_t len) { return parse(text, len, true); }
 
 static struct json_object *member(struct json_object *obj, const char *key, enum json_type type) {
     struct json_object *value;

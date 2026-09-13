@@ -13,6 +13,9 @@
 /* One JSON value spanning all of `text` (surrounding whitespace allowed). NULL
  * for malformed or trailing input. The caller releases it with json_object_put. */
 struct json_object *mc_json_parse(const char *text, size_t len);
+/* The same, for a message that carries a secret: the copy json-c parses and the
+ * tokener's own buffer are zeroed before they are freed. */
+struct json_object *mc_json_parse_secret(const char *text, size_t len);
 
 const char *mc_json_string(struct json_object *obj, const char *key);
 bool mc_json_int64(struct json_object *obj, const char *key, int64_t *out);

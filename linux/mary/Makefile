@@ -19,7 +19,7 @@ VERSION := 0.1.0
 UNAME := $(shell uname -s)
 
 CFLAGS ?= -O2 -g
-CFLAGS += -std=c11 -Wall -Wextra -Wno-unused-parameter -Werror=implicit-function-declaration -fPIC
+CFLAGS += -std=c11 -Wall -Wextra -Wno-unused-parameter -Werror=implicit-function-declaration -fPIC -pthread
 CPPFLAGS += -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DMARY_VERSION=\"$(VERSION)\"
 
 # Packages. A package's include/ is on every path; a package may link only the

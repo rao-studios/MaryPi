@@ -74,7 +74,11 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `Sewn/Sources/Utilities/MistralTTSStream.swift` (`makeRequest`, `extractPCM`) | `sewn_speech_body`, `sewn_speech_event` | working |
 | — (Voxtral Realtime transcription, from mistralai client-python) | `sewn_stt_session_update`, `sewn_stt_append`, `sewn_stt_event_parse` | working — deviation 2 |
 | `Sewn/Sources/API/Routes/Realtime/RealtimeWire.swift`, `Realtime.swift` | `sewn/src/realtime.c` | planned — deviation 5 |
-| `Sewn/Sources/API/Middleware/AuthMiddleware.swift`, `TokenValidator.swift` | `sewn/src/peer.c` | planned — deviation 4 |
+| `Sewn/Sources/API/Middleware/AuthMiddleware.swift`, `TokenValidator.swift` | `sewn/include/sewn/peer.h`, `src/peer.c` | working — deviation 4 |
+| `Sewn/Sources/API/Network/NetworkService+Center.swift` (`MISTRAL_API_KEY`) | `sewn/include/sewn/key.h`, `src/key.c` | working — a 0600 file set from System Settings, never the environment |
+| `Sewn/Sources/SewnServer.swift` (the listener) | `sewn/bin/sewnd.c`, `sewn/include/sewn/server.h`, `src/server.c` | working for `key.status`, `key.set`, `key.verify`; turns and transcription planned |
+| — (checking a key) | `sewn/include/sewn/http.h`, `src/http.c` (`sewn_mistral_verify`: GET `/v1/models`) | working |
+| — | `sewn/bin/sewnctl.c`, `sewn/include/sewn/client.h`, `src/client.c` | working |
 
 ## thread ← Thread
 
