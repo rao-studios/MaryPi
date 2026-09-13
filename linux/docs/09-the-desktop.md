@@ -186,6 +186,16 @@ inside the panel: its shadow falls through to whatever lies beneath. The model
 `spotlight.ts`; the panel is a component (`Spotlight.c`) that other distros can
 paint anywhere; `src/compositor/spotlight.c` is the host.
 
+**Mary.** The bar also carries an Ask Mary orb at its right end. Pressing it, or `Ctrl+Enter` with something
+typed, asks Mary, and the panel turns into the conversation: a status row saying what she is doing (listening,
+hearing you, reading it back, thinking, speaking) beside the microphone's meter, over a well where each question
+is a small line behind an accent rule and her answer streams in under it as she speaks it, older exchanges
+fading. Pressing the orb with the bar empty opens the microphone instead, and saying “Hey Mary” opens Spotlight
+on the conversation, already listening. There `Enter` asks the next question, `↑`/`↓` scroll, the first `Esc`
+stops her and the second closes; the conversation is still there the next time. Plain `Enter` in search still
+launches. The conversation is `lp_mary`, MaryUI's client for `maryd` (`linux/mary`), drawn by
+`SpotlightChat.c` — Linux only, PARITY D18.
+
 ## Finder
 
 The Finder is a file manager for the guest's filesystem. Its window has a toolbar
