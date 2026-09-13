@@ -39,6 +39,14 @@ import Virtualization
         #expect(configuration.directorySharingDevices.count == 1)
         #expect((configuration.bootLoader as? VZLinuxBootLoader)?.commandLine == "console=hvc0 root=LABEL=x")
         #expect(configuration.networkDevices.first?.macAddress.string == "02:00:00:aa:bb:cc")
+        #expect((configuration.audioDevices.first as? VZVirtioSoundDeviceConfiguration)?.streams.count == 1)
+
+        var listening = spec
+        listening.microphone = true
+        let heard = try VMConfigurationBuilder.assemble(listening, serialInput: nil, serialOutput: output)
+        let sound = heard.audioDevices.first as? VZVirtioSoundDeviceConfiguration
+        #expect(sound?.streams.count == 2)
+        #expect(sound?.streams.contains { ($0 as? VZVirtioSoundDeviceInputStreamConfiguration)?.source is VZHostAudioInputStreamSource } == true)
 
         var headless = spec
         headless.headless = true
@@ -75,6 +83,8 @@ import Virtualization
         #expect(desktop.commandLine == "console=hvc0 systemd.unit=graphical.target maryos.ui=dev")
         #expect(desktop.summary == "2 CPUs, 4096 MiB, disk disk.img, kernel Image, 1280x800 window, boots to the desktop (dev: out/ui over virtiofs)")
         #expect(VMBootMode.console.kernelArguments.isEmpty)
+        let heard = VMSpec(name: "MaryOS", cpus: 2, memoryMiB: 4096, disk: paths.disk, kernel: paths.kernel, initrd: nil, commandLine: "", microphone: true)
+        #expect(heard.summary == "2 CPUs, 4096 MiB, disk disk.img, kernel Image, 1280x800 window, microphone")
     }
 
     @Test func macAddressIsPersisted() throws {

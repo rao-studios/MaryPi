@@ -1,5 +1,6 @@
 import AppKit
 import ArgumentParser
+import AVFoundation
 import Foundation
 import MaryOSKit
 import Virtualization
@@ -28,6 +29,9 @@ struct VMCommand: ParsableCommand {
 
         @Flag(name: .long, help: "With --desktop: run the desktop from out/ui over virtiofs and restart it whenever `make ui` replaces it (maryos.ui=dev).")
         var dev = false
+
+        @Flag(name: .long, help: "Give the guest this Mac's microphone (its sound device gains an input), so Mary can hear you. macOS asks once.")
+        var microphone = false
 
         @Option(name: .long, help: "Guest memory in MiB (default \(VMSpec.defaultMemoryMiB)).")
         var memory: Int?
@@ -62,6 +66,7 @@ struct VMCommand: ParsableCommand {
             }
             if dev && !desktop { throw ValidationError("--dev needs --desktop") }
             if desktop && headless { throw ValidationError("--desktop needs a window; drop --headless") }
+            if microphone && headless { throw ValidationError("--microphone needs a window; drop --headless") }
             let mode: VMBootMode = desktop ? .desktop(dev: dev) : .console
             let paths = try kit.paths()
             let config = try kit.config(paths)
@@ -92,7 +97,7 @@ struct VMCommand: ParsableCommand {
                 name: config.fullName, cpus: cpus ?? VMSpec.defaultCPUs, memoryMiB: memory ?? VMSpec.defaultMemoryMiB,
                 disk: state.disk, kernel: state.kernel, initrd: state.initrd, commandLine: mode.commandLine(base: boot.cmdline),
                 macAddress: dryRun ? nil : try VMStateManager.macAddress(state),
-                sharedDirectories: shares, headless: headless, bootMode: mode
+                sharedDirectories: shares, headless: headless, bootMode: mode, microphone: microphone
             )
             if dryRun {
                 Output.line("vm: \(spec.name): \(spec.summary)")
@@ -102,6 +107,7 @@ struct VMCommand: ParsableCommand {
                 Output.line("vm: state \(state.directory.path)")
                 return
             }
+            if microphone { MicrophoneAccess.ensure() }
             let status = try MainActor.assumeIsolated {
                 try VMLauncher.run(spec: spec, state: state, echoSerial: !quiet && !console, console: console, windowed: !headless)
             }
@@ -171,6 +177,22 @@ struct VMCommand: ParsableCommand {
             }
             try VMStateManager.reset(state)
             Output.line("vm: removed \(state.disk.path) and its kernel files")
+        }
+    }
+}
+
+/// macOS asks the person once whether this Mac's microphone may be used. Until they agree the
+/// guest hears silence; the VM still boots.
+enum MicrophoneAccess {
+    static func ensure() {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            return
+        case .notDetermined:
+            let granted = (try? runBlocking { await AVCaptureDevice.requestAccess(for: .audio) }) ?? false
+            if !granted { Output.line("vm: warning, microphone access was not granted; the guest will hear silence") }
+        default:
+            Output.line("vm: warning, this app may not use the microphone (System Settings › Privacy & Security › Microphone); the guest will hear silence")
         }
     }
 }

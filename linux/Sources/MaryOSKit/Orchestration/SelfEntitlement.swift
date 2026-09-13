@@ -10,9 +10,13 @@ import Foundation
 /// This is safe: `codesign` writes a new file and renames it over the old
 /// one, so the running process keeps its pages, and SwiftPM does not relink
 /// a binary whose signature changed. `scripts/sign.sh` does the same thing
-/// ahead of time for the Makefile and the app bundle.
+/// ahead of time for the Makefile and the app bundle. The microphone
+/// entitlement rides along, for `maryos vm run --microphone`: a binary signed
+/// before it existed is signed again once.
 public enum SelfEntitlement {
     public static let key = "com.apple.security.virtualization"
+    /// Everything the signature must carry (Entitlements.plist has the same).
+    public static let keys = [key, "com.apple.security.device.audio-input"]
     /// Set in the environment of the re-executed process so a failed signing cannot loop.
     public static let restartMarker = "MARYOS_SELF_SIGNED"
 
@@ -21,6 +25,8 @@ public enum SelfEntitlement {
     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
     <plist version="1.0">
     <dict>
+    \t<key>com.apple.security.device.audio-input</key>
+    \t<true/>
     \t<key>com.apple.security.virtualization</key>
     \t<true/>
     </dict>
@@ -53,9 +59,10 @@ public enum SelfEntitlement {
         return (process.terminationStatus, String(decoding: data, as: UTF8.self))
     }
 
-    /// Whether `executable` (this process by default) carries the entitlement.
+    /// Whether `executable` (this process by default) carries every entitlement in `keys`.
     public static func isPresent(executable: String = executablePath) -> Bool {
-        runSync("/usr/bin/codesign", ["-d", "--entitlements", "-", executable]).output.contains(key)
+        let output = runSync("/usr/bin/codesign", ["-d", "--entitlements", "-", executable]).output
+        return keys.allSatisfy { output.contains($0) }
     }
 
     /// Sign the running executable with the entitlement and re-exec it with

@@ -26,6 +26,8 @@
 	<string>15.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MaryOS gives its virtual machine your microphone so Mary can hear you say “Hey Mary”.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

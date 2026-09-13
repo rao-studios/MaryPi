@@ -97,11 +97,13 @@ public struct VMSpec: Sendable, Equatable {
     public var headless: Bool
     /// Informational: `commandLine` already carries the mode's arguments.
     public var bootMode: VMBootMode
+    /// The Mac's microphone as the guest's sound input (`maryos vm run --microphone`), so Mary can hear.
+    public var microphone: Bool
 
     public init(name: String, cpus: Int, memoryMiB: Int, disk: URL, kernel: URL, initrd: URL?, commandLine: String,
                 macAddress: String? = nil, sharedDirectories: [SharedDirectory] = [],
                 displayWidth: Int = VMSpec.defaultDisplayWidth, displayHeight: Int = VMSpec.defaultDisplayHeight, headless: Bool = false,
-                bootMode: VMBootMode = .console) {
+                bootMode: VMBootMode = .console, microphone: Bool = false) {
         self.name = name
         self.cpus = cpus
         self.memoryMiB = memoryMiB
@@ -115,11 +117,13 @@ public struct VMSpec: Sendable, Equatable {
         self.displayHeight = displayHeight
         self.headless = headless
         self.bootMode = bootMode
+        self.microphone = microphone
     }
 
     public var summary: String {
         var parts = ["\(cpus) CPU\(cpus == 1 ? "" : "s")", "\(memoryMiB) MiB", "disk \(disk.lastPathComponent)", "kernel \(kernel.lastPathComponent)"]
         parts.append(headless ? "headless" : "\(displayWidth)x\(displayHeight) window")
+        if microphone { parts.append("microphone") }
         if !sharedDirectories.isEmpty { parts.append("shares " + sharedDirectories.map(\.tag).joined(separator: ",")) }
         if bootMode != .console { parts.append("boots to the \(bootMode.title)") }
         return parts.joined(separator: ", ")

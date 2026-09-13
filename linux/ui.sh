@@ -6,6 +6,7 @@
 #   linux/ui.sh --no-build       boot without compiling, running whatever out/ui already holds
 #   linux/ui.sh --image          boot the desktop embedded in the image instead of out/ui (no live reload)
 #   linux/ui.sh --rebuild        rebuild the image (embedding the fresh desktop) and boot it from a fresh disk
+#   linux/ui.sh --no-microphone  keep this Mac's microphone from the VM (by default Mary can hear you; macOS asks once)
 #   linux/ui.sh stop|status|serial|reset
 #
 # Every run compiles first, so what boots is what MaryUI holds now. The desktop runs from
@@ -19,7 +20,7 @@ SWIFT=${SWIFT:-swift}
 CLI=.build/debug/maryos
 UI=out/ui/usr/bin/maryui-desktop
 
-usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 case ${1:-} in
     -h|--help|help) usage 0 ;;
 esac
@@ -39,6 +40,7 @@ esac
 REBUILD=0
 BUILD=1
 IMAGE=0
+MIC=1
 n=$#
 i=0
 while [ "$i" -lt "$n" ]; do
@@ -49,6 +51,7 @@ while [ "$i" -lt "$n" ]; do
         --rebuild) REBUILD=1; IMAGE=1 ;;
         --no-build) BUILD=0 ;;
         --image) IMAGE=1 ;;
+        --no-microphone) MIC=0 ;;
         --dev|--rebuild-ui) ;;
         *) set -- "$@" "$a" ;;
     esac
@@ -93,6 +96,8 @@ elif [ "$IMAGE" = 1 ] && [ -n "$(find "$UI" -newer out/vm/boot.json 2>/dev/null)
 fi
 # A rebuilt image needs a fresh disk, or the VM keeps booting the old one.
 [ "$REBUILD" = 1 ] && set -- --fresh "$@"
+# The Mac's microphone is the guest's sound input, so "Hey Mary" can be heard in the VM.
+[ "$MIC" = 1 ] && set -- --microphone "$@"
 if [ "$IMAGE" = 1 ]; then
     exec "$CLI" vm run --desktop "$@"
 fi

@@ -4,8 +4,8 @@ import Virtualization
 /// Turns a `VMSpec` into a validated `VZVirtualMachineConfiguration`:
 /// direct kernel boot (VZLinuxBootLoader with the extracted arm64 Image and
 /// the initrd), a virtio disk, NAT networking, a virtio console for the
-/// serial log, virtio-gpu plus USB keyboard, pointer and sound output when
-/// there is a window, entropy, a memory balloon and virtiofs shares.
+/// serial log, virtio-gpu plus USB keyboard, pointer and sound output (and
+/// the microphone as input, when asked for) when there is a window, entropy, a memory balloon and virtiofs shares.
 public enum VMConfigurationBuilder {
     /// The assembled and validated configuration. Validation needs the
     /// virtualization entitlement, so unsigned processes fail here.
@@ -56,12 +56,18 @@ public enum VMConfigurationBuilder {
             configuration.graphicsDevices = [graphics]
             configuration.keyboards = [VZUSBKeyboardConfiguration()]
             configuration.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
-            // The Media Player's audio reaches the Mac's speakers (snd_virtio in the guest).
-            // Output only: an input stream would need the microphone entitlement.
+            // The Media Player's audio and Mary's voice reach the Mac's speakers (snd_virtio in
+            // the guest). The Mac's microphone is the guest's input only when asked for
+            // (--microphone): it needs the audio-input entitlement and the person's permission.
             let sound = VZVirtioSoundDeviceConfiguration()
             let output = VZVirtioSoundDeviceOutputStreamConfiguration()
             output.sink = VZHostAudioOutputStreamSink()
             sound.streams = [output]
+            if spec.microphone {
+                let input = VZVirtioSoundDeviceInputStreamConfiguration()
+                input.source = VZHostAudioInputStreamSource()
+                sound.streams.append(input)
+            }
             configuration.audioDevices = [sound]
         }
 

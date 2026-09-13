@@ -121,11 +121,13 @@ wake-word model pinned by SHA-256 in `mary/third_party.lock` and refusing anythi
 (`hooks/vm/20-mary-dev.sh`) runs sewnd, threadd and maryd from `/mnt/maryos-out/mary` and restarts each when
 its binary changes, the way the launcher does for the compositor. The Pi image never gets it.
 
+The VM hears through the Mac. `ui.sh` boots it with `maryos vm run --microphone`, which gives the guest's sound
+device an input fed by this Mac's microphone; macOS asks once, and until it is allowed (System Settings › Privacy
+& Security › Microphone) the guest hears silence — typed turns work either way. `./ui.sh --no-microphone` keeps
+the microphone out of the VM.
+
 ## What is not there yet
 
-- **The VM's microphone.** Virtualization.framework's sound device is output-only until `maryos vm run
-  --microphone` exists; until then "Hey Mary" can only be tried on a Pi with a microphone, and typed turns work
-  everywhere.
 - **Skills from the conversation**, and the confirmation card.
 - **Barge-in by voice.** There is no echo cancellation, so Mary is stopped with Esc or the orb, not by talking
   over her.
