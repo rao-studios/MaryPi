@@ -102,7 +102,7 @@ What Swift gets from Foundation, URLSession and swift-nio.
 
 | Swift | C | Status |
 |---|---|---|
-| `MaryThread/ThreadDirectClient.swift` | `mary-thread/src/client.c` | planned |
+| `MaryThread/ThreadDirectClient.swift` (`deposit`, `library`, `documents`) | `mary-thread/include/mary-thread/client.h`, `src/client.c` | working — search, removal and the graph are not ported |
 
 ## skills ← MaryPlugin, SkillSchema
 
@@ -149,7 +149,11 @@ What Swift gets from Foundation, URLSession and swift-nio.
 
 | Swift | C | Status |
 |---|---|---|
-| `MaryRuntime/Runtime/MaryRuntime*.swift`, `Services/Voice/*`, `Services/Chat/TextTurnRunner.swift` | `runtime/bin/maryd.c` | planned |
+| `MaryRuntime/Runtime/MaryRuntime*.swift` (the composition root) | `runtime/include/runtime/daemon.h`, `src/daemon.c`, `src/queue.c`, `bin/maryd.c` | working |
+| `MaryRuntime/Services/Chat/TextTurnRunner.swift`, `Services/Voice/*` (the Sewn lane of a turn) | `runtime/include/runtime/turn.h`, `src/turn.c` | working — deviation 5 |
+| `MaryVoice/Wake/WakeWordListener.swift` and the voice loop around the VAD | `runtime/include/runtime/ears.h`, `src/ears.c` (`mr_heard` applies WakePlanner) | working — deviations 1 and 6 |
+| `MaryVoice/STT/VoiceTranscriber.swift` (the client side) | `runtime/include/runtime/transcriber.h`, `src/transcriber.c` | working — deviation 2 |
+| MaryUI's session window talking to the runtime | `runtime/include/runtime/desktop.h`, `src/desktop.c`, `bin/maryctl.c` (the desktop socket) | working — MaryOS only |
 | `MaryRuntime/Services/Servers/ServerSpec.swift` | systemd units in `distro/` | deviation — its hardcoded credentials are never copied |
 
 ## Deviations

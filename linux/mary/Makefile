@@ -39,7 +39,7 @@ DEPS_skills := common
 DEPS_computer-use := skills common
 DEPS_brain := skills foundation common
 DEPS_voice := common
-DEPS_runtime := brain voice computer-use skills mary-thread conduit ambient foundation common
+DEPS_runtime := brain voice computer-use skills mary-thread conduit sewn ambient foundation common
 DEPS_fleet := common
 DEPS_frigate := common
 
@@ -47,6 +47,7 @@ DEPS_frigate := common
 NEEDS_conduit := NGHTTP2 PROTOBUFC
 NEEDS_thread := NGHTTP2 PROTOBUFC
 NEEDS_mary-thread := NGHTTP2 PROTOBUFC
+NEEDS_runtime := NGHTTP2 PROTOBUFC
 
 # json-c is the one library everything uses.
 BASE_PKGS := json-c
