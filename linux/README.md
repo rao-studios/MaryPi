@@ -79,6 +79,7 @@ packages/pi5.list    linux-raspi, Raspberry Pi firmware, flash-kernel, Wi-Fi and
 packages/vm.list     linux-generic (virtio drivers as modules)
 overlay/             files copied onto every rootfs (netplan, the first-boot service)
 overlay-pi5/         boot/firmware/config.txt and usercfg.txt for the Pi firmware
+overlay-vm/          WirePlumber for the VM's virtio sound card: full volume, a VM's buffer settings
 hooks/               scripts run in the chroot: locale, user, branding, services, fstab
 hooks/pi5, hooks/vm  target-only steps (cmdline.txt; the virtiofs share)
 hooks/final/         cleanup at the end of every target build

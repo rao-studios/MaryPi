@@ -165,8 +165,17 @@ journalctl --user -u maryd -b | tail -40
 wpctl status                         # the default sink; mary-speaking under Streams while she talks
 ```
 
+Play Sample in System Settings › Mary gives the same reasons under its button. If it ends without one and nothing
+was heard, PipeWire did take the audio and it was lost after that: look at the default sink and its volume and mute
+in `wpctl status`, and in the VM at the Mac's own output.
+
 maryd listens and speaks through PipeWire's default devices, so System Settings › Sound chooses both. In the VM the
-output is the Mac's, at the Mac's volume, and a microphone exists only with `--microphone` and macOS's permission.
+output is the Mac's, and a microphone exists only with `--microphone` and macOS's permission. The image starts the
+VM's speaker at full volume, so the Mac's volume alone sets how loud it is (WirePlumber would start it at 40%, about
+−24 dB). It also gives the virtio sound card WirePlumber's buffer settings for virtual machines, which WirePlumber
+applies only when the DMI tables name QEMU or VMware, and a guest started by VZLinuxBootLoader has no DMI tables
+(`overlay-vm/etc/wireplumber/main.lua.d/51-maryos-vm.lua`). Both arrive with `./ui.sh --rebuild`; in a VM booted
+before that, `wpctl set-volume @DEFAULT_AUDIO_SINK@ 100%` raises the volume.
 
 ## What is not there yet
 
