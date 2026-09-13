@@ -141,8 +141,8 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `MaryVoice/VAD/WakePlanner.swift` | `mv_wake_in`, `mv_could_still_wake`, `mv_is_stop_listening` | working |
 | `MaryVoice/VoicePipelineEvent.swift` (`VoicePipelineState`) | `voice/include/voice/state.h`, `src/state.c` | working |
 | `MaryVoice/VAD/BargeInGovernor.swift` | `voice/include/voice/barge_in.h`, `src/barge_in.c` | skeleton — deviation 6 |
-| `MaryVoice/Wake/WakeWordListener.swift` | `voice/src/kws.c` (sherpa-onnx) | planned — deviation 1 |
-| `MaryVoice/Capture/MicCapture.swift`, `TTS/Shared/KokoroStreamSpeaker.swift` (playback) | `voice/src/pipewire.c` | planned |
+| `MaryVoice/Wake/WakeWordListener.swift` | `voice/include/voice/kws.h`, `src/kws.c` (sherpa-onnx; phrases in `data/keywords.txt`, release and model pinned in `third_party.lock`) | working — deviation 1 |
+| `MaryVoice/Capture/MicCapture.swift`, `TTS/Shared/KokoroStreamSpeaker.swift` (playback) | `voice/include/voice/audio.h`, `src/pipewire.c`; `voice/ring.h`, `src/ring.c` (the lock-free reply ring and the 20 ms framer between PipeWire and maryd) | working |
 | `MaryVoice/STT/*`, `TTS/Kokoro/*` | — | not ported — deviations 2 and 3 |
 
 ## runtime ← MaryRuntime

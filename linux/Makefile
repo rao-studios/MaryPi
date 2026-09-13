@@ -23,6 +23,7 @@ build:
 test:
 	$(SWIFT) test
 	python3 builder/tests/unzboot_test.py
+	sh builder/tests/mary_fetch_test.sh
 
 cli: build
 	$(BIN_CLI) $(ARGS)

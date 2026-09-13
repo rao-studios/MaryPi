@@ -1,0 +1,13 @@
+# What Mary's builder stage downloads, pinned by SHA-256 and size. builder/lib/mary.sh
+# fetches each file into $CACHE_DIR/mary/<name>, keeps a cached copy only while it still
+# matches, and fails the build on any difference. make never downloads anything.
+#
+# sherpa-onnx v1.13.8 (Apache-2.0) spots "Hey Mary"; its aarch64 build bundles onnxruntime
+# 1.28.2 (MIT). The keyword model is sherpa-onnx's gigaspeech zipformer (Apache-2.0).
+#
+# name                              sha256                                                            bytes     url
+sherpa-onnx-lib.tar.bz2             fb98b80628a383909bf83626daca2e0d0ffc93bf1f7d222eaaa4282b388f072f  12595068  https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-linux-aarch64-shared-cpu-lib.tar.bz2
+sherpa-onnx-c-api.h                 2a1b95084be8fd1deb3228fcad2fd3f7f0258b64582f7402281ec174c7b7f4ce  167657    https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.8/sherpa-onnx/c-api/c-api.h
+sherpa-onnx-LICENSE                 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30  11358     https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.8/LICENSE
+onnxruntime-LICENSE                 2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c  1073      https://raw.githubusercontent.com/microsoft/onnxruntime/v1.28.2/LICENSE
+kws-zipformer-gigaspeech.tar.bz2    f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a  17626723  https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2

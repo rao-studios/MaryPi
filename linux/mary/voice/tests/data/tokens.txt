@@ -1,0 +1,14 @@
+<blk> 0
+<sos/eos> 1
+<unk> 2
+▁HE 3
+Y 4
+▁MAR 5
+▁O 6
+K 7
+▁OKAY 8
+▁HI 9
+▁ 10
+L 11
+IGHT 12
+▁UP 13

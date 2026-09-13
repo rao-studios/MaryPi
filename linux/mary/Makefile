@@ -4,7 +4,7 @@
 #
 #   make               every package's static library, and its tools and daemons
 #   make test          build and run <pkg>/tests/test_*.c
-#   make install       DESTDIR=… PREFIX=/usr
+#   make install       DESTDIR=… PREFIX=/usr (SHERPA_DIR=… adds sherpa-onnx and the "Hey Mary" model)
 #   make check-deps    which optional libraries were found, and which packages they gate
 #   make gen           regenerate conduit's protobuf-c code (needs protoc-c)
 #   make gen-check     fail when that code or the proto copies are stale
@@ -70,12 +70,25 @@ $(eval $(call optional_pkgs,SSL,openssl))                   # sewn
 $(eval $(call optional_pkgs,NGHTTP2,libnghttp2))            # conduit: gRPC over HTTP/2
 $(eval $(call optional_pkgs,PROTOBUFC,libprotobuf-c))       # conduit: thread.v1 messages
 $(eval $(call optional_pkgs,PIPEWIRE,libpipewire-0.3))      # voice: microphone and speaker
+# sherpa-onnx ("Hey Mary") has no pkg-config file. The builder unpacks the release
+# pinned in third_party.lock into SHERPA_DIR — include/sherpa-onnx/c-api/c-api.h, lib/,
+# model/ and licenses/ (builder/lib/mary.sh) — and passes it here. voice links it; its
+# tests find the libraries where they were unpacked, the installed daemons in SHERPA_RPATH.
+SHERPA_DIR ?=
+SHERPA_RPATH ?= /usr/lib/maryos/sherpa-onnx
+HAVE_SHERPA := $(if $(SHERPA_DIR),$(if $(wildcard $(SHERPA_DIR)/include/sherpa-onnx/c-api/c-api.h),1))
+ifeq ($(HAVE_SHERPA),1)
+OPT_CFLAGS += -I$(abspath $(SHERPA_DIR))/include -DHAVE_SHERPA
+LIBS_voice := -L$(abspath $(SHERPA_DIR))/lib -lsherpa-onnx-c-api
+TEST_LIBS_voice := -Wl,-rpath,$(abspath $(SHERPA_DIR))/lib
+BIN_LIBS_voice := -Wl,-rpath,$(SHERPA_RPATH)
+endif
 # The daemons need Linux itself: SO_PEERCRED, systemd. (No trailing comment on
 # the assignment: make would keep the spaces before it, and HAVE_LINUX would
 # never be empty.)
 HAVE_LINUX := $(if $(filter Linux,$(UNAME)),1)
 
-OPTIONAL_NAMES := CURL LWS SSL NGHTTP2 PROTOBUFC PIPEWIRE LINUX
+OPTIONAL_NAMES := CURL LWS SSL NGHTTP2 PROTOBUFC PIPEWIRE SHERPA LINUX
 enabled = $(if $(strip $(foreach n,$(NEEDS_$(1)),$(if $(HAVE_$(n)),,x))),,1)
 BUILT_PKGS := $(foreach p,$(PKGS),$(if $(call enabled,$(p)),$(p)))
 SKIPPED_PKGS := $(filter-out $(BUILT_PKGS),$(PKGS))
@@ -86,6 +99,8 @@ COMPILE = $(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) $(BASE_CFLAGS) $(OPT_CFLAGS)
 srcs_of = $(wildcard $(1)/src/*.c)
 lib_of = $(if $(call srcs_of,$(1)),$(O)/lib/lib$(1).a)
 libs_of = $(foreach d,$(1) $(DEPS_$(1)),$(call lib_of,$(d)))
+# A package's own extra link flags and its dependencies', e.g. $(call dep_flags,runtime,LIBS) picks up LIBS_voice.
+dep_flags = $(foreach d,$(1) $(DEPS_$(1)),$($(2)_$(d)))
 
 # strip: foreach joins empty results with spaces, and `ifneq ($(ALL_BINS),)` must see "".
 ALL_LIBS := $(strip $(foreach p,$(BUILT_PKGS),$(call lib_of,$(p))))
@@ -113,11 +128,11 @@ $$(O)/lib/lib$(1).a: $$(patsubst %.c,$$(O)/obj/%.o,$$(call srcs_of,$(1)))
 
 $$(O)/tests/$(1)/%: $(1)/tests/%.c $$(call libs_of,$(1)) testing/mary_test.h
 	@mkdir -p $$(@D)
-	$$(COMPILE) -o $$@ $$< $$(call libs_of,$(1)) $$(BASE_LIBS) $$(OPT_LIBS)
+	$$(COMPILE) -o $$@ $$< $$(call libs_of,$(1)) $$(call dep_flags,$(1),LIBS) $$(call dep_flags,$(1),TEST_LIBS) $$(BASE_LIBS) $$(OPT_LIBS)
 
 $$(O)/bin/%: $(1)/bin/%.c $$(call libs_of,$(1))
 	@mkdir -p $$(@D)
-	$$(COMPILE) -o $$@ $$< $$(call libs_of,$(1)) $$(BASE_LIBS) $$(OPT_LIBS)
+	$$(COMPILE) -o $$@ $$< $$(call libs_of,$(1)) $$(call dep_flags,$(1),LIBS) $$(call dep_flags,$(1),BIN_LIBS) $$(BASE_LIBS) $$(OPT_LIBS)
 endef
 $(foreach p,$(PKGS),$(eval $(call package,$(p))))
 
@@ -125,11 +140,18 @@ test: $(ALL_TESTS)
 	@fail=0; for t in $(ALL_TESTS); do echo "== $$t"; MARY_SRC=$(CURDIR) $$t || fail=1; done; [ $$fail = 0 ]
 
 install: all
-	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/doc/mary
+	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/doc/mary $(DESTDIR)$(PREFIX)/share/mary
 ifneq ($(ALL_BINS),)
 	install -m 755 $(ALL_BINS) $(DESTDIR)$(PREFIX)/bin/
 endif
 	install -m 644 README.md PORTING.md $(DESTDIR)$(PREFIX)/share/doc/mary/
+	install -m 644 voice/data/keywords.txt $(DESTDIR)$(PREFIX)/share/mary/keywords.txt
+ifeq ($(HAVE_SHERPA),1)
+	install -d $(DESTDIR)$(SHERPA_RPATH) $(DESTDIR)$(PREFIX)/share/mary/models/kws $(DESTDIR)$(PREFIX)/share/doc/mary/third_party
+	install -m 644 $(SHERPA_DIR)/lib/*.so $(DESTDIR)$(SHERPA_RPATH)/
+	install -m 644 $(SHERPA_DIR)/model/*.onnx $(SHERPA_DIR)/model/tokens.txt $(DESTDIR)$(PREFIX)/share/mary/models/kws/
+	install -m 644 $(SHERPA_DIR)/licenses/* $(DESTDIR)$(PREFIX)/share/doc/mary/third_party/
+endif
 
 check-deps:
 	@$(PKG_CONFIG) --print-errors --exists $(BASE_PKGS) && echo "json-c ok"

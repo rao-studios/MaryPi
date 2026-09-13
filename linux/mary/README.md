@@ -46,3 +46,7 @@ make check-deps # which optional libraries were found, and which packages were s
 json-c is required. libcurl, libwebsockets, openssl, libnghttp2, libprotobuf-c and libpipewire are
 optional per package, so the pure packages build and test on a Mac; the MaryPi builder image has all of
 them. Everything is written under `O=` (default `build/`).
+
+sherpa-onnx, which spots "Hey Mary", is not packaged for Noble: the builder downloads the release and the
+keyword model pinned in [third_party.lock](third_party.lock), refuses any file whose SHA-256 or size differs,
+and hands the unpacked tree to make as `SHERPA_DIR`. Without it voice builds without the wake word.
