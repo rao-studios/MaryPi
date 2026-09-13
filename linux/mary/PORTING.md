@@ -68,11 +68,12 @@ What Swift gets from Foundation, URLSession and swift-nio.
 
 | Swift | C | Status |
 |---|---|---|
-| `Sewn/Sources/Utilities/StreamingSentenceChunker.swift` (+ TTSTextSanitizer) | `sewn/src/chunker.c` | planned |
+| `Sewn/Sources/Utilities/StreamingSentenceChunker.swift` (StreamingSentenceChunker, TTSTextSanitizer) | `sewn/include/sewn/chunker.h`, `src/chunker.c` | working |
+| `Sewn/Sources/Utilities/SentenceBoundary.swift` (`upToFirstSentence`) | `sewn_sentence_prefix_len` | working — code points stand in for Characters |
+| `Sewn/Sources/Providers/ModelProvider+Stream.swift` (`runStreamMistral` body, `handle(payload:)`) | `sewn/include/sewn/mistral.h`, `src/mistral.c` (`sewn_chat_body`, `sewn_chat_event_parse`) | working |
+| `Sewn/Sources/Utilities/MistralTTSStream.swift` (`makeRequest`, `extractPCM`) | `sewn_speech_body`, `sewn_speech_event` | working |
+| — (Voxtral Realtime transcription, from mistralai client-python) | `sewn_stt_session_update`, `sewn_stt_append`, `sewn_stt_event_parse` | working — deviation 2 |
 | `Sewn/Sources/API/Routes/Realtime/RealtimeWire.swift`, `Realtime.swift` | `sewn/src/realtime.c` | planned — deviation 5 |
-| `Sewn/Sources/Providers/ModelProvider+Stream.swift` (runStreamMistral) | `sewn/src/mistral_chat.c` | planned |
-| `Sewn/Sources/Utilities/MistralTTSStream.swift` | `sewn/src/mistral_tts.c` | planned |
-| — (Voxtral Realtime transcription) | `sewn/src/mistral_stt.c` | planned — deviation 2 |
 | `Sewn/Sources/API/Middleware/AuthMiddleware.swift`, `TokenValidator.swift` | `sewn/src/peer.c` | planned — deviation 4 |
 
 ## thread ← Thread

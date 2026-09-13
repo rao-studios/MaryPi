@@ -9,4 +9,6 @@ are ports of `Sources/Utilities/StreamingSentenceChunker.swift`.
 Deviations: callers are authorized by peer credentials on a unix socket, not Supabase; one grounded
 pass, with no opener, retrieval, Sinatra or Gita.
 
-Status: planned (commits 4–7). Prefix `sewn_`. The daemon needs Linux, libcurl, libwebsockets, openssl.
+Status: the chunker, the TTS sanitizer and Mistral's wire (chat, speech and Voxtral Realtime bodies and events,
+`sewn/mistral.h`) are working and tested on any platform. `sewnd` itself is planned (commits 5–7). Prefix `sewn_`.
+The daemon needs Linux, libcurl, libwebsockets and openssl.
