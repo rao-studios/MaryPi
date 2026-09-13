@@ -102,7 +102,13 @@ int main(int argc, char **argv) {
         else mc_log(MC_LOG_INFO, "watching %zu directories", ix_watch_count(w));
     }
     int64_t last_reconcile = mc_now_ms();
+    int reconciled = rc == 0;
     while (!stopping) {
+        /* threadd comes up beside the desktop: a first reconcile it could not take is tried again soon */
+        if (!reconciled && mc_now_ms() - last_reconcile >= 15000) {
+            reconciled = reconcile(&client, root, owner) == 0;
+            last_reconcile = mc_now_ms();
+        }
         int64_t now = mc_now_ms();
         int wait = 1000;
         if (w) {

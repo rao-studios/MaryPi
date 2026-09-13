@@ -117,6 +117,10 @@ struct mr_daemon {
         char lead_name[64];
     } turn;
     int skills_gen;                 /* bumped on every skills message; an index built for an older one is dropped */
+    int64_t index_retry_at;         /* 0: none pending; else when to build the index again (sewnd was not reachable, or had no key) */
+    int index_tries;
+    int64_t abilities_retry_at;     /* 0: none pending; else when to deposit the ability records again (threadd was not reachable) */
+    int abilities_tries;
     atomic_bool turn_stopping;      /* the audio callback gives up waiting for room */
     atomic_int turn_gen;
     struct {
@@ -363,9 +367,16 @@ static void *items_worker(void *arg) {
         if (rc == -ENOENT || rc == -ECONNREFUSED) break;
     }
     if (ok) mc_log(MC_LOG_DEBUG, "deposited %zu %s record%s", ok, job->what, ok == 1 ? "" : "s");
+    /* the main loop hears how it went, so records threadd could not take yet are offered again */
+    struct json_object *ev = typed("deposit.done");
+    json_object_object_add(ev, "what", json_object_new_string(job->what));
+    json_object_object_add(ev, "ok", json_object_new_boolean(ok == n));
+    json_object_object_add(ev, "unreachable", json_object_new_boolean(ok == 0 && n > 0));
+    mr_daemon *d = job->d;
     json_object_put(job->items);
-    atomic_fetch_sub(&job->d->workers, 1);
     free(job);
+    mr_queue_push(&d->queue, ev);
+    atomic_fetch_sub(&d->workers, 1);
     return NULL;
 }
 
@@ -412,9 +423,31 @@ static void *index_worker(void *arg) {
     pthread_mutex_unlock(&d->index_lock);
     if (rc < 0) mc_log(MC_LOG_WARNING, "the skill index was not built: %s", message);
     else if (current) mc_log(MC_LOG_DEBUG, "skill index: %zu skill%s", built.n, built.n == 1 ? "" : "s");
+    struct json_object *ev = typed("index.done");
+    json_object_object_add(ev, "ok", json_object_new_boolean(rc == 0));
+    json_object_object_add(ev, "current", json_object_new_boolean(current));
+    /* sewnd not up yet, or without a key: worth another try later */
+    json_object_object_add(ev, "retryable", json_object_new_boolean(rc == -ENOENT || rc == -ECONNREFUSED || rc == -EAGAIN || rc == -EPIPE || rc == -EIO));
     free(job);
+    mr_queue_push(&d->queue, ev);
     atomic_fetch_sub(&d->workers, 1);
     return NULL;
+}
+
+/* Builds the skill index from the registry as last published (a private copy of the message). */
+static void build_index(mr_daemon *d) {
+    if (!d->skills_message) return;
+    pthread_mutex_lock(&d->index_lock);
+    int skills_gen = d->skills_gen;
+    pthread_mutex_unlock(&d->index_lock);
+    struct index_job *job = calloc(1, sizeof *job);
+    if (job && json_object_deep_copy(d->skills_message, &job->message, NULL) == 0) {
+        job->d = d;
+        job->gen = skills_gen;
+        spawn(d, index_worker, job);
+    } else {
+        free(job);
+    }
 }
 
 /* ---- Lane B's bridge to the main loop ---- */
@@ -2011,14 +2044,10 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
         for (int i = 0; i < MR_CLIENTS_MAX; i++) d->desktop.clients[i].desktop = false;
         c->desktop = true;
         /* the skill index triage scores against, and the ability records the Thread holds (idempotent ids) */
-        struct index_job *job = calloc(1, sizeof *job);
-        if (job && json_object_deep_copy(msg, &job->message, NULL) == 0) {
-            job->d = d;
-            job->gen = skills_gen;
-            spawn(d, index_worker, job);
-        } else {
-            free(job);
-        }
+        (void)skills_gen;
+        d->index_tries = d->abilities_tries = 0;
+        d->index_retry_at = d->abilities_retry_at = 0;
+        build_index(d);
         deposit_items(d, sk_ability_records(&d->skills, d->owner), "ability");
     } else if (strcmp(type, "skill.result") == 0) {
         mcu_pipes_on_message(d->pipes, msg);
@@ -2114,8 +2143,14 @@ static void on_key_reply(mr_daemon *d, struct json_object *ev) {
     if (failure) {
         if (!quiet) broadcast(d, error_message("sewnd", failure));
     } else if (type && strcmp(type, "key.status") == 0) {
+        bool was_present = d->key_present;
         mc_json_bool(reply, "present", &d->key_present);
         mr_desktop_broadcast(&d->desktop, reply);
+        /* a key just arrived: the skills can be embedded now */
+        pthread_mutex_lock(&d->index_lock);
+        bool indexed = d->index_ready;
+        pthread_mutex_unlock(&d->index_lock);
+        if (d->key_present && !was_present && !indexed) { d->index_tries = 0; build_index(d); }
     } else if (type && strcmp(type, "error") == 0) {
         mr_desktop_broadcast(&d->desktop, reply);
     }
@@ -2198,6 +2233,8 @@ static void tick(mr_daemon *d) {
     int64_t now = mc_now_ms();
     mcu_pipes_tick(d->pipes, now);
     if (d->pending.active && now >= d->pending.deadline) begin_pending(d);    /* the desktop said nothing in time */
+    if (d->index_retry_at && now >= d->index_retry_at) { d->index_retry_at = 0; build_index(d); }
+    if (d->abilities_retry_at && now >= d->abilities_retry_at) { d->abilities_retry_at = 0; deposit_items(d, sk_ability_records(&d->skills, d->owner), "ability"); }
     reopen_audio(d, now);
     if (d->sample.draining) {
         int64_t played = d->audio ? d->aops->last_played_ms(d->audio) : 0;
@@ -2323,6 +2360,22 @@ int mr_daemon_run(mr_daemon *d) {
                 on_voices_reply(d, ev);
             } else if (strcmp(type, "calls.reply") == 0) {
                 on_calls_reply(d, ev);
+            } else if (strcmp(type, "index.done") == 0) {
+                bool ok = false, retryable = false;
+                mc_json_bool(ev, "ok", &ok);
+                mc_json_bool(ev, "retryable", &retryable);
+                /* sewnd comes up beside the desktop, and a key may arrive later: try again, a while apart, for a few minutes */
+                if (!ok && retryable && d->index_tries < 30) { d->index_tries++; d->index_retry_at = mc_now_ms() + (d->index_tries < 6 ? 5000 : 30000); }
+                else d->index_retry_at = 0;
+            } else if (strcmp(type, "deposit.done") == 0) {
+                bool ok = false, unreachable = false;
+                mc_json_bool(ev, "ok", &ok);
+                mc_json_bool(ev, "unreachable", &unreachable);
+                const char *what = mc_json_string(ev, "what");
+                if (what && strcmp(what, "ability") == 0) {
+                    if (!ok && unreachable && d->abilities_tries < 12) { d->abilities_tries++; d->abilities_retry_at = mc_now_ms() + 5000; }
+                    else d->abilities_retry_at = 0;
+                }
             }
             json_object_put(ev);
         }
