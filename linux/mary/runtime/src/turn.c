@@ -55,7 +55,10 @@ static int on_frame(uint8_t kind, const unsigned char *p, size_t len, void *user
         const char *text = mc_json_string(msg, "text");
         if (text && *text && t->ev.token) t->ev.token(text, t->user);
     } else if (strcmp(type, "tts.failed") == 0) {
-        if (t->ev.tts_failed) t->ev.tts_failed(t->user);
+        int64_t status = 0;
+        mc_json_int64(msg, "status", &status);
+        const char *message = mc_json_string(msg, "message");
+        if (t->ev.tts_failed) t->ev.tts_failed((long)status, message && *message ? message : "Mistral could not speak the reply", t->user);
     } else if (strcmp(type, "error") == 0) {
         const char *stage = mc_json_string(msg, "stage"), *message = mc_json_string(msg, "message");
         if (t->ev.error) t->ev.error(stage ? stage : "sewnd", message ? message : "sewnd reported an error", t->user);

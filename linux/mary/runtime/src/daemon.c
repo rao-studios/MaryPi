@@ -38,7 +38,10 @@ struct mr_daemon {
     mr_queue queue;
     mr_desktop desktop;
     mr_ears *ears;
-    mv_audio *audio;
+    void *audio;                    /* through aops; NULL while there is no speaker */
+    const mr_audio_ops *aops;
+    int64_t audio_retry_at;
+    int audio_backoff_ms;
     mcu_pipes *pipes;
     sk_registry skills;
     struct json_object *skills_message;
@@ -52,10 +55,10 @@ struct mr_daemon {
     struct {
         mr_turn *worker;
         int gen;
-        bool voice, failed, audio_started, draining;
+        bool voice, failed, audio_started, draining, speaker_reported;
         char *question;
         mc_buf reply;
-        int64_t started_wall, quiet_since;
+        int64_t started_wall, quiet_since, audio_started_ms;
     } turn;
     atomic_bool turn_stopping;      /* the audio callback gives up waiting for room */
     atomic_int turn_gen;
@@ -63,8 +66,22 @@ struct mr_daemon {
 
 mr_config mr_config_default(void) {
     return (mr_config){ .audio = true, .wake = true, .listen_timeout_ms = 6000, .echo_tail_ms = 300,
-                        .skill_timeout_ms = 10000 };
+                        .skill_timeout_ms = 10000, .speaker_stall_ms = 2000 };
 }
+
+/* PipeWire, as maryd's audio. */
+static void *pw_open(mr_capture_fn on_frame, void *user, int *error, void *ops_user) {
+    mv_audio_config config = mv_audio_config_default();
+    return mv_audio_open(&config, on_frame, user, error);
+}
+static void pw_close(void *audio) { mv_audio_close(audio); }
+static int pw_capture(void *audio, bool on) { return mv_audio_capture(audio, on); }
+static size_t pw_play(void *audio, const float *samples, size_t count) { return mv_audio_play(audio, samples, count); }
+static void pw_stop(void *audio) { mv_audio_stop_playback(audio); }
+static size_t pw_queued(void *audio) { return mv_audio_queued(audio); }
+static int64_t pw_last_played_ms(void *audio) { return mv_audio_last_played_ms(audio); }
+static bool pw_broken(void *audio) { return mv_audio_broken(audio); }
+static const mr_audio_ops pipewire_ops = { pw_open, pw_close, pw_capture, pw_play, pw_stop, pw_queued, pw_last_played_ms, pw_broken };
 
 static struct json_object *typed(const char *type) {
     struct json_object *o = json_object_new_object();
@@ -99,7 +116,7 @@ static void set_state(mr_daemon *d, mv_state state) {
 
 /* The microphone is open only while it could matter: spotting the name, or a session. */
 static void microphone(mr_daemon *d, bool session) {
-    if (d->audio) mv_audio_capture(d->audio, session || mr_ears_can_wake(d->ears));
+    if (d->audio) d->aops->capture(d->audio, session || mr_ears_can_wake(d->ears));
 }
 
 static void standby(mr_daemon *d) {
@@ -246,7 +263,7 @@ static void on_audio(const float *samples, size_t count, void *user) {
     }
     mr_daemon *d = t->d;
     while (d->audio && count && !atomic_load(&d->turn_stopping) && atomic_load(&d->turn_gen) == t->gen) {
-        size_t n = mv_audio_play(d->audio, samples, count);
+        size_t n = d->aops->play(d->audio, samples, count);
         samples += n;
         count -= n;
         if (!n) usleep(10000);      /* the ring holds a minute; wait for the speaker */
@@ -266,7 +283,15 @@ static void on_turn_end(bool completed, void *user) {
     post_turn(user, o);
 }
 
-static const mr_turn_events turn_events = { .token = on_token, .audio = on_audio, .error = on_turn_error, .end = on_turn_end };
+static void on_tts_failed(long status, const char *message, void *user) {
+    struct json_object *o = typed("turn.tts_failed");
+    json_object_object_add(o, "status", json_object_new_int64(status));
+    json_object_object_add(o, "message", json_object_new_string(message));
+    post_turn(user, o);
+}
+
+static const mr_turn_events turn_events = { .token = on_token, .audio = on_audio, .tts_failed = on_tts_failed,
+                                            .error = on_turn_error, .end = on_turn_end };
 static struct turn_ctx *turn_ctx;       /* the running turn's; one turn at a time */
 
 /* The worker is done (ended or cancelled): the exchange joins the history and Thread. */
@@ -275,7 +300,7 @@ static void close_turn(mr_daemon *d, bool cancelled) {
     if (cancelled) {
         atomic_store(&d->turn_stopping, true);
         mr_turn_cancel(d->turn.worker);
-        if (d->audio) mv_audio_stop_playback(d->audio);
+        if (d->audio) d->aops->stop(d->audio);
     }
     atomic_store(&d->turn_gen, ++d->turn.gen);     /* whatever the worker still posts is stale */
     mr_turn_free(d->turn.worker);
@@ -295,8 +320,8 @@ static void reset_turn(mr_daemon *d) {
     free(d->turn.question);
     d->turn.question = NULL;
     mc_buf_free(&d->turn.reply);
-    d->turn.failed = d->turn.audio_started = d->turn.draining = false;
-    d->turn.quiet_since = 0;
+    d->turn.failed = d->turn.audio_started = d->turn.draining = d->turn.speaker_reported = false;
+    d->turn.quiet_since = d->turn.audio_started_ms = 0;
 }
 
 static void start_turn(mr_daemon *d, const char *question, bool voice) {
@@ -345,7 +370,7 @@ static void start_turn(mr_daemon *d, const char *question, bool voice) {
 
 static void stop_everything(mr_daemon *d) {
     close_turn(d, true);
-    if (d->audio) mv_audio_stop_playback(d->audio);
+    if (d->audio) d->aops->stop(d->audio);
     d->turn.draining = false;
     standby(d);
     set_state(d, MV_STATE_IDLE);
@@ -361,8 +386,19 @@ static void on_turn_event(mr_daemon *d, const char *type, struct json_object *ev
         json_object_object_add(o, "text", json_object_new_string(text));
         broadcast(d, o);
     } else if (strcmp(type, "turn.audio") == 0) {
+        if (!d->audio && d->config.audio) {
+            if (!d->turn.speaker_reported) broadcast(d, error_message("speaker", "Mary has no speaker: PipeWire could not be opened."));
+            d->turn.speaker_reported = true;
+            return;
+        }
         d->turn.audio_started = true;
+        d->turn.audio_started_ms = mc_now_ms();
         set_state(d, MV_STATE_SPEAKING);
+    } else if (strcmp(type, "turn.tts_failed") == 0) {
+        /* The words stand; say why they were not spoken. */
+        const char *message = mc_json_string(ev, "message");
+        mc_log(MC_LOG_WARNING, "the reply was not spoken: %s", message ? message : "");
+        broadcast(d, error_message("speech", message ? message : "Mistral could not speak the reply"));
     } else if (strcmp(type, "turn.error") == 0) {
         d->turn.failed = true;
         broadcast(d, error_message(mc_json_string(ev, "stage"), mc_json_string(ev, "message")));
@@ -576,14 +612,47 @@ static void on_key_reply(mr_daemon *d, struct json_object *ev) {
 
 static void on_capture(const int16_t *frame, size_t count, void *user) { mr_daemon_hear(user, frame, count); }
 
-static void tick(mr_daemon *d) {
-    mcu_pipes_tick(d->pipes, mc_now_ms());
-    if (!d->turn.draining) return;
-    if (d->audio && mv_audio_queued(d->audio) > 0) {
-        d->turn.quiet_since = 0;
+/* Opens the speaker and microphone, and opens them again once PipeWire has gone away (a restart, say), whenever
+ * nothing is using them: no turn, no queued voice, Mary idle. A failure is retried after 1 s, doubling to 30 s. */
+static void reopen_audio(mr_daemon *d, int64_t now) {
+    if (!d->config.audio || d->turn.worker || d->turn.draining) return;
+    if (d->audio && !d->aops->broken(d->audio)) return;
+    if ((d->state != MV_STATE_IDLE && d->state != MV_STATE_ERROR) || now < d->audio_retry_at) return;
+    bool again = d->audio != NULL;
+    if (d->audio) {
+        d->aops->close(d->audio);
+        d->audio = NULL;
+    }
+    int error = 0;
+    d->audio = d->aops->open(on_capture, d, &error, d->config.audio_user);
+    if (d->audio) {
+        if (again || d->audio_backoff_ms) mc_log(MC_LOG_INFO, "the speaker and microphone are open again");
+        d->audio_backoff_ms = 0;
+        d->audio_retry_at = 0;
+        microphone(d, false);
         return;
     }
+    if (!d->audio_backoff_ms) mc_log(MC_LOG_WARNING, "no microphone or speaker: %s; trying again", strerror(error < 0 ? -error : EIO));
+    d->audio_backoff_ms = d->audio_backoff_ms ? (d->audio_backoff_ms >= 15000 ? 30000 : d->audio_backoff_ms * 2) : 1000;
+    d->audio_retry_at = now + d->audio_backoff_ms;
+}
+
+static void tick(mr_daemon *d) {
     int64_t now = mc_now_ms();
+    mcu_pipes_tick(d->pipes, now);
+    reopen_audio(d, now);
+    if (!d->turn.draining) return;
+    if (d->audio && d->aops->queued(d->audio) > 0) {
+        d->turn.quiet_since = 0;
+        int64_t played = d->aops->last_played_ms(d->audio);
+        int64_t since = played > d->turn.audio_started_ms ? played : d->turn.audio_started_ms;
+        if (now - since < d->config.speaker_stall_ms) return;
+        /* The speaker has stopped taking Mary's voice: drop the rest rather than stay speaking forever. */
+        d->aops->stop(d->audio);
+        mc_log(MC_LOG_WARNING, "the speaker took no audio for %d ms: the rest of the reply is dropped", d->config.speaker_stall_ms);
+        broadcast(d, error_message("speaker", "Mary's voice is not reaching the speaker. Check Settings \xE2\x80\xBA Sound."));
+        d->turn.audio_started = false;              /* nothing was heard: no echo to wait out */
+    }
     if (!d->turn.quiet_since) d->turn.quiet_since = now;
     if (d->turn.audio_started && now - d->turn.quiet_since < d->config.echo_tail_ms) return;
     d->turn.draining = false;
@@ -608,6 +677,8 @@ mr_daemon *mr_daemon_new(const mr_config *config, int *error) {
         if (d->config.listen_timeout_ms <= 0) d->config.listen_timeout_ms = 6000;
         if (d->config.echo_tail_ms < 0) d->config.echo_tail_ms = 300;
         if (d->config.skill_timeout_ms <= 0) d->config.skill_timeout_ms = 10000;
+        if (d->config.speaker_stall_ms <= 0) d->config.speaker_stall_ms = 2000;
+        d->aops = config->audio_ops ? config->audio_ops : &pipewire_ops;
         resolve(d->sewn_path, sizeof d->sewn_path, config->sewn_socket, "SEWN_SOCKET", SEWN_SOCKET_PATH);
         resolve(d->thread_path, sizeof d->thread_path, config->thread_socket, "THREAD_SOCKET", MT_SOCKET_PATH);
         if (config->desktop_socket) snprintf(d->desktop_path, sizeof d->desktop_path, "%s", config->desktop_socket);
@@ -634,13 +705,7 @@ mr_daemon *mr_daemon_new(const mr_config *config, int *error) {
         mr_daemon_free(d);
         return NULL;
     }
-    if (config->audio) {
-        int audio_error = 0;
-        mv_audio_config audio = mv_audio_config_default();
-        d->audio = mv_audio_open(&audio, on_capture, d, &audio_error);
-        if (!d->audio) mc_log(MC_LOG_WARNING, "no microphone or speaker: %s", strerror(-audio_error));
-        microphone(d, false);
-    }
+    reopen_audio(d, mc_now_ms());
     key_job(d, "key.status", true, NULL, 0);
     return d;
 }
@@ -683,11 +748,11 @@ void mr_daemon_hear(mr_daemon *d, const int16_t *samples, size_t count) {
 
 void mr_daemon_free(mr_daemon *d) {
     if (!d) return;
-    if (d->audio) mv_audio_capture(d->audio, false);
+    if (d->audio) d->aops->capture(d->audio, false);
     close_turn(d, true);
     reset_turn(d);
     mr_ears_free(d->ears);
-    mv_audio_close(d->audio);
+    if (d->audio) d->aops->close(d->audio);
     for (int i = 0; i < 600 && atomic_load(&d->workers) > 0; i++) usleep(10000);
     if (d->pipes) mcu_pipes_free(d->pipes);
     if (d->desktop.path[0]) mr_desktop_close(&d->desktop);

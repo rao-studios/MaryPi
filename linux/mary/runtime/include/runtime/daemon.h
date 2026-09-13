@@ -14,7 +14,12 @@
  * reply (reply.delta) and its voice (the speaker's ring), the state is speaking from
  * the first audio, and at turn.end the exchange is deposited in Thread. A spoken
  * question is followed, once the speaker is quiet and 300 ms more have passed, by a
- * follow-up session; a typed one goes back to idle. */
+ * follow-up session; a typed one goes back to idle.
+ *
+ * A reply whose voice fails keeps its text: sewnd's tts.failed becomes error{stage:"speech", message} with
+ * Mistral's reason, and the state never turns to error. Voice the speaker stops taking for speaker_stall_ms
+ * is dropped with error{stage:"speaker"}, so Mary never stays speaking into a silent speaker, and a speaker
+ * that breaks (PipeWire restarting) is opened again once she is idle. */
 #ifndef MARY_RUNTIME_DAEMON_H
 #define MARY_RUNTIME_DAEMON_H
 
@@ -23,6 +28,19 @@
 #include <stdint.h>
 
 #include "voice/kws.h"
+
+/* The speaker and microphone maryd drives: PipeWire's (voice/audio.h) unless a test hands in its own. */
+typedef void (*mr_capture_fn)(const int16_t *frame, size_t count, void *user);
+typedef struct mr_audio_ops {
+    void *(*open)(mr_capture_fn on_frame, void *user, int *error, void *ops_user);    /* NULL with *error set */
+    void (*close)(void *audio);
+    int (*capture)(void *audio, bool on);
+    size_t (*play)(void *audio, const float *samples, size_t count);              /* how many fit */
+    void (*stop)(void *audio);                                                    /* drops what is queued */
+    size_t (*queued)(void *audio);
+    int64_t (*last_played_ms)(void *audio);                                       /* mc_now_ms()'s clock; 0: never */
+    bool (*broken)(void *audio);                                                  /* open it again */
+} mr_audio_ops;
 
 typedef struct mr_config {
     const char *desktop_socket;     /* NULL: $XDG_RUNTIME_DIR/mary/mary.sock */
@@ -34,6 +52,9 @@ typedef struct mr_config {
     int listen_timeout_ms;          /* 6000: a session nobody speaks into, and the follow-up window */
     int echo_tail_ms;               /* 300: the microphone waits this long after the speaker */
     int skill_timeout_ms;           /* 10000 */
+    int speaker_stall_ms;           /* 2000: queued voice the speaker has not taken for this long is dropped */
+    const mr_audio_ops *audio_ops;  /* NULL: PipeWire */
+    void *audio_user;               /* handed to audio_ops->open */
 } mr_config;
 
 mr_config mr_config_default(void);

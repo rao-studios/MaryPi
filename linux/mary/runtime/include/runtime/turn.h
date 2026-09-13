@@ -18,7 +18,7 @@ struct json_object;
 typedef struct mr_turn_events {
     void (*token)(const char *text, void *user);
     void (*audio)(const float *samples, size_t count, void *user);    /* 24 kHz mono, in order */
-    void (*tts_failed)(void *user);
+    void (*tts_failed)(long status, const char *message, void *user);    /* the voice stopped; the text carries on */
     void (*error)(const char *stage, const char *message, void *user);
     void (*end)(bool completed, void *user);    /* last, exactly once: completed means turn.end arrived */
 } mr_turn_events;

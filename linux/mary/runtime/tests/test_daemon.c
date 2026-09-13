@@ -27,6 +27,7 @@ static mr_daemon *maryd;
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static atomic_int transcribes, pcm_bytes, index_calls;
+static atomic_int sewn_mode;                /* 1: the reply's voice fails */
 static int last_turn_messages;
 static bool last_turn_instructed;
 static char last_user[128], indexed_question[128], indexed_reply[128], indexed_source[16];
@@ -60,9 +61,13 @@ static void *sewn_connection(void *arg) {
             send_json(fd, "{\"type\":\"phase\",\"phase\":\"grounded\"}");
             send_json(fd, "{\"type\":\"token\",\"phase\":\"grounded\",\"text\":\"Hello\"}");
             send_json(fd, "{\"type\":\"token\",\"phase\":\"grounded\",\"text\":\" there.\"}");
-            send_json(fd, "{\"type\":\"audio.begin\",\"sample_rate\":24000,\"channels\":1,\"bits\":32,\"encoding\":\"f32le\"}");
-            unsigned char pcm[480 * 4] = { 0 };
-            mc_frame_write_fd(fd, MC_FRAME_PCM, pcm, sizeof pcm);
+            if (atomic_load(&sewn_mode) == 1) {
+                send_json(fd, "{\"type\":\"tts.failed\",\"status\":403,\"message\":\"Mistral refused to speak it (HTTP 403)\"}");
+            } else {
+                send_json(fd, "{\"type\":\"audio.begin\",\"sample_rate\":24000,\"channels\":1,\"bits\":32,\"encoding\":\"f32le\"}");
+                unsigned char pcm[480 * 4] = { 0 };
+                mc_frame_write_fd(fd, MC_FRAME_PCM, pcm, sizeof pcm);
+            }
             send_json(fd, "{\"type\":\"turn.end\"}");
         } else if (strcmp(type, "transcribe.start") == 0) {
             atomic_fetch_add(&transcribes, 1);
@@ -130,6 +135,33 @@ static void *serve_thread(void *arg) {
     }
 }
 
+/* ---- a speaker that takes nothing ---- */
+
+static atomic_int fake_opens, fake_stops, fake_queued;
+static atomic_bool fake_broken;
+static int fake_speaker;                    /* its address is the handle */
+
+static void *fake_open(mr_capture_fn on_frame, void *user, int *error, void *ops_user) {
+    atomic_fetch_add(&fake_opens, 1);
+    atomic_store(&fake_broken, false);
+    return &fake_speaker;
+}
+static void fake_close(void *audio) {}
+static int fake_capture(void *audio, bool on) { return 0; }
+static size_t fake_play(void *audio, const float *samples, size_t count) {
+    atomic_fetch_add(&fake_queued, (int)count);
+    return count;
+}
+static void fake_stop(void *audio) {
+    atomic_fetch_add(&fake_stops, 1);
+    atomic_store(&fake_queued, 0);
+}
+static size_t fake_queued_samples(void *audio) { return (size_t)atomic_load(&fake_queued); }
+static int64_t fake_last_played_ms(void *audio) { return 0; }
+static bool fake_is_broken(void *audio) { return atomic_load(&fake_broken); }
+static const mr_audio_ops silent_speaker = { fake_open, fake_close, fake_capture, fake_play, fake_stop,
+                                             fake_queued_samples, fake_last_played_ms, fake_is_broken };
+
 /* ---- maryd and its clients ---- */
 
 static void *run_daemon(void *arg) {
@@ -137,7 +169,7 @@ static void *run_daemon(void *arg) {
     return NULL;
 }
 
-static void setup(void) {
+static void setup_with(const mr_audio_ops *audio_ops, int stall_ms) {
     snprintf(dir, sizeof dir, "/tmp/maryd-XXXXXX");
     MARY_ASSERT(mkdtemp(dir) != NULL);
     snprintf(sewn_sock, sizeof sewn_sock, "%s/sewn.sock", dir);
@@ -150,12 +182,15 @@ static void setup(void) {
     atomic_store(&index_calls, 0);
     atomic_store(&transcribes, 0);
     atomic_store(&pcm_bytes, 0);
+    atomic_store(&sewn_mode, 0);
 
     mr_config config = mr_config_default();
     config.desktop_socket = mary_sock;
     config.sewn_socket = sewn_sock;
     config.thread_socket = thread_sock;
-    config.audio = false;
+    config.audio = audio_ops != NULL;          /* no PipeWire in a test: a fake speaker, or none */
+    config.audio_ops = audio_ops;
+    if (stall_ms) config.speaker_stall_ms = stall_ms;
     config.wake = false;
     config.listen_timeout_ms = 400;
     config.echo_tail_ms = 0;
@@ -165,6 +200,8 @@ static void setup(void) {
     MARY_ASSERT(maryd != NULL);
     if (maryd) pthread_create(&daemon_thread, NULL, run_daemon, NULL);
 }
+
+static void setup(void) { setup_with(NULL, 0); }
 
 static void teardown(void) {
     if (maryd) {
@@ -432,10 +469,81 @@ MARY_TEST(a_spoken_question_is_heard_answered_and_followed_up) {
     teardown();
 }
 
+MARY_TEST(speech_that_fails_is_reported_and_mary_goes_quiet) {
+    setup();
+    atomic_store(&sewn_mode, 1);
+    client c;
+    client_open(&c);
+    json_object_put(client_wait(&c, "hello", NULL, NULL, 0));
+    client_send(&c, "{\"type\":\"ask\",\"text\":\"Say hello\"}");
+    char seen[1024] = "";
+    struct json_object *failed = client_wait(&c, "error", NULL, seen, sizeof seen);
+    MARY_ASSERT(failed != NULL);
+    if (failed) {
+        MARY_ASSERT_STR(mc_json_string(failed, "stage"), "speech");
+        MARY_ASSERT_STR(mc_json_string(failed, "message"), "Mistral refused to speak it (HTTP 403)");
+        json_object_put(failed);
+    }
+    struct json_object *end = client_wait(&c, "reply.end", NULL, seen, sizeof seen);
+    MARY_ASSERT(end != NULL);
+    if (end) json_object_put(end);
+    struct json_object *idle = client_wait(&c, "state", "idle", seen, sizeof seen);
+    MARY_ASSERT(idle != NULL);
+    if (idle) json_object_put(idle);
+    if (!strstr(seen, "reply.delta") || strstr(seen, "state:speaking") || strstr(seen, "state:error"))
+        MARY_FAIL("a reply whose voice failed went: %s", seen);
+    client_close(&c);
+    teardown();
+}
+
+MARY_TEST(a_speaker_that_never_plays_does_not_keep_mary_speaking) {
+    atomic_store(&fake_opens, 0);
+    atomic_store(&fake_stops, 0);
+    atomic_store(&fake_queued, 0);
+    setup_with(&silent_speaker, 300);
+    MARY_ASSERT_EQ(atomic_load(&fake_opens), 1);
+    client c;
+    client_open(&c);
+    json_object_put(client_wait(&c, "hello", NULL, NULL, 0));
+    client_send(&c, "{\"type\":\"ask\",\"text\":\"Say hello\"}");
+    char seen[1024] = "";
+    struct json_object *speaking = client_wait(&c, "state", "speaking", seen, sizeof seen);
+    MARY_ASSERT(speaking != NULL);
+    if (speaking) json_object_put(speaking);
+    int64_t since = mc_now_ms();
+    struct json_object *err = client_wait(&c, "error", NULL, seen, sizeof seen);
+    MARY_ASSERT(err != NULL);
+    if (err) {
+        MARY_ASSERT_STR(mc_json_string(err, "stage"), "speaker");
+        json_object_put(err);
+    }
+    struct json_object *idle = client_wait(&c, "state", "idle", seen, sizeof seen);
+    MARY_ASSERT(idle != NULL);
+    if (idle) json_object_put(idle);
+    MARY_ASSERT(mc_now_ms() - since < 3000);
+    MARY_ASSERT_EQ(atomic_load(&fake_stops), 1);  /* the stalled voice was dropped once */
+    MARY_ASSERT_EQ(atomic_load(&fake_queued), 0);
+    client_close(&c);
+    teardown();
+}
+
+MARY_TEST(a_speaker_that_breaks_is_opened_again_while_mary_is_idle) {
+    atomic_store(&fake_opens, 0);
+    setup_with(&silent_speaker, 300);
+    MARY_ASSERT_EQ(atomic_load(&fake_opens), 1);
+    atomic_store(&fake_broken, true);          /* PipeWire restarted */
+    for (int i = 0; i < 300 && atomic_load(&fake_opens) < 2; i++) usleep(10000);
+    MARY_ASSERT_EQ(atomic_load(&fake_opens), 2);
+    teardown();
+}
+
 int main(void) {
     mc_ignore_sigpipe();
     MARY_RUN(a_typed_question_streams_a_reply_and_is_deposited_in_thread);
     MARY_RUN(skill_calls_go_through_the_desktops_pipes_and_its_policy);
     MARY_RUN(a_spoken_question_is_heard_answered_and_followed_up);
+    MARY_RUN(speech_that_fails_is_reported_and_mary_goes_quiet);
+    MARY_RUN(a_speaker_that_never_plays_does_not_keep_mary_speaking);
+    MARY_RUN(a_speaker_that_breaks_is_opened_again_while_mary_is_idle);
     MARY_TEST_MAIN_END();
 }
