@@ -385,7 +385,8 @@ copied-in file appears at once, and Today moves at midnight on its own.
 
 **System Settings** (pinned, one window; Spotlight shows it as *Settings* and still
 finds it by its full name) gathers the desktop's preferences and
-the system's in a sidebar of panes. *General* holds the View pill's choices and
+the system's in a sidebar of panes, each pane two flush-left columns (labels, then
+controls) under small group titles. *General* holds the View pill's choices and
 24-hour time for the corner clock; *Dock* chooses which apps a blank Spotlight
 shows; *Keyboard & Mouse* sets key repeat, the layout (an XKB name such as
 `us(dvorak)`), pointer speed and natural scrolling, and the compositor applies
@@ -393,7 +394,10 @@ them to every keyboard and pointer at once, libinput doing the pointer half (the
 VM's tablet is absolute, so speed and scrolling do nothing there); *Displays*
 reads each output's size, refresh and scale from the compositor and changes
 nothing. The system's panes run its own tools as background jobs and read what
-they print: *Sound* is `wpctl` on the default sink, *Network* is `ip -brief
+they print: *Sound* lists PipeWire's speakers and microphones (`lp_audio`, which follows
+them as they come and go), makes the one you choose the default with `wpctl set-default` so
+maryd listens and speaks through it, sets both volumes and meters the microphone while the
+pane is open; *Network* is `ip -brief
 address` and then `iwctl` to scan and join Wi-Fi, *Date & Time* is
 `timedatectl` (zone and network time), *Users* opens `passwd` in a terminal,
 and *About* shows the release, kernel, CPU and memory and renames the computer
