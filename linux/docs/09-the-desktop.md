@@ -322,6 +322,32 @@ clears the scrollback. `foot` stays in the image as a Wayland client to test the
 compositor with, and is what File › New Terminal falls back to on a host that
 registers no terminal. `lp-render --terminal` paints a short sample session.
 
+**Activity Monitor** (Spotlight: “activity”) lists what is running, read from
+`/proc` every two seconds — and not at all while its window is shaded. The
+toolbar switches between a CPU view (each process's share of one CPU since the
+last reading, so a busy multithreaded program can pass 100%) and a Memory view
+(resident memory), a Quit Process button and a search field; the columns sort
+from their headers, the numbers sit flush right, and the machine's totals — busy
+CPU and load, or memory and swap in use — run along the bottom with a meter.
+Quitting asks first, in the desktop's first **sheet**: a panel that drops from
+under the title bar and holds the window until it is answered. Return quits
+(SIGTERM, which lets the program save), Esc cancels, Force Quit sends SIGKILL.
+Init, kernel threads, the desktop itself and the launcher that restarts it are
+never offered.
+
+**Disk Utility** (Spotlight: “disk”) shows the drives in a sidebar, internal
+then external, with their volumes under them, and the selection's details
+beside: capacity, format, mount point, a used/available meter, the device. The
+listing comes straight from the kernel and udev (`/sys/block`,
+`/run/udev/data`, `/proc/mounts`) and refreshes every three seconds, so a USB
+stick appears on its own. Mount, Unmount and Eject run `udisksctl` in the
+background (an `lp_job`: the command's output and exit status come back through
+the event loop, never blocking the desktop), which means udisks2's polkit rules
+decide what `mary` may do; when udisks2 refuses, the window shows its reason
+("target is busy", "Not authorized"). Eject unmounts what is mounted and then
+powers the drive off. Volumes the system runs from — `/`, `/boot/firmware` —
+and their drive are never offered, and Show in Finder opens a mounted volume.
+
 ## Inside the compositor
 
 Five scene layers: wallpaper, windows, the clock, menus, Spotlight. Everything the library
