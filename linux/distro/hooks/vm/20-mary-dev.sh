@@ -42,9 +42,10 @@ done
 RUNNER
 chmod 755 /usr/lib/maryos/mary-dev-run
 
+# SyslogIdentifier: the journal names each daemon, not the runner that starts it.
 for unit in sewnd threadd; do
     mkdir -p "/etc/systemd/system/$unit.service.d"
-    printf '[Service]\nExecStart=\nExecStart=/usr/lib/maryos/mary-dev-run %s\n' "$unit" > "/etc/systemd/system/$unit.service.d/10-dev.conf"
+    printf '[Service]\nExecStart=\nExecStart=/usr/lib/maryos/mary-dev-run %s\nSyslogIdentifier=%s\n' "$unit" "$unit" > "/etc/systemd/system/$unit.service.d/10-dev.conf"
 done
 mkdir -p /etc/systemd/user/maryd.service.d
-printf '[Service]\nExecStart=\nExecStart=/usr/lib/maryos/mary-dev-run maryd\n' > /etc/systemd/user/maryd.service.d/10-dev.conf
+printf '[Service]\nExecStart=\nExecStart=/usr/lib/maryos/mary-dev-run maryd\nSyslogIdentifier=maryd\n' > /etc/systemd/user/maryd.service.d/10-dev.conf
