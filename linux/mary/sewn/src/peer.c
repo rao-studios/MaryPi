@@ -5,6 +5,8 @@
 #endif
 #include "sewn/peer.h"
 
+#include "common/peer.h"
+
 #include <errno.h>
 #include <grp.h>
 #include <pwd.h>
@@ -14,17 +16,8 @@
 
 int sewn_peer_of(int fd, sewn_peer *out) {
     memset(out, 0, sizeof *out);
-#if defined(__linux__)
-    struct ucred cred;
-    socklen_t len = sizeof cred;
-    if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) < 0) return -errno;
-    out->uid = cred.uid;
-    out->gid = cred.gid;
-    out->pid = cred.pid;
-#else
-    if (getpeereid(fd, &out->uid, &out->gid) < 0) return -errno;
-    out->pid = -1;
-#endif
+    int rc = mc_peer_credentials(fd, &out->uid, &out->gid, &out->pid);
+    if (rc < 0) return rc;
     out->known = true;
     return 0;
 }

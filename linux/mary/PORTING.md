@@ -90,9 +90,13 @@ What Swift gets from Foundation, URLSession and swift-nio.
 
 | Swift | C | Status |
 |---|---|---|
-| `Thread/Sources/Conduit/ThreadGRPCServer.swift` | `thread/bin/threadd.c` | planned — deviation 7 |
-| `Thread/Sources/Utilities/Persistence/FilePersistence.swift` | `thread/src/store.c` | planned — deviation 7 |
-| — (peering) | `thread/include/thread/peer.h` | planned (answers ENOSYS) |
+| `Thread/Sources/Conduit/ThreadQueryServiceImpl.swift` (`index`) | `thread/include/thread/store.h` (`thread_store_index`), `src/service.c` | working — deviation 7 |
+| `Thread/Sources/Conduit/ThreadLibraryServiceImpl.swift` (`library`, `documents`) | `thread_store_library`, `thread_store_documents` | working — deviation 7 |
+| `Thread/Sources/Conduit/ThreadGRPCServer.swift`, `Sources/ThreadServer.swift` | `thread/bin/threadd.c` | working — a unix socket, owner from credentials |
+| `Thread/Sources/Utilities/Persistence/FilePersistence.swift`, `NodeIdentity.swift` | `thread/src/store.c` (JSON files, `node-id`) | working — deviation 7 |
+| `Thread/Sources/Conduit/ThreadQueryServiceImpl.swift` (`search`, `remove`), `ThreadUpdateServiceImpl.swift`, `ThreadGraphServiceImpl.swift`, `Sources/Database/*` (embeddings, PQ, graph) | — | planned: answer UNIMPLEMENTED |
+| — (peering between MaryOS machines) | `thread/include/thread/peer.h` | declared — answers ENOSYS |
+| — | `thread/bin/threadctl.c` | working |
 
 ## mary-thread ← MaryThread
 

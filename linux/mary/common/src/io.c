@@ -6,7 +6,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -48,6 +53,106 @@ void mc_ignore_sigpipe(void) {
     sa.sa_handler = SIG_IGN;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGPIPE, &sa, NULL);
+}
+
+int mc_read_file(const char *path, mc_buf *out, size_t max) {
+    int fd = open(path, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return -errno;
+    size_t start = out->len;
+    int rc = 0;
+    char chunk[8192];
+    for (;;) {
+        ssize_t got = read(fd, chunk, sizeof chunk);
+        if (got < 0) {
+            if (errno == EINTR) continue;
+            rc = -errno;
+            break;
+        }
+        if (got == 0) break;
+        if (out->len - start + (size_t)got > max) {
+            rc = -EFBIG;
+            break;
+        }
+        if ((rc = mc_buf_append(out, chunk, (size_t)got)) < 0) break;
+    }
+    close(fd);
+    if (rc < 0) {
+        out->len = start;
+        if (out->data) out->data[start] = 0;
+    }
+    return rc;
+}
+
+int mc_write_file_atomic(const char *path, const void *bytes, size_t len, mode_t mode) {
+    char tmp[1024];
+    if (snprintf(tmp, sizeof tmp, "%s.XXXXXX", path) >= (int)sizeof tmp) return -ENAMETOOLONG;
+    int fd = mkstemp(tmp);
+    if (fd < 0) return -errno;
+    int rc = fchmod(fd, mode) < 0 ? -errno : 0;
+    if (rc == 0) rc = mc_write_all(fd, bytes, len);
+    if (rc == 0 && fsync(fd) < 0) rc = -errno;
+    if (close(fd) < 0 && rc == 0) rc = -errno;
+    if (rc == 0 && rename(tmp, path) < 0) rc = -errno;
+    if (rc) {
+        unlink(tmp);
+        return rc;
+    }
+    char dir[1024];
+    snprintf(dir, sizeof dir, "%s", path);
+    char *slash = strrchr(dir, '/');
+    if (slash) {
+        *(slash == dir ? slash + 1 : slash) = 0;
+        int dfd = open(dir, O_RDONLY);
+        if (dfd >= 0) {
+            fsync(dfd);
+            close(dfd);
+        }
+    }
+    return 0;
+}
+
+static int unix_address(const char *path, struct sockaddr_un *addr) {
+    memset(addr, 0, sizeof *addr);
+    addr->sun_family = AF_UNIX;
+    size_t n = strlen(path);
+    if (n >= sizeof addr->sun_path) return -ENAMETOOLONG;
+    memcpy(addr->sun_path, path, n + 1);
+    return 0;
+}
+
+int mc_listen_unix(const char *path, int mode) {
+    struct sockaddr_un addr;
+    int rc = unix_address(path, &addr);
+    if (rc) return rc;
+    struct stat st;
+    if (lstat(path, &st) == 0) {
+        if (!S_ISSOCK(st.st_mode)) return -EEXIST;
+        unlink(path);
+    }
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return -errno;
+    mc_set_cloexec(fd);
+    if (bind(fd, (struct sockaddr *)&addr, sizeof addr) < 0 || chmod(path, (mode_t)mode) < 0 || listen(fd, 16) < 0) {
+        int e = errno;
+        close(fd);
+        return -e;
+    }
+    return fd;
+}
+
+int mc_connect_unix(const char *path) {
+    struct sockaddr_un addr;
+    int rc = unix_address(path, &addr);
+    if (rc) return rc;
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return -errno;
+    mc_set_cloexec(fd);
+    if (connect(fd, (struct sockaddr *)&addr, sizeof addr) < 0) {
+        int e = errno;
+        close(fd);
+        return -e;
+    }
+    return fd;
 }
 
 static int64_t clock_ms(clockid_t clock) {
