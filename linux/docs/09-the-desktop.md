@@ -348,6 +348,31 @@ decide what `mary` may do; when udisks2 refuses, the window shows its reason
 powers the drive off. Volumes the system runs from — `/`, `/boot/firmware` —
 and their drive are never offered, and Show in Finder opens a mounted volume.
 
+**Media Player** (pinned; the Finder opens every song and movie in it) plays a
+file and then the next audio or video file in its folder. A movie is fitted on
+black; a song shows its cover art, title, artist and album. Along the bottom run
+the elapsed and remaining time around a scrubber, previous / play / next, and a
+volume slider; Space plays and pauses, `←`/`→` skip five seconds, `↑`/`↓` change
+the volume, ⌘`←`/⌘`→` step through the folder. It plays through GStreamer's
+`playbin` (`lp_media`): sound goes to PipeWire, which the image runs in `mary`'s
+session and which reaches the Mac's speakers through the VM's virtio sound
+device; frames arrive as BGRx and are copied straight into a Cairo surface.
+GStreamer's threads never draw — they only write to a pipe the compositor
+watches, and the frame is taken on the desktop's own thread. A 250 ms tick moves
+the scrubber while something plays and stops when nothing does. Codecs are
+whatever `gstreamer1.0-plugins-good` and `gstreamer1.0-libav` decode.
+
+**Calendar** (pinned) opens on this month, with Week and Day views of the hours
+beside it and Today, back and forward in the toolbar (⌘1/⌘2/⌘3 switch the view).
+Double-click a day or an hour, or press the + button or ⌘N, and an inspector opens
+at the right for the title, the place, all day or not, when it starts and ends
+(typed as `2026-09-14` and `9:30`), how it repeats and notes; it says so when an
+event would end before it starts. Events live as one `.ics` file each in
+`~/.local/share/maryui/calendar`, written through libical in floating local time,
+so a weekly 9:00 stays at 9:00 when the clocks change. A file another program put
+there is shown, repeats and all, but never rewritten. The folder is watched, so a
+copied-in file appears at once, and Today moves at midnight on its own.
+
 ## Inside the compositor
 
 Five scene layers: wallpaper, windows, the clock, menus, Spotlight. Everything the library
