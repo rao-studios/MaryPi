@@ -439,6 +439,7 @@ struct json_object *sk_ability_records(const sk_registry *r, const char *owner) 
         char title[64];
         snprintf(title, sizeof title, "%s", disciplines[i]);
         if (title[0] >= 'a' && title[0] <= 'z') title[0] = (char)(title[0] - 32);
+        for (char *c = title; *c; c++) if (*c == '-') *c = ' ';          /* "window-management" reads "Window management" */
         snprintf(label, sizeof label, "Ability \xE2\x80\x94 %s", title);
         snprintf(text, sizeof text, "Discipline: %s\nRealized by:\n", title);
         struct json_object *d = deposit(owner, id, group, label, "ability", title, "");

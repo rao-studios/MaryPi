@@ -426,8 +426,8 @@ static void *index_worker(void *arg) {
     struct json_object *ev = typed("index.done");
     json_object_object_add(ev, "ok", json_object_new_boolean(rc == 0));
     json_object_object_add(ev, "current", json_object_new_boolean(current));
-    /* sewnd not up yet, or without a key: worth another try later */
-    json_object_object_add(ev, "retryable", json_object_new_boolean(rc == -ENOENT || rc == -ECONNREFUSED || rc == -EAGAIN || rc == -EPIPE || rc == -EIO));
+    /* sewnd not up yet: worth another try soon. Without a key (sewnd's own refusal, -EIO) the build waits for the key. */
+    json_object_object_add(ev, "retryable", json_object_new_boolean(rc == -ENOENT || rc == -ECONNREFUSED || rc == -EAGAIN || rc == -EPIPE));
     free(job);
     mr_queue_push(&d->queue, ev);
     atomic_fetch_sub(&d->workers, 1);
