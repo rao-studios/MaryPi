@@ -73,6 +73,8 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `Sewn/Sources/Providers/ModelProvider+Stream.swift` (`runStreamMistral` body, `handle(payload:)`) | `sewn/include/sewn/mistral.h`, `src/mistral.c` (`sewn_chat_body`, `sewn_chat_event_parse`) | working |
 | `Sewn/Sources/Utilities/MistralTTSStream.swift` (`makeRequest`, `extractPCM`) | `sewn_speech_body`, `sewn_speech_event` | working |
 | — (Voxtral Realtime transcription, from mistralai client-python) | `sewn_stt_session_update`, `sewn_stt_append`, `sewn_stt_event_parse` | working — deviation 2 |
+| `Mary/Sources/MaryVoice/STT/VoiceTranscriber.swift` (the seam Mary transcribes through) | `sewn/include/sewn/transcribe.h`, `src/transcribe.c` (`transcribe.*` on sewnd's socket) | working — deviation 2 |
+| — (a WebSocket client) | `sewn/include/sewn/ws.h`, `src/ws.c` (libwebsockets) | working — Linux builds only; the relay is tested through `sewn_ws_ops` |
 | `Sewn/Sources/API/Routes/Realtime/RealtimeWire.swift`, `Realtime.swift`, `RealtimeTurnEngine.swift` | `sewn/include/sewn/turn.h`, `src/turn.c` (`sewn_run_turn`) | working — deviation 5 |
 | `Sewn/Sources/Core/Personality.swift` (`chatPersonaSection`), `Core/Sewn.swift` (`handleChat` prompt), `Core/Commands/Sewn+Compact.swift` (`memoryInstruction`) | `sewn_turn_system_prompt`, `sewn_turn_messages` | working |
 | `Sewn/Sources/Core/ModelConfig.swift` (Mistral model names), `API/GenerationDefaults.swift` | `sewn_turn_request_parse` | working |

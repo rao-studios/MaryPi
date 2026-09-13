@@ -153,7 +153,7 @@ MARY_TEST(unknown_and_malformed_requests_get_errors) {
     MARY_ASSERT_STR(mc_json_string(r, "message"), "turn.start needs a request with messages");
     json_object_put(r);
     r = ask(1001, "{\"type\":\"transcribe.start\"}");
-    MARY_ASSERT_STR(mc_json_string(r, "message"), "not available yet");
+    MARY_ASSERT_STR(mc_json_string(r, "stage"), svc.ws ? "key" : "network");   /* no key stored, or no libwebsockets */
     json_object_put(r);
     teardown();
 }

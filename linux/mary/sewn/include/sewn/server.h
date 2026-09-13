@@ -1,6 +1,6 @@
 /* sewnd's side of its socket. A connection carries one operation, named by its
  * first frame: `key.status`, `key.set{key}`, `key.verify`, `turn.start` (sewn/turn.h)
- * and — in the commit that follows — `transcribe.start`. Replies are JSON frames:
+ * and `transcribe.start` (sewn/transcribe.h). Replies are JSON frames:
  * `key.status{present, verified_at, ok?, message?}` or `error{stage, message}`. */
 #ifndef MARY_SEWN_SERVER_H
 #define MARY_SEWN_SERVER_H
@@ -23,6 +23,9 @@ typedef struct sewn_service {
     void *verify_user;
     sewn_post_stream_fn post_stream;    /* NULL when built without libcurl */
     void *post_stream_user;
+    const sewn_ws_ops *ws;              /* NULL when built without libwebsockets */
+    void *ws_user;
+    int transcribe_wait_ms;             /* how long to wait for Voxtral's final transcript; 0: the default */
 } sewn_service;
 
 void sewn_service_init(sewn_service *svc, const char *state_dir);

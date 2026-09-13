@@ -26,6 +26,14 @@ single speech lane turns finished sentences into `audio.begin` and whole-sample 
 `cancel` frame or a closed connection stops both at once. Mistral is reached through one transport function
 (`sewn/transport.h`), so the turn is tested against scripted streams.
 
+## Transcription
+
+`transcribe.start` opens a Voxtral Realtime session for one utterance. The client streams pcm_s16le frames,
+then `transcribe.end` (or `cancel`); sewnd relays them as `input_audio.append` messages under Voxtral's
+size limit and returns `transcribe.ready`, `transcript.delta` and `transcript.done`. Only sewnd opens the
+WebSocket, because only sewnd holds the key; libwebsockets verifies Mistral's certificate against the system
+CA bundle and sends the key once, as a header.
+
 Status: the chunker, the TTS sanitizer, Mistral's wire (`sewn/mistral.h`), the key store, peer checks,
-`key.status` / `key.set` / `key.verify` and `turn.start` are working; transcription follows (commit 7).
-Prefix `sewn_`. Everything builds on macOS too (getpeereid stands in for SO_PEERCRED).
+`key.status` / `key.set` / `key.verify`, `turn.start` and `transcribe.start` are working. Prefix `sewn_`.
+Everything but the libwebsockets transport builds on macOS too (getpeereid stands in for SO_PEERCRED).

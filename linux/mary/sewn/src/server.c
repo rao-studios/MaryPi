@@ -17,7 +17,9 @@
 #include "common/log.h"
 #include "common/secure.h"
 #include "sewn/http.h"
+#include "sewn/transcribe.h"
 #include "sewn/turn.h"
+#include "sewn/ws.h"
 
 void sewn_service_init(sewn_service *svc, const char *state_dir) {
     memset(svc, 0, sizeof *svc);
@@ -27,6 +29,9 @@ void sewn_service_init(sewn_service *svc, const char *state_dir) {
 #ifdef HAVE_CURL
     svc->verify = sewn_mistral_verify;
     svc->post_stream = sewn_http_post_stream;
+#endif
+#ifdef HAVE_LWS
+    svc->ws = &sewn_lws_ops;
 #endif
 }
 
@@ -123,7 +128,7 @@ static int dispatch(sewn_service *svc, int fd, const sewn_peer *peer, mc_frame_r
     if (strcmp(type, "key.set") == 0) return key_set(svc, fd, request);
     if (strcmp(type, "key.verify") == 0) return key_verify(svc, fd);
     if (strcmp(type, "turn.start") == 0) return sewn_run_turn(svc, fd, reader, request);
-    if (strcmp(type, "transcribe.start") == 0) return send_error(fd, "request", "not available yet");
+    if (strcmp(type, "transcribe.start") == 0) return sewn_run_transcribe(svc, fd, reader, request);
     return send_error(fd, "request", "unknown operation");
 }
 

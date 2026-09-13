@@ -23,4 +23,22 @@ typedef int (*sewn_post_stream_fn)(const char *path, const char *key, const char
                                    sewn_bytes_fn on_bytes, sewn_stop_fn should_stop, void *user,
                                    long *status, char *message, size_t cap, void *transport_user);
 
+/* The realtime side: a WebSocket to Voxtral Realtime. Callbacks run on the
+ * transport's own thread; on_closed runs at most once; none run after close()
+ * has returned. send() may be called from any thread and queues the message. */
+typedef void (*sewn_ws_message_fn)(const char *text, size_t len, void *user);
+typedef void (*sewn_ws_closed_fn)(const char *reason, void *user);
+typedef struct sewn_ws sewn_ws;
+
+typedef struct sewn_ws_ops {
+    /* wss://api.mistral.ai<path> with the key as a bearer header. NULL with
+     * `message` filled when the connection cannot even start. */
+    sewn_ws *(*open)(const char *path, const char *key, sewn_ws_message_fn on_message, sewn_ws_closed_fn on_closed,
+                     void *user, char *message, size_t cap, void *transport_user);
+    /* A text message. 0, or -errno once the session is closed. */
+    int (*send)(sewn_ws *ws, const char *text, size_t len);
+    /* Closes the session and frees it. */
+    void (*close)(sewn_ws *ws);
+} sewn_ws_ops;
+
 #endif
