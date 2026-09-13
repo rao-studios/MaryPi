@@ -17,6 +17,7 @@ compiles, behaviour is not ported; *planned* — the package exists only as a RE
 | `MaryFoundation/Core/ValueSchemas.swift` (DataPrivacyClass) | `mf_privacy`, `mf_privacy_name`, `mf_privacy_from_name` | working |
 | `MaryBrain/Behavior/ThreadMemoryTopology.swift` (`hash`, `canonical`), `MaryAmbient/Ambient/Indexing/UnitIndexModels.swift` (`UnitIndexHashing`) | `foundation/include/foundation/hash.h` (`mf_fnv1a64_hex`, `mf_canonical`) | working — `canonical` lowercases ASCII and Latin-1 only |
 | `MaryApp/Components/Home/Views/Highlight/ContributionSpans.swift` (`StableHash`) | `mf_djb2` | working |
+| `MaryFoundation/Behavior/BehavioralEpisode.swift`, `BehavioralAction.swift` (+ `BehavioralCodec`) | `foundation/include/foundation/behavior.h`, `src/behavior.c` (`mf_behavior_episode`, `mf_behavior_encode/decode`: sorted keys, ISO-8601 fractional UTC) | working |
 | `Thread/Sources/Database/Database+Utilities.swift` (`computeNumericHash`) | `mf_numeric_hash` | working — the decimal-per-byte rendering, digit for digit |
 | `MaryFoundation/Ability/SkillSchemas.swift` (SkillSchema) | `skills/` and MaryUI's `lp_skill` | planned — deviation 10 |
 | `MaryFoundation/Package/*` (`.mary` codec, digest) | — | not ported — deviation 10 |
@@ -155,7 +156,8 @@ What Swift gets from Foundation, URLSession and swift-nio.
 
 | Swift | C | Status |
 |---|---|---|
-| `MaryFoundation/Ability/SkillSchemas.swift` (`SkillSchema`), `MaryPlugin/MaryAdapter.swift` (`skillBindings`) | `skills/include/skills/registry.h`, `src/registry.c` | working — deviation 10 |
+| `MaryFoundation/Ability/SkillSchemas.swift` (`SkillSchema`, `ModelParameterSchema.spokenValues`), `AbilitySchema.swift` (title, summary, aliases, paradigm, triggers), `MaryPlugin/MaryAdapter.swift` (`skillBindings`) | `skills/include/skills/registry.h`, `src/registry.c` (kind, access, triggers, target classes, spoken values; the app's title, summary, aliases, paradigm, discipline, perception) | working — deviation 10 |
+| `MaryBrain/Behavior/ThreadMemoryTopology.swift` (`abilityGroup`, `abilitySchemaDocumentID`), `AbilitySchema.knowledgeDocument` | `sk_ability_group`, `sk_ability_document_id`, `sk_ability_records` (one `ability` record per skill, an `ability-schema` manifest per app, one record per discipline) | working — deviation 14 |
 | `MaryFoundation/Ability/SkillSchemas.swift` (`ModelExposureSchema`) | `sk_tools_json`, `sk_tool_lookup` | working — sent in the next milestone |
 | `Mary/Abilities/*.mary`, `MaryFoundation/Package/*`, `MaryPlugin/Adapters/*` | — | not ported — deviation 10 |
 
@@ -175,7 +177,12 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `MaryBrain/Prompt/PromptCatalog+Voice.swift` (`sewnPreamble`, `sewnCompany`, `sewnPersonaConverse`, `sewnRetrieval`), `PromptPlan.swift` (`voice`), `MaryPrompts+SewnModeTwo.swift` | `brain/include/brain/prompt.h`, `src/prompt.c` (`mb_sewn_instructions`) | working — deviation 8 |
 | `MaryBrain/Prompt/PromptSection.swift` (`formatter`) | `brain/include/brain/clock.h`, `src/clock.c` | working — English names |
 | `MaryBrain/Brain/MaryBrain+History.swift` (`spokenMessages`, `trimHistory`), `MaryBrain.swift` (`historyMessageLimit`) | `brain/include/brain/history.h`, `src/history.c` | working |
-| `MaryBrain/Sewn/SewnWire.swift` (`ChatRequest`, `Persona.mary`), `SewnRealtimeWire.swift` (`TurnStart`) | `brain/include/brain/request.h`, `src/request.c` (`mb_turn_start`) | working — deviation 8 |
+| `MaryBrain/Sewn/SewnWire.swift` (`ChatRequest`, `Persona.mary`), `SewnRealtimeWire.swift` (`TurnStart`) | `brain/include/brain/request.h`, `src/request.c` (`mb_turn_start`: the plan's lanes and cues ride in `sewn`) | working — deviation 8 |
+| `MaryBrain/Brain/TurnTriage.swift`, `Abilities/Roster/EmbeddingRouting.swift` (floor 0.62, margin 0.04, `uniqueWinner`, `confidenceShape`, `isSingleClause`), `SemanticSkillIndex`, `MaryPlugin/Shared/SpokenArgumentExtractor.swift`, `SpokenEnumExtractor.swift`, `Brain/DeterministicTier.swift` | `brain/include/brain/triage.h`, `src/triage.c` (`mb_skill_index`, `mb_affinities`, `mb_unique_winner`, `mb_confidence_shape_of`, `mb_spoken_span`, `mb_spoken_enum`, `mb_deterministic_decision`) | working — deviation 14: the skill index embeds titles, summaries and triggers through sewnd; no intent corpus |
+| `MaryBrain/Brain/MaryBrain+Turn.swift` (`runOrchestratorLane`), `MaryBrain+RepeatGuard.swift`, `Prompt/MaryPrompts+SewnModeOne.swift` (`orchestratorAddendum`, `continuationNudge`) | `brain/include/brain/lane.h`, `src/lane.c` (`mb_lane_run`: ten rounds, the repeat guard, the confirmation park, the nudge once) | working — deviation 14 |
+| `MaryBrain/Prompt/PromptCatalog+System.swift`, `PromptPlan.full` | `mb_system_prompt` in `brain/src/prompt.c` | working — worded for MaryOS |
+| `MaryAmbient/Ambient/Engine/AmbientIntentGate.swift` (`ThreadMemoryPlan`), `MaryBrain/Behavior/ThreadMemoryTopology.swift` (`sewnPersonalScope`, `maryAbilityScope`) | `brain/include/brain/scope.h`, `src/scope.c` (`mb_memory_plan_for`: lanes per purpose, groups, cues, the Recall toggles) | working |
+| `MaryBrain/Behavior/BehavioralAssembler.swift` | maryd's episode (`runtime/src/daemon.c`: opened with the turn, actions from the lane or the dispatch, sealed and deposited as `behavior` + `interaction`; `routing` habits on every no-model dispatch) | working — deviation 14 |
 | `MaryBrain/Brain/MaryBrain+Turn.swift` (routing, Lane B, dispatch), `Abilities/*`, `Engine/*` | — | not ported |
 | — (skills as Mistral tools) | `brain/include/brain/tools.h` | skeleton |
 
@@ -265,3 +272,17 @@ What Swift gets from Foundation, URLSession and swift-nio.
     The selection handoff is one packet per source with a tombstone on clear; there are no AX channels,
     evidence classes or payload recovery. The route, its realm, the rendering and every turn's trace are
     the Swift's, field for field, and the Ambient app reads them from maryd (`ambient.state`, `trace.list`).
+14. **Abilities and dispatch.** The Mac's ability packages are authored `.mary` files with recorded recipes;
+    on MaryOS the desktop's applications declare their skills in code, with the same schema fields (kind,
+    access, triggers, target classes, spoken values, the app's paradigm and discipline) published in
+    `skills{apps}`, and maryd writes them into the Thread as `ability` records (one per skill, a manifest per
+    app, one per discipline) so the Abilities app, retrieval and the graph see them. Triage is the Mac's
+    (embed once at registry load, cosine per turn, floor 0.62, margin 0.04, the three safe argument shapes,
+    a single clause) but the index is built from the skills' own titles, summaries and triggers through
+    sewnd's `embed`; there is no intent corpus, so the lexical ladder decides the intent and a unique skill
+    winner promotes a would-be conversation to `operate`, as the Mac does when its converse class does not
+    recognise the words. One lane runs per turn, chosen by the route: a no-model dispatch when triage is
+    confident, Lane B (the silent skills loop over sewnd's `complete`, its calls through the desktop's pipes,
+    a protected skill parked on the desktop's confirmation card and answered by a bare yes or no or the
+    card) on action turns, and Lane A (the voice with retrieval) otherwise; Lane B's answer is spoken through
+    sewnd's `speak`. The Mac runs both lanes and joins them.

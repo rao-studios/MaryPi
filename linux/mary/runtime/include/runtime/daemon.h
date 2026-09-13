@@ -6,18 +6,24 @@
  *                   config{wake?, voice?}, voices.list, voice.sample{voice_id, text?}, skills{apps},
  *                   skill.result{…}, world{places, focus, activity?}, selection{…}, selection.clear{applicationID},
  *                   app.state.result{…} (ambient/wire.h); maryctl adds skills.list, skill.call{app, skill, args},
- *                   app.state{app}, ambient.state, trace.list and trace.report
+ *                   app.state{app}, ambient.state, trace.list, trace.report, triage{text}, abilities.list;
+ *                   the desktop answers a confirmation card with skill.confirm.reply{call_id, yes}
  * maryd → clients   hello{state, key_present, wake, voice, tail}, wake, state{state}, level{rms},
  *                   transcript{text, final, source?}, reply.delta{text}, reply.end{cancelled, contribution, retrieved},
  *                   key.status{…}, error{stage, message}, skill.invoke{…} and world.request and app.state{…} (desktop only),
- *                   skills{apps}, skill.result{…}, app.state.result{…}, ambient{state}, trace{records} and
- *                   trace.report{text} (to the maryctl that asked),
+ *                   skill.confirm{call_id, app, skill, args, summary} (the card), reply.end also carries runs[],
+ *                   skills{apps}, skill.result{…}, app.state.result{…}, ambient{state}, trace{records},
+ *                   trace.report{text}, triage.result{…} and abilities{records} (to the maryctl that asked),
  *                   voices{ok, voices | message} and voice.sample{voice_id, state, message?} (to the client that asked;
  *                   state is asking, playing, done or failed)
  *
  * A turn: the question joins the history, the desktop is asked for the world (world.request; its answer or
  * 150 ms starts the turn), the ambient engine resolves the route (the intent, the lead place, the memory plan's
- * lanes), brain builds turn.start with the ambient section last in the instructions, sewnd streams the
+ * lanes), triage embeds the words against the skill index (built when the desktop publishes its skills) — a
+ * unique winner with a safe argument shape dispatches with no model round; an action turn runs Lane B (the
+ * silent skills loop, its calls through the desktop's pipes, a protected one parked on the confirmation card)
+ * and its answer is spoken; every other turn is Lane A: brain builds turn.start with the ambient section last
+ * in the instructions, sewnd streams the
  * reply (reply.delta) and its voice (the speaker's ring), the state is speaking from
  * the first audio, and at turn.end the exchange is deposited in Thread. A spoken
  * question is followed, once the speaker is quiet and 300 ms more have passed, by a
@@ -53,6 +59,7 @@ typedef struct mr_config {
     const char *desktop_socket;     /* NULL: $XDG_RUNTIME_DIR/mary/mary.sock */
     const char *sewn_socket;        /* NULL: $SEWN_SOCKET or /run/sewn/sewn.sock */
     const char *thread_socket;      /* NULL: $THREAD_SOCKET or /run/thread/thread.sock */
+    const char *thread_local_socket;/* NULL: $THREAD_LOCAL_SOCKET or /run/thread/local.sock (ability, behaviour and routing records) */
     bool audio;                     /* open PipeWire */
     bool wake;                      /* listen for "Hey Mary" */
     const mv_kws_config *kws;       /* NULL: no spotter */

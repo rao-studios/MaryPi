@@ -4,6 +4,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,11 @@
 #include "ambient/trace.h"
 #include "ambient/wire.h"
 #include "brain/clock.h"
+#include "brain/lane.h"
+#include "brain/scope.h"
+#include "brain/triage.h"
+#include "common/jsonl.h"
+#include "foundation/behavior.h"
 #include "brain/history.h"
 #include "brain/prompt.h"
 #include "brain/request.h"
@@ -28,6 +34,7 @@
 #include "common/secure.h"
 #include "computer-use/invoke.h"
 #include "thread/client.h"
+#include "thread/service.h"
 #include "runtime/desktop.h"
 #include "runtime/ears.h"
 #include "runtime/queue.h"
@@ -42,6 +49,7 @@
 struct mr_daemon {
     mr_config config;
     char desktop_path[256], sewn_path[256], thread_path[256], owner[64];
+    char thread_local_path[256];
     mr_queue queue;
     mr_desktop desktop;
     mr_ears *ears;
@@ -68,6 +76,15 @@ struct mr_daemon {
     ma_store *ambient;
     ma_focus_ledger focus;
     ma_trace_log *trace;
+    /* Abilities (M7): the skill index triage scores against, the lane in flight, and the episode. */
+    mb_skill_index skill_index;
+    pthread_mutex_t index_lock;
+    bool index_ready;
+    struct lane_bridge *bridge;     /* Lane B, while it runs */
+    mf_behavior_episode episode;
+    bool episode_open;
+    char prior_episode_id[MF_UUID_LEN + 1];
+    mb_recall recall;
     struct {
         bool active;                /* a turn waiting for the desktop's world (at most 150 ms) */
         char *question;
@@ -86,7 +103,19 @@ struct mr_daemon {
         char request_id[64];
         char lanes[4][16];          /* the storage lanes the context was asked from */
         int lane_count;
+        struct json_object *start;  /* turn.start, built before triage decides which lane runs */
+        struct json_object *runs;   /* the skill runs of this turn, for reply.end */
+        ma_intent intent;
+        bool action_turn, implies_action;
+        char *system_prompt;        /* Lane B's, built with the turn */
+        struct json_object *scope;  /* Lane B's scope */
+        bool spoken_reply;          /* the reply is being spoken (Lane B's answer, or a dispatch's receipt) */
+        bool open;                  /* begun and not yet ended: reply.end is owed */
+        bool triaging;              /* waiting for the triage worker */
+        char lane[16];              /* voice | orchestrator | embedding */
+        char lead_name[64];
     } turn;
+    int skills_gen;                 /* bumped on every skills message; an index built for an older one is dropped */
     atomic_bool turn_stopping;      /* the audio callback gives up waiting for room */
     atomic_int turn_gen;
     struct {
@@ -298,7 +327,390 @@ static void deposit(mr_daemon *d, bool cancelled) {
     spawn(d, deposit_worker, job);
 }
 
+/* ---- deposits on the local socket: ability, behaviour and routing records ---- */
+
+struct items_job {
+    mr_daemon *d;
+    struct json_object *items;      /* an array of deposit requests */
+    char what[32];
+};
+
+static void *items_worker(void *arg) {
+    struct items_job *job = arg;
+    size_t n = json_object_array_length(job->items), ok = 0;
+    for (size_t i = 0; i < n; i++) {
+        struct json_object *reply = NULL;
+        char message[200] = "";
+        int rc = mc_jsonl_call(job->d->thread_local_path, THREAD_CLIENT_TIMEOUT_MS, json_object_array_get_idx(job->items, i), &reply, message, sizeof message);
+        if (rc == 0) ok++;
+        else if (i == 0) mc_log(MC_LOG_WARNING, "%s records not deposited: %s", job->what, message[0] ? message : strerror(-rc));
+        if (reply) json_object_put(reply);
+        if (rc == -ENOENT || rc == -ECONNREFUSED) break;
+    }
+    if (ok) mc_log(MC_LOG_DEBUG, "deposited %zu %s record%s", ok, job->what, ok == 1 ? "" : "s");
+    json_object_put(job->items);
+    atomic_fetch_sub(&job->d->workers, 1);
+    free(job);
+    return NULL;
+}
+
+/* Deposits an array of records (takes the reference). */
+static void deposit_items(mr_daemon *d, struct json_object *items, const char *what) {
+    if (!items || !json_object_array_length(items)) { if (items) json_object_put(items); return; }
+    struct items_job *job = calloc(1, sizeof *job);
+    if (!job) { json_object_put(items); return; }
+    job->d = d;
+    job->items = items;
+    snprintf(job->what, sizeof job->what, "%s", what);
+    spawn(d, items_worker, job);
+}
+
+/* ---- the skill index: built when the desktop publishes its skills ---- */
+
+struct index_job {
+    mr_daemon *d;
+    struct json_object *message;    /* a private copy of the skills message */
+    int gen;                        /* the registry it stands for */
+};
+
+static void *index_worker(void *arg) {
+    struct index_job *job = arg;
+    mr_daemon *d = job->d;
+    char message[200] = "";
+    sk_registry registry;
+    sk_registry_init(&registry);
+    sk_registry_load(&registry, job->message);
+    mb_skill_index built;
+    memset(&built, 0, sizeof built);
+    int rc = mb_skill_index_build(&built, &registry, mb_embed_sewn, d->sewn_path, message, sizeof message);
+    sk_registry_free(&registry);
+    json_object_put(job->message);
+    pthread_mutex_lock(&d->index_lock);
+    bool current = job->gen == d->skills_gen;
+    if (current) {
+        mb_skill_index_free(&d->skill_index);
+        d->skill_index = built;
+        d->index_ready = rc == 0 && built.n > 0;
+    } else {
+        mb_skill_index_free(&built);
+    }
+    pthread_mutex_unlock(&d->index_lock);
+    if (rc < 0) mc_log(MC_LOG_WARNING, "the skill index was not built: %s", message);
+    else if (current) mc_log(MC_LOG_DEBUG, "skill index: %zu skill%s", built.n, built.n == 1 ? "" : "s");
+    free(job);
+    atomic_fetch_sub(&d->workers, 1);
+    return NULL;
+}
+
+/* ---- Lane B's bridge to the main loop ---- */
+
+struct lane_bridge {
+    mr_daemon *d;
+    int gen;
+    pthread_t thread;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    /* an invoke in flight */
+    bool invoke_done;
+    int invoke_rc;
+    struct json_object *invoke_result;
+    char invoke_error[120];
+    /* a confirmation in flight */
+    bool confirm_pending, confirm_done;
+    int confirm_answer;
+    char confirm_call_id[64];
+    atomic_bool cancelled;
+    /* what the lane runs with */
+    struct json_object *messages, *scope;
+    char *system;
+    sk_registry registry;           /* frozen for the lane */
+    bool implies_action;
+    char request_id[64];
+};
+
+static void bridge_free(struct lane_bridge *b) {
+    if (!b) return;
+    if (b->invoke_result) json_object_put(b->invoke_result);
+    if (b->messages) json_object_put(b->messages);
+    if (b->scope) json_object_put(b->scope);
+    free(b->system);
+    sk_registry_free(&b->registry);
+    pthread_mutex_destroy(&b->lock);
+    pthread_cond_destroy(&b->cond);
+    free(b);
+}
+
+static int wait_until(struct lane_bridge *b, bool *flag, int timeout_ms) {
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += timeout_ms / 1000;
+    deadline.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+    if (deadline.tv_nsec >= 1000000000L) { deadline.tv_sec++; deadline.tv_nsec -= 1000000000L; }
+    int rc = 0;
+    while (!*flag && rc == 0 && !atomic_load(&b->cancelled)) rc = pthread_cond_timedwait(&b->cond, &b->lock, &deadline);
+    return *flag ? 0 : atomic_load(&b->cancelled) ? -ECANCELED : -ETIMEDOUT;
+}
+
+static int lane_complete(struct json_object *request, struct json_object **reply, char *message, size_t cap, void *user) {
+    struct lane_bridge *b = user;
+    int fd = sewn_connect(b->d->sewn_path);
+    if (fd < 0) { snprintf(message, cap, "sewnd is not running"); return fd; }
+    struct timeval patience = { .tv_sec = 90 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &patience, sizeof patience);
+    int rc = sewn_call(fd, request, reply);
+    close(fd);
+    if (rc < 0) { snprintf(message, cap, "sewnd: %s", strerror(-rc)); return rc; }
+    const char *type = mc_json_type(*reply);
+    if (!type || strcmp(type, "complete.result") != 0) {
+        const char *why = mc_json_string(*reply, "message");
+        snprintf(message, cap, "%s", why ? why : "sewnd could not complete");
+        json_object_put(*reply);
+        *reply = NULL;
+        return -EIO;
+    }
+    return 0;
+}
+
+/* The lane thread asks the main loop to run a skill, and waits. */
+static int lane_invoke(const char *app, const char *skill, struct json_object *args, struct json_object **result, char *error, size_t cap, void *user) {
+    struct lane_bridge *b = user;
+    pthread_mutex_lock(&b->lock);
+    b->invoke_done = false;
+    if (b->invoke_result) json_object_put(b->invoke_result);
+    b->invoke_result = NULL;
+    b->invoke_error[0] = 0;
+    struct json_object *ev = typed("lane.invoke");
+    json_object_object_add(ev, "gen", json_object_new_int(b->gen));
+    json_object_object_add(ev, "app", json_object_new_string(app));
+    json_object_object_add(ev, "skill", json_object_new_string(skill));
+    json_object_object_add(ev, "args", args ? json_object_get(args) : json_object_new_object());
+    mr_queue_push(&b->d->queue, ev);
+    int rc = wait_until(b, &b->invoke_done, b->d->config.skill_timeout_ms + 2000);
+    if (rc == 0) {
+        rc = b->invoke_rc;
+        *result = b->invoke_result;
+        b->invoke_result = NULL;
+        if (rc < 0) snprintf(error, cap, "%s", b->invoke_error[0] ? b->invoke_error : strerror(-rc));
+    } else {
+        snprintf(error, cap, "%s", rc == -ECANCELED ? "cancelled" : "timeout");
+    }
+    pthread_mutex_unlock(&b->lock);
+    return rc;
+}
+
+/* The lane thread asks the person, through the desktop's card, and waits up to a minute. */
+static int lane_confirm(const char *call_id, const sk_app *app, const sk_skill *skill, struct json_object *args, const char *summary, void *user) {
+    struct lane_bridge *b = user;
+    pthread_mutex_lock(&b->lock);
+    b->confirm_done = false;
+    b->confirm_pending = true;
+    snprintf(b->confirm_call_id, sizeof b->confirm_call_id, "%s", call_id);
+    struct json_object *ev = typed("lane.confirm");
+    json_object_object_add(ev, "gen", json_object_new_int(b->gen));
+    json_object_object_add(ev, "call_id", json_object_new_string(call_id));
+    json_object_object_add(ev, "app", json_object_new_string(app->id));
+    json_object_object_add(ev, "app_name", json_object_new_string(app->name));
+    json_object_object_add(ev, "skill", json_object_new_string(skill->id));
+    json_object_object_add(ev, "title", json_object_new_string(skill->title));
+    json_object_object_add(ev, "args", args ? json_object_get(args) : json_object_new_object());
+    json_object_object_add(ev, "summary", json_object_new_string(summary));
+    mr_queue_push(&b->d->queue, ev);
+    int rc = wait_until(b, &b->confirm_done, 60000);
+    int answer = rc == 0 ? b->confirm_answer : rc;
+    b->confirm_pending = false;
+    pthread_mutex_unlock(&b->lock);
+    return answer;
+}
+
+static bool lane_cancelled(void *user) { return atomic_load(&((struct lane_bridge *)user)->cancelled); }
+
+static void lane_run_started(const mb_lane_outcome *o, void *user) {
+    struct lane_bridge *b = user;
+    struct json_object *ev = typed("lane.run");
+    json_object_object_add(ev, "gen", json_object_new_int(b->gen));
+    json_object_object_add(ev, "app", json_object_new_string(o->app));
+    json_object_object_add(ev, "skill", json_object_new_string(o->skill));
+    json_object_object_add(ev, "invocation", json_object_new_string(o->invocation));
+    json_object_object_add(ev, "args", json_object_new_string(o->arguments));
+    json_object_object_add(ev, "requested", json_object_new_boolean(o->requested));
+    mr_queue_push(&b->d->queue, ev);
+}
+
+static struct json_object *outcome_json(const mb_lane_outcome *o) {
+    struct json_object *r = json_object_new_object();
+    json_object_object_add(r, "call_id", json_object_new_string(o->call_id));
+    json_object_object_add(r, "app", json_object_new_string(o->app));
+    json_object_object_add(r, "skill", json_object_new_string(o->skill));
+    json_object_object_add(r, "invocation", json_object_new_string(o->invocation));
+    json_object_object_add(r, "args", json_object_new_string(o->arguments));
+    json_object_object_add(r, "ok", json_object_new_boolean(o->ok));
+    json_object_object_add(r, "requested", json_object_new_boolean(o->requested));
+    json_object_object_add(r, "found_nothing", json_object_new_boolean(o->found_nothing));
+    json_object_object_add(r, "is_read", json_object_new_boolean(o->is_read));
+    json_object_object_add(r, "summary", json_object_new_string(o->summary));
+    json_object_object_add(r, "started", json_object_new_double(o->started));
+    json_object_object_add(r, "finished", json_object_new_double(o->finished));
+    return r;
+}
+
+static void lane_run_finished(const mb_lane_outcome *o, void *user) {
+    struct lane_bridge *b = user;
+    struct json_object *ev = typed("lane.result");
+    json_object_object_add(ev, "gen", json_object_new_int(b->gen));
+    json_object_object_add(ev, "outcome", outcome_json(o));
+    mr_queue_push(&b->d->queue, ev);
+}
+
+static void *lane_thread(void *arg) {
+    struct lane_bridge *b = arg;
+    mb_lane_hooks hooks = { .complete = lane_complete, .invoke = lane_invoke, .confirm = lane_confirm, .run_started = lane_run_started,
+                            .run_finished = lane_run_finished, .cancelled = lane_cancelled, .user = b };
+    mb_lane_request req = { .system = b->system, .messages = b->messages, .registry = &b->registry, .scope = b->scope, .provider = "mistral",
+                            .request_id = b->request_id, .implies_action = b->implies_action };
+    mb_lane_result result;
+    int rc = mb_lane_run(&req, &hooks, &result);
+    struct json_object *ev = typed("lane.done");
+    json_object_object_add(ev, "gen", json_object_new_int(b->gen));
+    json_object_object_add(ev, "ok", json_object_new_boolean(rc == 0));
+    json_object_object_add(ev, "text", json_object_new_string(result.text ? result.text : ""));
+    json_object_object_add(ev, "error", json_object_new_string(rc == 0 ? result.error : (result.error[0] ? result.error : strerror(-rc))));
+    json_object_object_add(ev, "rounds", json_object_new_int(result.rounds));
+    json_object_object_add(ev, "cancelled", json_object_new_boolean(result.cancelled));
+    struct json_object *outcomes = json_object_new_array();
+    for (int i = 0; i < result.outcome_count; i++) json_object_array_add(outcomes, outcome_json(&result.outcomes[i]));
+    json_object_object_add(ev, "outcomes", outcomes);
+    mb_lane_result_free(&result);
+    json_object_object_add(ev, "bridge", json_object_new_int64((int64_t)(intptr_t)b));
+    mr_daemon *d = b->d;                /* the bridge is the main loop's to free once this is posted */
+    mr_queue_push(&d->queue, ev);
+    atomic_fetch_sub(&d->workers, 1);
+    return NULL;
+}
+
+/* Lets the lane go: it ends on its own (every wait wakes on `cancelled`) and its lane.done frees the bridge. */
+static void release_lane(mr_daemon *d) {
+    struct lane_bridge *b = d->bridge;
+    if (!b) return;
+    d->bridge = NULL;
+    pthread_mutex_lock(&b->lock);
+    atomic_store(&b->cancelled, true);
+    pthread_cond_broadcast(&b->cond);
+    pthread_mutex_unlock(&b->lock);
+}
+
+/* The person answered the card (the desktop's button, or a bare yes or no). */
+static bool answer_confirmation(mr_daemon *d, const char *call_id, bool yes) {
+    struct lane_bridge *b = d->bridge;
+    if (!b) return false;
+    pthread_mutex_lock(&b->lock);
+    bool pending = b->confirm_pending && !b->confirm_done && (!call_id || strcmp(call_id, b->confirm_call_id) == 0);
+    if (pending) {
+        b->confirm_answer = yes ? 1 : 0;
+        b->confirm_done = true;
+        pthread_cond_broadcast(&b->cond);
+    }
+    pthread_mutex_unlock(&b->lock);
+    if (pending) ma_trace_note_confirmation(d->trace, d->turn.request_id, yes ? "allowed" : "refused");
+    return pending;
+}
+
+static bool confirmation_pending(mr_daemon *d) {
+    struct lane_bridge *b = d->bridge;
+    if (!b) return false;
+    pthread_mutex_lock(&b->lock);
+    bool pending = b->confirm_pending && !b->confirm_done;
+    pthread_mutex_unlock(&b->lock);
+    return pending;
+}
+
+/* ---- triage: the one semantic read of a turn, on a worker (it embeds through sewnd) ---- */
+
+struct triage_job {
+    mr_daemon *d;
+    int gen;
+    unsigned client;                /* 0: the turn's; else maryctl / the Abilities app's Rehearse */
+    char *text;
+};
+
+static void *triage_worker(void *arg) {
+    struct triage_job *job = arg;
+    mr_daemon *d = job->d;
+    struct json_object *ev = typed("triage.done");
+    json_object_object_add(ev, "gen", json_object_new_int(job->gen));
+    json_object_object_add(ev, "client", json_object_new_int64((int64_t)job->client));
+    json_object_object_add(ev, "text", json_object_new_string(job->text));
+    float *vector = NULL;
+    size_t dim = 0;
+    char message[200] = "";
+    const char *texts[1] = { job->text };
+    int rc = mb_embed_sewn(texts, 1, &vector, &dim, message, sizeof message, d->sewn_path);
+    pthread_mutex_lock(&d->index_lock);
+    if (rc == 0 && (!d->index_ready || dim != d->skill_index.dim)) { rc = -ENOENT; snprintf(message, sizeof message, "no skill index"); }
+    if (rc == 0) {
+        mb_affinity affinities[8];
+        int n = mb_affinities(&d->skill_index, vector, affinities, 8);
+        struct json_object *list = json_object_new_array();
+        for (int i = 0; i < n; i++) {
+            struct json_object *a = json_object_new_object();
+            json_object_object_add(a, "app", json_object_new_string(affinities[i].skill->app));
+            json_object_object_add(a, "skill", json_object_new_string(affinities[i].skill->skill));
+            json_object_object_add(a, "invocation", json_object_new_string(affinities[i].skill->invocation));
+            json_object_object_add(a, "score", json_object_new_double(affinities[i].score));
+            json_object_array_add(list, a);
+        }
+        json_object_object_add(ev, "affinities", list);
+        const mb_skill_vector *winner = mb_unique_winner(affinities, n, &d->skills, MB_ROUTING_FLOOR, MB_ROUTING_MARGIN);
+        const sk_skill *skill = winner ? sk_registry_skill(&d->skills, winner->app, winner->skill) : NULL;
+        const sk_app *app = winner ? sk_registry_app(&d->skills, winner->app) : NULL;
+        if (winner && skill && app) {
+            mb_confidence_shape shape = mb_confidence_shape_of(skill, job->text);
+            bool single = mb_is_single_clause(job->text);
+            struct json_object *w = json_object_new_object();
+            json_object_object_add(w, "app", json_object_new_string(winner->app));
+            json_object_object_add(w, "skill", json_object_new_string(winner->skill));
+            json_object_object_add(w, "invocation", json_object_new_string(winner->invocation));
+            json_object_object_add(w, "title", json_object_new_string(skill->title ? skill->title : winner->skill));
+            json_object_object_add(w, "score", json_object_new_double(affinities[0].score));
+            json_object_object_add(w, "shape", json_object_new_string(mb_confidence_shape_name(shape)));
+            json_object_object_add(w, "singleClause", json_object_new_boolean(single));
+            json_object_object_add(w, "decision", json_object_new_string(sk_decision_name(sk_registry_decide(&d->skills, winner->app, winner->skill))));
+            bool dispatchable = shape != MB_SHAPE_NONE && single && sk_registry_decide(&d->skills, winner->app, winner->skill) == SK_ALLOWED;
+            json_object_object_add(w, "dispatchable", json_object_new_boolean(dispatchable));
+            if (shape != MB_SHAPE_NONE) {
+                char stages[400] = "";
+                struct json_object *args = mb_confidence_arguments(skill, app, job->text, stages, sizeof stages);
+                json_object_object_add(w, "args", args ? args : json_object_new_object());
+                json_object_object_add(w, "stages", json_object_new_string(stages));
+            }
+            json_object_object_add(ev, "winner", w);
+        }
+    }
+    pthread_mutex_unlock(&d->index_lock);
+    free(vector);
+    json_object_object_add(ev, "ok", json_object_new_boolean(rc == 0));
+    if (rc) json_object_object_add(ev, "message", json_object_new_string(message[0] ? message : strerror(-rc)));
+    mr_queue_push(&d->queue, ev);
+    free(job->text);
+    free(job);
+    atomic_fetch_sub(&d->workers, 1);
+    return NULL;
+}
+
+static void triage_job(mr_daemon *d, int gen, unsigned client, const char *text) {
+    struct triage_job *job = calloc(1, sizeof *job);
+    if (!job) return;
+    job->d = d;
+    job->gen = gen;
+    job->client = client;
+    job->text = strdup(text);
+    spawn(d, triage_worker, job);
+}
+
 /* ---- the turn ---- */
+
+static void finish_turn(mr_daemon *d, bool cancelled);
+static void continue_turn(mr_daemon *d, struct json_object *triage);
+static void listen_now(mr_daemon *d, bool follow_up);
 
 struct turn_ctx {
     mr_daemon *d;
@@ -359,37 +771,156 @@ static const mr_turn_events turn_events = { .token = on_token, .audio = on_audio
                                             .error = on_turn_error, .end = on_turn_end };
 static struct turn_ctx *turn_ctx;       /* the running turn's; one turn at a time */
 
-/* The worker is done (ended or cancelled): the exchange joins the history and Thread. */
-static void close_turn(mr_daemon *d, bool cancelled) {
-    if (!d->turn.worker) return;
-    if (cancelled) {
-        atomic_store(&d->turn_stopping, true);
-        mr_turn_cancel(d->turn.worker);
-        if (d->audio) d->aops->stop(d->audio);
+static struct json_object *str_or_empty(const char *s) { return json_object_new_string(s ? s : ""); }
+
+/* The episode's records for the Thread: the behaviour (one JSON line, the Mac's codec, tagged as the Mac tags it)
+ * and the interaction stub that points a turn at it (ThreadMemoryTopology, BehavioralAssembler.flush). */
+static struct json_object *behavior_items(mr_daemon *d) {
+    const mf_behavior_episode *e = &d->episode;
+    char *line = mf_behavior_encode(e);
+    if (!line) return NULL;
+    struct json_object *items = json_object_new_array();
+    char id[96], group[96], name[128];
+    snprintf(id, sizeof id, "mary-behavior-%s", e->id);
+    if (e->target_count) sk_ability_group(d->owner, e->targets[0].ability_id, e->targets[0].paradigm, group, sizeof group);
+    else snprintf(group, sizeof group, "mary-behavior-%s", d->owner);
+    snprintf(name, sizeof name, "Behaviour: %.80s", e->query);
+    struct json_object *b = json_object_new_object();
+    json_object_object_add(b, "type", json_object_new_string("deposit"));
+    json_object_object_add(b, "source", json_object_new_string("maryd"));
+    json_object_object_add(b, "document_id", json_object_new_string(id));
+    json_object_object_add(b, "group", json_object_new_string(group));
+    json_object_object_add(b, "label", json_object_new_string(e->target_count ? "Ability" : "Mary \xC2\xB7 behaviour"));
+    json_object_object_add(b, "family", json_object_new_string("behavior"));
+    json_object_object_add(b, "name", json_object_new_string(name));
+    struct json_object *texts = json_object_new_array();
+    json_object_array_add(texts, json_object_new_string(line));
+    json_object_object_add(b, "texts", texts);
+    struct json_object *tags = json_object_new_array();
+    char tag[160];
+    json_object_array_add(tags, json_object_new_string("schema:" MF_BEHAVIOR_SCHEMA));
+    snprintf(tag, sizeof tag, "episode:%s", e->id);
+    json_object_array_add(tags, json_object_new_string(tag));
+    for (int i = 0; i < e->target_count; i++) {
+        snprintf(tag, sizeof tag, "ability:%s", e->targets[i].ability_id);
+        json_object_array_add(tags, json_object_new_string(tag));
     }
-    atomic_store(&d->turn_gen, ++d->turn.gen);     /* whatever the worker still posts is stale */
-    mr_turn_free(d->turn.worker);
-    atomic_store(&d->turn_stopping, false);
-    d->turn.worker = NULL;
-    free(turn_ctx);
-    turn_ctx = NULL;
+    for (int i = 0; i < e->action_count; i++) {
+        snprintf(tag, sizeof tag, "skill:%s", e->actions[i].skill.invocation);
+        json_object_array_add(tags, json_object_new_string(tag));
+    }
+    json_object_array_add(tags, json_object_new_string(mf_behavior_did_act(e) ? "did_act:true" : "did_act:false"));
+    json_object_array_add(tags, json_object_new_string(e->target_count ? "thread:ability" : "thread:personal"));
+    json_object_object_add(b, "tags", tags);
+    struct json_object *meta = json_object_new_object();
+    json_object_object_add(meta, "family", json_object_new_string("behavior"));
+    json_object_object_add(meta, "schema", json_object_new_string(MF_BEHAVIOR_SCHEMA));
+    json_object_object_add(meta, "schemaVersion", json_object_new_int(MF_BEHAVIOR_SCHEMA_VERSION));
+    json_object_object_add(meta, "episode", json_object_new_string(e->id));
+    json_object_object_add(meta, "turn", json_object_new_string(d->turn.request_id));
+    json_object_object_add(meta, "lane", json_object_new_string(e->lane));
+    json_object_object_add(meta, "intent", json_object_new_string(ma_intent_name(d->turn.intent)));
+    json_object_object_add(meta, "did_act", json_object_new_boolean(mf_behavior_did_act(e)));
+    json_object_object_add(meta, "actions", json_object_new_int(e->action_count));
+    json_object_object_add(b, "metadata", meta);
+    json_object_array_add(items, b);
+    /* the interaction stub */
+    struct json_object *stub = json_object_new_object();
+    json_object_object_add(stub, "schema", json_object_new_string("mary.behavior.interaction"));
+    json_object_object_add(stub, "episode", json_object_new_string(e->id));
+    json_object_object_add(stub, "turn", json_object_new_string(d->turn.request_id));
+    json_object_object_add(stub, "query", json_object_new_string(e->query));
+    json_object_object_add(stub, "lane", json_object_new_string(e->lane));
+    json_object_object_add(stub, "did_act", json_object_new_boolean(mf_behavior_did_act(e)));
+    char sealed[40];
+    mf_iso8601(e->sealed_at, sealed, sizeof sealed);
+    json_object_object_add(stub, "sealedAt", json_object_new_string(sealed));
+    struct json_object *s = json_object_new_object();
+    snprintf(id, sizeof id, "mary-behavior-interaction-%s", e->id);
+    snprintf(group, sizeof group, "mary-behavior-interaction-%s", d->owner);
+    json_object_object_add(s, "type", json_object_new_string("deposit"));
+    json_object_object_add(s, "source", json_object_new_string("maryd"));
+    json_object_object_add(s, "document_id", json_object_new_string(id));
+    json_object_object_add(s, "group", json_object_new_string(group));
+    json_object_object_add(s, "label", json_object_new_string("Interactions"));
+    json_object_object_add(s, "family", json_object_new_string("interaction"));
+    snprintf(name, sizeof name, "Interaction: %.80s", e->query);
+    json_object_object_add(s, "name", json_object_new_string(name));
+    texts = json_object_new_array();
+    json_object_array_add(texts, json_object_new_string(mc_json_compact(stub, NULL)));
+    json_object_object_add(s, "texts", texts);
+    meta = json_object_new_object();
+    json_object_object_add(meta, "family", json_object_new_string("interaction"));
+    json_object_object_add(meta, "episode", json_object_new_string(e->id));
+    json_object_object_add(meta, "turn", json_object_new_string(d->turn.request_id));
+    json_object_object_add(s, "metadata", meta);
+    json_object_put(stub);
+    json_object_array_add(items, s);
+    free(line);
+    return items;
+}
+
+/* The turn is over, however it ran: the exchange joins the history and the Thread, the episode is sealed, and the
+ * desktop hears reply.end. */
+static void finish_turn(mr_daemon *d, bool cancelled) {
+    if (!d->turn.open) return;
+    d->turn.open = false;
+    d->turn.triaging = false;
     const char *reply = d->turn.reply.data ? (char *)d->turn.reply.data : "";
     if (*reply) mb_history_append(&d->history, MB_ROLE_ASSISTANT, reply);
     if (*reply || !d->turn.failed) deposit(d, cancelled);
+    if (d->episode_open) {
+        mf_behavior_seal(&d->episode, cancelled ? MF_SEAL_CANCELLED : MF_SEAL_COMPLETED, wall_seconds());
+        if (strcmp(d->episode.lane, "voice") != 0) deposit_items(d, behavior_items(d), "behaviour");
+        snprintf(d->prior_episode_id, sizeof d->prior_episode_id, "%s", d->episode.id);
+        mf_behavior_free(&d->episode);
+        d->episode_open = false;
+    }
     struct json_object *o = typed("reply.end");
     json_object_object_add(o, "cancelled", json_object_new_boolean(cancelled));
     if (d->turn.contribution) json_object_object_add(o, "contribution", json_object_get(d->turn.contribution));
     if (d->turn.retrieved) json_object_object_add(o, "retrieved", json_object_get(d->turn.retrieved));
+    if (d->turn.runs) json_object_object_add(o, "runs", json_object_get(d->turn.runs));
     broadcast(d, o);
     if (d->turn.contribution) json_object_put(d->turn.contribution);
     if (d->turn.retrieved) json_object_put(d->turn.retrieved);
     d->turn.contribution = d->turn.retrieved = NULL;
 }
 
+/* Whatever the turn is doing stops: the sewnd worker, the lane, the triage in flight. */
+static void close_turn(mr_daemon *d, bool cancelled) {
+    if (!d->turn.worker && !d->turn.open && !d->bridge) return;
+    if (d->turn.worker) {
+        if (cancelled) {
+            atomic_store(&d->turn_stopping, true);
+            mr_turn_cancel(d->turn.worker);
+            if (d->audio) d->aops->stop(d->audio);
+        }
+        mr_turn_free(d->turn.worker);
+        atomic_store(&d->turn_stopping, false);
+        d->turn.worker = NULL;
+        free(turn_ctx);
+        turn_ctx = NULL;
+    }
+    release_lane(d);
+    atomic_store(&d->turn_gen, ++d->turn.gen);     /* whatever a worker still posts is stale */
+    finish_turn(d, cancelled);
+}
+
 static void reset_turn(mr_daemon *d) {
     free(d->turn.question);
     d->turn.question = NULL;
     mc_buf_free(&d->turn.reply);
+    if (d->turn.start) json_object_put(d->turn.start);
+    if (d->turn.runs) json_object_put(d->turn.runs);
+    if (d->turn.scope) json_object_put(d->turn.scope);
+    free(d->turn.system_prompt);
+    d->turn.start = d->turn.runs = d->turn.scope = NULL;
+    d->turn.system_prompt = NULL;
+    d->turn.spoken_reply = d->turn.action_turn = d->turn.implies_action = false;
+    d->turn.open = d->turn.triaging = false;
+    d->turn.lane[0] = d->turn.lead_name[0] = 0;
+    d->turn.lane_count = 0;
     d->turn.failed = d->turn.audio_started = d->turn.draining = d->turn.speaker_reported = false;
     d->turn.quiet_since = d->turn.audio_started_ms = 0;
 }
@@ -550,6 +1081,245 @@ static int lead_first_surfaces(mr_daemon *d, const ma_place *lead, double now, c
     return n;
 }
 
+/* Lane A: the voice, with retrieval, through sewnd's turn.start. */
+static void start_voice(mr_daemon *d) {
+    turn_ctx = calloc(1, sizeof *turn_ctx);
+    int error = 0;
+    if (turn_ctx) {
+        turn_ctx->d = d;
+        turn_ctx->gen = d->turn.gen;
+        d->turn.worker = mr_turn_start(d->sewn_path, d->turn.start, &turn_events, turn_ctx, &error);
+    }
+    if (!d->turn.worker) {
+        free(turn_ctx);
+        turn_ctx = NULL;
+        broadcast(d, error_message("sewnd", error == -ENOENT || error == -ECONNREFUSED ? "sewnd is not running" : strerror(-error)));
+        d->turn.failed = true;
+        finish_turn(d, false);
+        set_state(d, MV_STATE_ERROR);
+        standby(d);
+        return;
+    }
+    set_state(d, MV_STATE_THINKING);
+}
+
+/* The reply of a lane that has no voice of its own (Lane B's answer, a dispatch's receipt): shown at once, spoken
+ * through sewnd's speak, and the turn ends when the speaker is quiet. */
+static void finish_with_text(mr_daemon *d, const char *text) {
+    if (!d->turn.open) return;
+    if (text && *text) {
+        mc_buf_append_str(&d->turn.reply, text);
+        struct json_object *o = typed("reply.delta");
+        json_object_object_add(o, "text", json_object_new_string(text));
+        broadcast(d, o);
+    }
+    if (!text || !*text || !d->config.audio) {
+        finish_turn(d, false);
+        if (d->turn.voice) listen_now(d, true);
+        else { standby(d); set_state(d, MV_STATE_IDLE); }
+        return;
+    }
+    char spoken[SEWN_SPEAK_TEXT_MAX + 1];
+    snprintf(spoken, sizeof spoken, "%s", text);
+    if (strlen(text) > SEWN_SPEAK_TEXT_MAX) {          /* speak whole sentences, up to the limit */
+        char *cut = spoken + SEWN_SPEAK_TEXT_MAX - 1;
+        while (cut > spoken && !(*cut == '.' || *cut == '!' || *cut == '?')) cut--;
+        if (cut > spoken) cut[1] = 0;
+    }
+    struct json_object *speak = typed("speak");
+    json_object_object_add(speak, "voice_id", json_object_new_string(d->voice_id));
+    json_object_object_add(speak, "text", json_object_new_string(spoken));
+    turn_ctx = calloc(1, sizeof *turn_ctx);
+    int error = 0;
+    if (turn_ctx) {
+        turn_ctx->d = d;
+        turn_ctx->gen = d->turn.gen;
+        d->turn.worker = mr_turn_start(d->sewn_path, speak, &turn_events, turn_ctx, &error);
+    }
+    json_object_put(speak);
+    if (!d->turn.worker) {
+        free(turn_ctx);
+        turn_ctx = NULL;
+        finish_turn(d, false);
+        if (d->turn.voice) listen_now(d, true);
+        else { standby(d); set_state(d, MV_STATE_IDLE); }
+        return;
+    }
+    d->turn.spoken_reply = true;
+}
+
+/* One skill run for the trace, the reply's chips and the episode (BehavioralAssembler.capture). */
+static void note_run(mr_daemon *d, struct json_object *outcome, bool from_lane) {
+    const char *app = mc_json_string(outcome, "app"), *skill = mc_json_string(outcome, "skill"), *summary = mc_json_string(outcome, "summary");
+    bool ok = false, requested = false, found_nothing = false, is_read = false;
+    mc_json_bool(outcome, "ok", &ok);
+    mc_json_bool(outcome, "requested", &requested);
+    mc_json_bool(outcome, "found_nothing", &found_nothing);
+    mc_json_bool(outcome, "is_read", &is_read);
+    double started = 0, finished = 0;
+    mc_json_double(outcome, "started", &started);
+    mc_json_double(outcome, "finished", &finished);
+    const sk_skill *s = sk_registry_skill(&d->skills, app, skill);
+    ma_trace_note_skill_result(d->trace, d->turn.request_id, app, skill, requested ? "blocked" : ok ? "completed" : "failed", found_nothing, summary, finished ? finished : wall_seconds());
+    if (d->turn.runs) json_object_array_add(d->turn.runs, json_object_get(outcome));
+    if (d->episode_open) {
+        mf_action_record r;
+        memset(&r, 0, sizeof r);
+        snprintf(r.id, sizeof r.id, "%s", mc_json_string(outcome, "call_id") ? mc_json_string(outcome, "call_id") : "");
+        snprintf(r.intention, sizeof r.intention, "%s", mc_json_string(outcome, "invocation") ? mc_json_string(outcome, "invocation") : "");
+        snprintf(r.arguments_json, sizeof r.arguments_json, "%s", mc_json_string(outcome, "args") ? mc_json_string(outcome, "args") : "{}");
+        snprintf(r.skill.package_id, sizeof r.skill.package_id, "%s", app ? app : "");
+        snprintf(r.skill.ability_id, sizeof r.skill.ability_id, "%s", app ? app : "");
+        snprintf(r.skill.skill_id, sizeof r.skill.skill_id, "%s", skill ? skill : "");
+        snprintf(r.skill.invocation, sizeof r.skill.invocation, "%s", r.intention);
+        snprintf(r.skill.version, sizeof r.skill.version, "1");
+        snprintf(r.adapters[0], sizeof r.adapters[0], "desktop");
+        r.adapter_count = 1;
+        r.disposition = requested ? MF_DISPOSITION_REQUESTED_CONFIRMATION
+                      : ok ? MF_DISPOSITION_SUCCEEDED
+                      : summary && strstr(summary, "turned off") ? MF_DISPOSITION_BLOCKED : MF_DISPOSITION_FAILED;
+        snprintf(r.summary, sizeof r.summary, "%s", summary ? summary : "");
+        r.found_nothing = found_nothing;
+        r.undoable = s && s->access == SK_ACCESS_REVERSIBLE;
+        r.initiator = from_lane ? MF_INITIATOR_MODEL : is_read ? MF_INITIATOR_MARY_READ : MF_INITIATOR_MARY_ACT;
+        mf_behavior_append(&d->episode, &r);
+        if (app) mf_behavior_add_target(&d->episode, app, "applicationExpertise");
+    }
+}
+
+/* Lane B: the silent skills loop on a thread of its own, bridged to this loop. */
+static void start_lane(mr_daemon *d) {
+    struct lane_bridge *b = calloc(1, sizeof *b);
+    if (!b) { finish_with_text(d, "I could not begin."); return; }
+    b->d = d;
+    b->gen = d->turn.gen;
+    pthread_mutex_init(&b->lock, NULL);
+    pthread_cond_init(&b->cond, NULL);
+    atomic_init(&b->cancelled, false);
+    b->messages = mb_history_spoken_messages(&d->history);
+    b->scope = d->turn.scope ? json_object_get(d->turn.scope) : NULL;
+    b->system = strdup(d->turn.system_prompt ? d->turn.system_prompt : "");
+    sk_registry_init(&b->registry);
+    if (d->skills_message) sk_registry_load(&b->registry, d->skills_message);
+    b->implies_action = d->turn.implies_action;
+    snprintf(b->request_id, sizeof b->request_id, "%s", d->turn.request_id);
+    d->bridge = b;
+    snprintf(d->turn.lane, sizeof d->turn.lane, "orchestrator");
+    snprintf(d->episode.lane, sizeof d->episode.lane, "orchestrator");
+    mc_log(MC_LOG_DEBUG, "turn %s: the skills lane", d->turn.request_id);
+    spawn(d, lane_thread, b);
+    set_state(d, MV_STATE_THINKING);
+}
+
+/* The embedding dispatch (TurnTriage's shortcut): one skill, no model round; the receipt is the reply, and the
+ * words become a routing habit in the Thread. */
+struct dispatch_call {
+    mr_daemon *d;
+    int gen;
+    char app[64], skill[64], invocation[128];
+    char *args;
+    double started;
+};
+
+static void on_dispatch_done(const mcu_result *r, void *user) {
+    struct dispatch_call *call = user;
+    mr_daemon *d = call->d;
+    if (call->gen == d->turn.gen && d->turn.open) {
+        struct json_object *outcome = json_object_new_object();
+        json_object_object_add(outcome, "call_id", str_or_empty(r->call_id));
+        json_object_object_add(outcome, "app", json_object_new_string(call->app));
+        json_object_object_add(outcome, "skill", json_object_new_string(call->skill));
+        json_object_object_add(outcome, "invocation", json_object_new_string(call->invocation));
+        json_object_object_add(outcome, "args", json_object_new_string(call->args ? call->args : "{}"));
+        json_object_object_add(outcome, "ok", json_object_new_boolean(r->ok));
+        json_object_object_add(outcome, "requested", json_object_new_boolean(0));
+        bool found_nothing = false, landed = false;
+        const char *said = NULL;
+        if (r->ok && r->result && json_object_is_type(r->result, json_type_object)) {
+            mc_json_bool(r->result, "found_nothing", &found_nothing);
+            mc_json_bool(r->result, "landed", &landed);
+            said = mc_json_string(r->result, "summary");
+            if (!said) said = mc_json_string(r->result, "message");
+        }
+        const sk_skill *s = sk_registry_skill(&d->skills, call->app, call->skill);
+        json_object_object_add(outcome, "found_nothing", json_object_new_boolean(found_nothing));
+        json_object_object_add(outcome, "is_read", json_object_new_boolean(s && s->effect == SK_EFFECT_READ));
+        char summary[240];
+        if (r->ok) snprintf(summary, sizeof summary, "%s", said && *said ? said : found_nothing ? "Nothing there." : "Done.");
+        else snprintf(summary, sizeof summary, "That did not work: %s.", r->error ? r->error : "the app did not answer");
+        json_object_object_add(outcome, "summary", json_object_new_string(summary));
+        json_object_object_add(outcome, "started", json_object_new_double(call->started));
+        json_object_object_add(outcome, "finished", json_object_new_double(wall_seconds()));
+        note_run(d, outcome, false);
+        json_object_put(outcome);
+        finish_with_text(d, summary);
+    }
+    free(call->args);
+    free(call);
+}
+
+static void dispatch_now(mr_daemon *d, struct json_object *winner) {
+    const char *app = mc_json_string(winner, "app"), *skill = mc_json_string(winner, "skill"), *invocation = mc_json_string(winner, "invocation");
+    struct json_object *args = mc_json_object(winner, "args");
+    struct dispatch_call *call = calloc(1, sizeof *call);
+    if (!call) { finish_with_text(d, "I could not begin."); return; }
+    call->d = d;
+    call->gen = d->turn.gen;
+    snprintf(call->app, sizeof call->app, "%s", app);
+    snprintf(call->skill, sizeof call->skill, "%s", skill);
+    snprintf(call->invocation, sizeof call->invocation, "%s", invocation ? invocation : "");
+    call->args = mf_canonical_json(args ? mc_json_compact(args, NULL) : "{}");
+    call->started = wall_seconds();
+    snprintf(d->turn.lane, sizeof d->turn.lane, "embedding");
+    snprintf(d->episode.lane, sizeof d->episode.lane, "embedding");
+    const sk_skill *s = sk_registry_skill(&d->skills, app, skill);
+    ma_trace_note_skill_invocation(d->trace, d->turn.request_id, app, skill, s ? sk_effect_name(s->effect) : "", call->args, call->started);
+    double score = 0;
+    mc_json_double(winner, "score", &score);
+    mc_log(MC_LOG_DEBUG, "turn %s: embedding dispatch %s (%.2f)", d->turn.request_id, invocation ? invocation : skill, score);
+    /* the routing habit: these words led here (mary-routing-<intent>|<skill>|<epoch>) */
+    struct json_object *items = json_object_new_array(), *habit = json_object_new_object();
+    char id[200], group[96];
+    snprintf(id, sizeof id, "mary-routing-%s|%s|%lld", ma_intent_name(d->turn.intent), invocation ? invocation : skill, (long long)d->turn.started_wall);
+    snprintf(group, sizeof group, "mary-routing-%s", d->owner);
+    json_object_object_add(habit, "type", json_object_new_string("deposit"));
+    json_object_object_add(habit, "source", json_object_new_string("maryd"));
+    json_object_object_add(habit, "document_id", json_object_new_string(id));
+    json_object_object_add(habit, "group", json_object_new_string(group));
+    json_object_object_add(habit, "label", json_object_new_string("Mary \xC2\xB7 how you ask"));
+    json_object_object_add(habit, "family", json_object_new_string("routing"));
+    json_object_object_add(habit, "name", json_object_new_string(d->turn.question));
+    struct json_object *texts = json_object_new_array();
+    json_object_array_add(texts, json_object_new_string(d->turn.question));
+    json_object_object_add(habit, "texts", texts);
+    struct json_object *meta = json_object_new_object();
+    json_object_object_add(meta, "family", json_object_new_string("routing"));
+    json_object_object_add(meta, "intent", json_object_new_string(ma_intent_name(d->turn.intent)));
+    json_object_object_add(meta, "skill", json_object_new_string(invocation ? invocation : skill));
+    json_object_object_add(meta, "app", json_object_new_string(app));
+    json_object_object_add(meta, "score", json_object_new_double(score));
+    json_object_object_add(habit, "metadata", meta);
+    json_object_array_add(items, habit);
+    deposit_items(d, items, "routing");
+    if (mcu_invoke(d->pipes, app, skill, args, d->config.skill_timeout_ms, on_dispatch_done, call, NULL, 0) < 0) {
+        free(call->args);
+        free(call);
+        ma_trace_note_skill_result(d->trace, d->turn.request_id, app, skill, "failed", false, "the desktop is not connected", wall_seconds());
+        finish_with_text(d, "I could not reach the desktop.");
+    }
+}
+
+/* Triage has spoken (or there was none): one lane runs (PORTING deviation 14). */
+static void continue_turn(mr_daemon *d, struct json_object *triage) {
+    d->turn.triaging = false;
+    struct json_object *winner = triage ? mc_json_object(triage, "winner") : NULL;
+    bool dispatchable = false;
+    if (winner) mc_json_bool(winner, "dispatchable", &dispatchable);
+    if (winner && dispatchable) dispatch_now(d, winner);
+    else if (d->turn.action_turn || winner) start_lane(d);
+    else start_voice(d);
+}
+
 /* The turn proper: the route, the prompt, the trace, and sewnd. */
 static void begin_turn(mr_daemon *d, const char *question, bool voice) {
     d->turn.question = strdup(question);
@@ -575,6 +1345,9 @@ static void begin_turn(mr_daemon *d, const char *question, bool voice) {
         broadcast(d, error_message("turn", "out of memory"));
         return;
     }
+    d->turn.open = true;
+    d->turn.runs = json_object_new_array();
+    snprintf(d->turn.lane, sizeof d->turn.lane, "voice");
     ma_engine_inputs inputs = {
         .utterance = question, .classify_edit = true, .bare_decision = -2, .world = has_world ? &world : NULL,
         .lead_application_id = signal.has_lead && ma_place_is_application(&signal.lead) ? signal.lead.application : NULL,
@@ -609,21 +1382,47 @@ static void begin_turn(mr_daemon *d, const char *question, bool voice) {
     mb_prompt_inputs prompt = { .conversational = route->intent == MA_INTENT_CONVERSE, .capability = capability[0] ? capability : NULL,
                                 .live_work = live.len ? (const char *)live.data : NULL };
     char *instructions = mb_sewn_instructions_with(&clock, &prompt);
-    mc_buf_free(&live);
 
-    /* The memory plan's lanes and cues become the scope sewnd retrieves with. */
-    const char *lanes[4], *entities[MA_HINTS_MAX];
-    int lane_count = 0, entity_count = 0;
-    for (int l = 0; l < 2; l++) {
-        ma_lane lane = l == 0 ? MA_LANE_ABILITY : MA_LANE_PERSONAL;
-        if (route->gate.memory.lanes & lane) lane_count += ma_lane_storage_lanes(lane, lanes + lane_count, 4 - lane_count);
-    }
-    for (int i = 0; i < route->gate.memory.hint_count && entity_count < MA_HINTS_MAX; i++) entities[entity_count++] = route->gate.memory.relationship_hints[i];
-    d->turn.lane_count = lane_count;
-    for (int i = 0; i < lane_count; i++) snprintf(d->turn.lanes[i], sizeof d->turn.lanes[i], "%s", lanes[i]);
+    /* The memory plan: which storage lanes each purpose may retrieve from (the Recall toggles applied), the groups
+     * and the cues. The context purpose becomes the scope sewnd retrieves the reply with. */
+    mb_memory_plan plan;
+    mb_memory_plan_for(route, &d->recall, d->owner, &plan);
+    d->turn.lane_count = plan.context.lane_count;
+    for (int i = 0; i < plan.context.lane_count; i++) snprintf(d->turn.lanes[i], sizeof d->turn.lanes[i], "%s", plan.context.lanes[i]);
     mb_turn_request req = { .instructions = instructions, .owner_id = d->owner, .request_id = d->turn.request_id, .voice_id = d->voice_id,
-                            .lanes = lanes, .lane_count = lane_count, .entities = entities, .entity_count = entity_count };
+                            .lanes = plan.context.lanes, .lane_count = plan.context.lane_count, .entities = plan.entities, .entity_count = plan.entity_count };
     struct json_object *start = mb_turn_start(&d->history, &req);
+    d->turn.start = start;
+
+    /* Lane B's prompt and scope, should the turn act (MaryBrain+Turn.swift runOrchestratorLane's inputs). */
+    const ma_registration *lead_reg = has_lead && ma_place_is_application(&lead) ? ma_roster_registration(&d->roster, lead.application) : NULL;
+    snprintf(d->turn.lead_name, sizeof d->turn.lead_name, "%s", lead_reg ? lead_reg->name : "");
+    const char *lead_context[1] = { live.len ? (const char *)live.data : "" };
+    mb_system_inputs system_in = { .registry = &d->skills, .lead_place_name = lead_reg ? lead_reg->name : NULL,
+                                   .lead_context = lead_context, .lead_context_count = live.len ? 1 : 0 };
+    d->turn.system_prompt = mb_system_prompt(&clock, &system_in);
+    struct json_object *scope = json_object_new_object();
+    json_object_object_add(scope, "owner_id", json_object_new_string(d->owner));
+    json_object_object_add(scope, "request_id", json_object_new_string(d->turn.request_id));
+    json_object_object_add(scope, "lanes", mb_purpose_json(&plan.orchestration));
+    struct json_object *groups = json_object_new_array(), *cues = json_object_new_array();
+    for (int i = 0; i < plan.group_count; i++) json_object_array_add(groups, json_object_new_string(plan.groups[i]));
+    for (int i = 0; i < plan.entity_count; i++) json_object_array_add(cues, json_object_new_string(plan.entities[i]));
+    json_object_object_add(scope, "groups", groups);
+    json_object_object_add(scope, "entities", cues);
+    d->turn.scope = scope;
+    d->turn.intent = route->intent;
+    d->turn.action_turn = ma_route_is_action_turn(route) || route->intent == MA_INTENT_REVISE || route->intent == MA_INTENT_DECIDE || route->intent == MA_INTENT_HALT;
+    d->turn.implies_action = d->turn.action_turn || route->verdicts.action_turn;
+
+    /* The episode opens with the turn (BehavioralAssembler.open): the query, the prior episode, the gate's targets. */
+    char episode_id[MF_UUID_LEN + 1];
+    mf_uuid_v4(episode_id);
+    mf_behavior_open(&d->episode, episode_id, question, now, "mistral", "voice", MARY_VERSION);
+    snprintf(d->episode.prior_episode_id, sizeof d->episode.prior_episode_id, "%s", d->prior_episode_id);
+    for (int i = 0; i < route->gate.memory.target_count; i++)
+        mf_behavior_add_target(&d->episode, route->gate.memory.targets[i].ability_id, ma_paradigm_name(route->gate.memory.targets[i].paradigm));
+    d->episode_open = true;
 
     /* One row in the trace: what was decided, and what it cost. */
     ma_trace_record *record = calloc(1, sizeof *record);
@@ -645,27 +1444,23 @@ static void begin_turn(mr_daemon *d, const char *question, bool voice) {
     mc_log(MC_LOG_DEBUG, "turn %s: %s via %s%s%s", d->turn.request_id, ma_intent_name(route->intent), ma_signal_name(route->decided_by),
            has_lead ? ", lead " : "", has_lead ? route->lead_application_id : "");
     free(instructions);
+    mc_buf_free(&live);
     free(route);
     free(rendering);
     free(facts);
-
-    turn_ctx = calloc(1, sizeof *turn_ctx);
-    int error = 0;
-    if (turn_ctx) {
-        turn_ctx->d = d;
-        turn_ctx->gen = d->turn.gen;
-        d->turn.worker = mr_turn_start(d->sewn_path, start, &turn_events, turn_ctx, &error);
-    }
-    json_object_put(start);
-    if (!d->turn.worker) {
-        free(turn_ctx);
-        turn_ctx = NULL;
-        broadcast(d, error_message("sewnd", error == -ENOENT || error == -ECONNREFUSED ? "sewnd is not running" : strerror(-error)));
-        set_state(d, MV_STATE_ERROR);
-        standby(d);
-        return;
-    }
     set_state(d, MV_STATE_THINKING);
+
+    /* Triage (TurnTriage): one embedding of the words against the skill index, on a worker; the answer, or its
+     * absence, decides which lane runs. Without an index the turn goes straight on. */
+    pthread_mutex_lock(&d->index_lock);
+    bool indexed = d->index_ready;
+    pthread_mutex_unlock(&d->index_lock);
+    if (indexed) {
+        d->turn.triaging = true;
+        triage_job(d, d->turn.gen, 0, question);
+    } else {
+        continue_turn(d, NULL);
+    }
 }
 
 static void cancel_pending(mr_daemon *d) {
@@ -687,6 +1482,23 @@ static void begin_pending(mr_daemon *d) {
 /* A turn begins by asking the desktop what is in front of the person (world.request); the answer, or 150 ms,
  * starts it (AmbientWorld.snapshot at the turn's entry). */
 static void start_turn(mr_daemon *d, const char *question, bool voice) {
+    struct json_object *said = typed("transcript");
+    json_object_object_add(said, "text", json_object_new_string(question));
+    json_object_object_add(said, "final", json_object_new_boolean(1));
+    json_object_object_add(said, "source", json_object_new_string(voice ? "voice" : "typed"));
+    /* The deterministic tier (DeterministicTier.decision): a parked confirmation and a bare yes or no need no turn
+     * of their own — the lane that asked resumes. Anything else said to a card refuses it. */
+    if (confirmation_pending(d)) {
+        int decision = mb_deterministic_decision(question);
+        if (decision >= 0) {
+            mb_history_append(&d->history, MB_ROLE_USER, question);
+            broadcast(d, said);
+            answer_confirmation(d, NULL, decision == 1);
+            set_state(d, MV_STATE_THINKING);
+            return;
+        }
+        answer_confirmation(d, NULL, false);
+    }
     stop_sample(d);
     cancel_pending(d);
     close_turn(d, true);
@@ -694,11 +1506,6 @@ static void start_turn(mr_daemon *d, const char *question, bool voice) {
     mr_ears_mute(d->ears);
     microphone(d, false);
     mb_history_append(&d->history, MB_ROLE_USER, question);
-
-    struct json_object *said = typed("transcript");
-    json_object_object_add(said, "text", json_object_new_string(question));
-    json_object_object_add(said, "final", json_object_new_boolean(1));
-    json_object_object_add(said, "source", json_object_new_string(voice ? "voice" : "typed"));
     broadcast(d, said);
     set_state(d, MV_STATE_THINKING);
 
@@ -796,7 +1603,7 @@ static void on_turn_event(mr_daemon *d, const char *type, struct json_object *ev
         struct json_object *v;
         if (json_object_object_get_ex(ev, "contribution", &v)) d->turn.contribution = json_object_get(v);
         if (json_object_object_get_ex(ev, "retrieved", &v)) d->turn.retrieved = json_object_get(v);
-        note_retrieval(d);
+        if (!d->turn.spoken_reply) note_retrieval(d);
         close_turn(d, false);
         if (failed) {
             set_state(d, MV_STATE_ERROR);
@@ -805,6 +1612,123 @@ static void on_turn_event(mr_daemon *d, const char *type, struct json_object *ev
             d->turn.draining = true;        /* tick waits for the speaker */
         }
     }
+}
+
+/* ---- Lane B's events, and triage's ---- */
+
+struct lane_call {
+    mr_daemon *d;
+    int gen;
+};
+
+/* A skill the lane asked for came back (on this thread, through the pipes): wake the lane. */
+static void on_lane_invoked(const mcu_result *r, void *user) {
+    struct lane_call *call = user;
+    struct lane_bridge *b = call->d->bridge;
+    if (b && b->gen == call->gen) {
+        pthread_mutex_lock(&b->lock);
+        b->invoke_rc = r->ok ? 0 : -EIO;
+        if (b->invoke_result) json_object_put(b->invoke_result);
+        b->invoke_result = r->result ? json_object_get(r->result) : NULL;
+        snprintf(b->invoke_error, sizeof b->invoke_error, "%s", r->error ? r->error : "");
+        b->invoke_done = true;
+        pthread_cond_broadcast(&b->cond);
+        pthread_mutex_unlock(&b->lock);
+    }
+    free(call);
+}
+
+static void on_lane_event(mr_daemon *d, const char *type, struct json_object *ev) {
+    int64_t gen = -1;
+    mc_json_int64(ev, "gen", &gen);
+    bool current = d->bridge && gen == d->bridge->gen && d->turn.open;
+    if (strcmp(type, "lane.invoke") == 0) {
+        if (!current) return;
+        struct lane_call *call = malloc(sizeof *call);
+        if (!call) return;
+        *call = (struct lane_call){ d, (int)gen };
+        if (mcu_invoke(d->pipes, mc_json_string(ev, "app"), mc_json_string(ev, "skill"), mc_json_object(ev, "args"), d->config.skill_timeout_ms, on_lane_invoked, call, NULL, 0) < 0) {
+            mcu_result r = { .ok = false, .error = "disconnected" };
+            on_lane_invoked(&r, call);
+        }
+    } else if (strcmp(type, "lane.confirm") == 0) {
+        if (!current) return;
+        struct json_object *card = typed("skill.confirm");
+        const char *keys[] = { "call_id", "app", "app_name", "skill", "title", "summary" };
+        for (size_t i = 0; i < sizeof keys / sizeof *keys; i++) json_object_object_add(card, keys[i], str_or_empty(mc_json_string(ev, keys[i])));
+        struct json_object *args = mc_json_object(ev, "args");
+        json_object_object_add(card, "args", args ? json_object_get(args) : json_object_new_object());
+        broadcast(d, card);
+        ma_trace_note_confirmation(d->trace, d->turn.request_id, "pending");
+    } else if (strcmp(type, "lane.run") == 0) {
+        if (!current) return;
+        const char *app = mc_json_string(ev, "app"), *skill = mc_json_string(ev, "skill");
+        const sk_skill *s = sk_registry_skill(&d->skills, app, skill);
+        ma_trace_note_skill_invocation(d->trace, d->turn.request_id, app, skill, s ? sk_effect_name(s->effect) : "", mc_json_string(ev, "args"), wall_seconds());
+    } else if (strcmp(type, "lane.result") == 0) {
+        if (!current) return;
+        struct json_object *outcome = mc_json_object(ev, "outcome");
+        if (outcome) note_run(d, outcome, true);
+    } else if (strcmp(type, "lane.done") == 0) {
+        int64_t handle = 0;
+        mc_json_int64(ev, "bridge", &handle);
+        struct lane_bridge *b = (struct lane_bridge *)(intptr_t)handle;
+        if (b == d->bridge) d->bridge = NULL;
+        bridge_free(b);
+        if (!current) return;
+        bool ok = false, cancelled = false;
+        mc_json_bool(ev, "ok", &ok);
+        mc_json_bool(ev, "cancelled", &cancelled);
+        const char *text = mc_json_string(ev, "text"), *error = mc_json_string(ev, "error");
+        int64_t rounds = 0;
+        mc_json_int64(ev, "rounds", &rounds);
+        mc_log(MC_LOG_DEBUG, "turn %s: the skills lane ended after %lld round%s%s%s", d->turn.request_id, (long long)rounds, rounds == 1 ? "" : "s",
+               error && *error ? ": " : "", error && *error ? error : "");
+        if (cancelled) return;
+        char fallback[300] = "";
+        if (!text || !*text) {
+            /* it only acted: the last run's word stands in for the prose (the Mac's voice lane would speak the receipt) */
+            size_t n = d->turn.runs ? json_object_array_length(d->turn.runs) : 0;
+            if (n) {
+                struct json_object *last = json_object_array_get_idx(d->turn.runs, n - 1);
+                const char *summary = mc_json_string(last, "summary");
+                bool run_ok = false, requested = false;
+                mc_json_bool(last, "ok", &run_ok);
+                mc_json_bool(last, "requested", &requested);
+                if (requested) fallback[0] = 0;
+                else snprintf(fallback, sizeof fallback, "%s", summary && *summary ? summary : run_ok ? "Done." : "That did not work.");
+            } else if (!ok) {
+                snprintf(fallback, sizeof fallback, "I could not reach the model%s%s.", error && *error ? ": " : "", error && *error ? error : "");
+                d->turn.failed = true;
+                broadcast(d, error_message("sewnd", error && *error ? error : "the skills lane failed"));
+            }
+            text = fallback;
+        }
+        finish_with_text(d, text);
+    }
+}
+
+static void on_triage_done(mr_daemon *d, struct json_object *ev) {
+    int64_t client = 0, gen = -1;
+    mc_json_int64(ev, "client", &client);
+    mc_json_int64(ev, "gen", &gen);
+    if (client) {
+        mr_client *c = mr_desktop_client(&d->desktop, (unsigned)client);
+        if (!c) return;
+        struct json_object *o = typed("triage.result");
+        const char *keys[] = { "ok", "message", "text", "winner", "affinities" };
+        for (size_t i = 0; i < sizeof keys / sizeof *keys; i++) {
+            struct json_object *v;
+            if (json_object_object_get_ex(ev, keys[i], &v)) json_object_object_add(o, keys[i], json_object_get(v));
+        }
+        send_to(d, c, o);
+        return;
+    }
+    if (gen != d->turn.gen || !d->turn.triaging || !d->turn.open) return;
+    bool ok = false;
+    mc_json_bool(ev, "ok", &ok);
+    if (!ok) mc_log(MC_LOG_DEBUG, "turn %s: triage abstained: %s", d->turn.request_id, mc_json_string(ev, "message") ? mc_json_string(ev, "message") : "");
+    continue_turn(d, ok ? ev : NULL);
 }
 
 /* ---- the ears ---- */
@@ -1024,6 +1948,13 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
         const char *voice = mc_json_string(msg, "voice");
         if (voice && sewn_voice_id_valid(voice)) snprintf(d->voice_id, sizeof d->voice_id, "%s", voice);
         else if (voice) send_to(d, c, error_message("config", "that is not a voice"));
+        struct json_object *recall = mc_json_object(msg, "recall");
+        if (recall) {
+            mc_json_bool(recall, "personal", &d->recall.personal);
+            mc_json_bool(recall, "conversation", &d->recall.conversation);
+            mc_json_bool(recall, "application", &d->recall.application);
+            mc_json_bool(recall, "behavioral", &d->recall.behavioral);
+        }
     } else if (strcmp(type, "voices.list") == 0) {
         if (d->voices && mc_now_ms() - d->voices_at < 10 * 60 * 1000) {
             struct json_object *o = typed("voices");
@@ -1036,7 +1967,12 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
     } else if (strcmp(type, "voice.sample") == 0) {
         start_sample(d, c, msg);
     } else if (strcmp(type, "skills") == 0) {
-        if (sk_registry_load(&d->skills, msg) < 0) {
+        pthread_mutex_lock(&d->index_lock);
+        int loaded = sk_registry_load(&d->skills, msg);
+        if (loaded == 0) { d->index_ready = false; d->skills_gen++; }     /* the index is of the registry it was built from */
+        int skills_gen = d->skills_gen;
+        pthread_mutex_unlock(&d->index_lock);
+        if (loaded < 0) {
             send_to(d, c, error_message("skills", "a skills message that could not be read"));
             return;
         }
@@ -1045,6 +1981,16 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
         ma_roster_merge_skills(&d->roster, mc_json_array(msg, "apps"));
         for (int i = 0; i < MR_CLIENTS_MAX; i++) d->desktop.clients[i].desktop = false;
         c->desktop = true;
+        /* the skill index triage scores against, and the ability records the Thread holds (idempotent ids) */
+        struct index_job *job = calloc(1, sizeof *job);
+        if (job && json_object_deep_copy(msg, &job->message, NULL) == 0) {
+            job->d = d;
+            job->gen = skills_gen;
+            spawn(d, index_worker, job);
+        } else {
+            free(job);
+        }
+        deposit_items(d, sk_ability_records(&d->skills, d->owner), "ability");
     } else if (strcmp(type, "skill.result") == 0) {
         mcu_pipes_on_message(d->pipes, msg);
     } else if (strcmp(type, "skills.list") == 0) {
@@ -1053,6 +1999,22 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
         send_to(d, c, o);
     } else if (strcmp(type, "skill.call") == 0) {
         skill_call(d, c, msg);
+    } else if (strcmp(type, "skill.confirm.reply") == 0) {
+        bool yes = false;
+        mc_json_bool(msg, "yes", &yes);
+        if (!answer_confirmation(d, mc_json_string(msg, "call_id"), yes)) send_to(d, c, error_message("skill.confirm", "nothing is waiting for an answer"));
+    } else if (strcmp(type, "triage") == 0) {
+        const char *text = mc_json_string(msg, "text");
+        pthread_mutex_lock(&d->index_lock);
+        bool indexed = d->index_ready;
+        pthread_mutex_unlock(&d->index_lock);
+        if (!text || !*text) send_to(d, c, error_message("triage", "say what to triage"));
+        else if (!indexed) send_to(d, c, error_message("triage", "the skill index is not built: the desktop has not published its skills, or sewnd could not embed them"));
+        else triage_job(d, -1, c->id, text);
+    } else if (strcmp(type, "abilities.list") == 0) {
+        struct json_object *o = typed("abilities");
+        json_object_object_add(o, "records", sk_ability_records(&d->skills, d->owner));
+        send_to(d, c, o);
     } else if (strcmp(type, "world") == 0) {
         on_world(d, msg);
     } else if (strcmp(type, "selection") == 0) {
@@ -1243,6 +2205,9 @@ mr_daemon *mr_daemon_new(const mr_config *config, int *error) {
         d->aops = config->audio_ops ? config->audio_ops : &pipewire_ops;
         resolve(d->sewn_path, sizeof d->sewn_path, config->sewn_socket, "SEWN_SOCKET", SEWN_SOCKET_PATH);
         resolve(d->thread_path, sizeof d->thread_path, config->thread_socket, "THREAD_SOCKET", THREAD_CLIENT_SOCKET_PATH);
+        resolve(d->thread_local_path, sizeof d->thread_local_path, config->thread_local_socket, "THREAD_LOCAL_SOCKET", THREAD_LOCAL_SOCKET_PATH);
+        pthread_mutex_init(&d->index_lock, NULL);
+        d->recall = mb_recall_default();
         if (config->desktop_socket) snprintf(d->desktop_path, sizeof d->desktop_path, "%s", config->desktop_socket);
         else rc = mr_desktop_default_socket(d->desktop_path, sizeof d->desktop_path, true);
         mc_user_name(getuid(), d->owner, sizeof d->owner);
@@ -1298,6 +2263,10 @@ int mr_daemon_run(mr_daemon *d) {
                 on_ears_event(d, type, ev);
             } else if (strncmp(type, "sample.", 7) == 0) {
                 on_sample_event(d, type, ev);
+            } else if (strncmp(type, "lane.", 5) == 0) {
+                on_lane_event(d, type, ev);
+            } else if (strcmp(type, "triage.done") == 0) {
+                on_triage_done(d, ev);
             } else if (strcmp(type, "key.reply") == 0) {
                 on_key_reply(d, ev);
             } else if (strcmp(type, "voices.reply") == 0) {
@@ -1339,5 +2308,8 @@ void mr_daemon_free(mr_daemon *d) {
     cancel_pending(d);
     ma_store_free(d->ambient);
     ma_trace_log_free(d->trace);
+    if (d->episode_open) mf_behavior_free(&d->episode);
+    mb_skill_index_free(&d->skill_index);
+    pthread_mutex_destroy(&d->index_lock);
     free(d);
 }

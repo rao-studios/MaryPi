@@ -10,7 +10,9 @@
  *   maryctl sample VOICE [TEXT...]      one text spoken in VOICE through Mary's speaker, or why not
  *   maryctl ambient                     what is in front of the person, as the Ambient app's World tab shows it
  *   maryctl trace                       every turn's route, as the Mac's RouteReport (the Routes tab's Copy)
- *   maryctl state APP                   the app's surface, through the same pipes a turn reads it */
+ *   maryctl state APP                   the app's surface, through the same pipes a turn reads it
+ *   maryctl triage TEXT...              who would answer these words without a model (the Abilities app's Rehearse)
+ *   maryctl abilities                   the ability records maryd writes into the Thread, one line each */
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -166,6 +168,47 @@ static int on_line(const char *line, size_t len, void *user) {
             printf("%s", or_else(mc_json_string(msg, "text"), ""));
             c->done = true;
         }
+    } else if (strcmp(c->command, "triage") == 0) {
+        if (strcmp(type, "triage.result") == 0) {
+            bool ok = false;
+            mc_json_bool(msg, "ok", &ok);
+            struct json_object *winner = mc_json_object(msg, "winner"), *affinities = mc_json_array(msg, "affinities");
+            if (!ok) {
+                fprintf(stderr, "maryctl: %s\n", or_else(mc_json_string(msg, "message"), "triage failed"));
+            } else if (winner) {
+                double score = 0;
+                bool dispatchable = false, single = false;
+                mc_json_double(winner, "score", &score);
+                mc_json_bool(winner, "dispatchable", &dispatchable);
+                mc_json_bool(winner, "singleClause", &single);
+                printf("winner:  %s (%.2f) \xE2\x80\x94 %s\n", or_else(mc_json_string(winner, "invocation"), "?"), score, or_else(mc_json_string(winner, "title"), ""));
+                printf("shape:   %s%s\n", or_else(mc_json_string(winner, "shape"), "none"), single ? ", one clause" : ", more than one clause");
+                printf("policy:  %s\n", or_else(mc_json_string(winner, "decision"), "?"));
+                struct json_object *args = mc_json_object(winner, "args");
+                if (args) printf("args:    %s\n", mc_json_compact(args, NULL));
+                printf("%s\n", dispatchable ? "dispatch: without a model" : "dispatch: the model decides");
+            } else {
+                printf("no unique winner: the model decides\n");
+            }
+            for (size_t k = 0; ok && affinities && k < json_object_array_length(affinities); k++) {
+                struct json_object *a = json_object_array_get_idx(affinities, k);
+                double score = 0;
+                mc_json_double(a, "score", &score);
+                printf("  %.2f  %s\n", score, or_else(mc_json_string(a, "invocation"), "?"));
+            }
+            c->status = ok ? 0 : 1;
+            c->done = true;
+        } else if (strcmp(type, "error") == 0) {
+            fprintf(stderr, "maryctl: %s\n", or_else(mc_json_string(msg, "message"), "error"));
+            c->status = 1;
+            c->done = true;
+        }
+    } else if (strcmp(c->command, "abilities") == 0) {
+        if (strcmp(type, "abilities") == 0) {
+            struct json_object *records = mc_json_array(msg, "records");
+            for (size_t k = 0; records && k < json_object_array_length(records); k++) printf("%s\n", mc_json_compact(json_object_array_get_idx(records, k), NULL));
+            c->done = true;
+        }
     } else if (strcmp(c->command, "state") == 0) {
         if (strcmp(type, "app.state.result") == 0) {
             bool ok = false;
@@ -260,6 +303,17 @@ int main(int argc, char **argv) {
         request = json_object_new_object();
         json_object_object_add(request, "type", json_object_new_string("app.state"));
         json_object_object_add(request, "app", json_object_new_string(argv[i + 1]));
+    } else if (strcmp(cmd, "triage") == 0 && i + 1 < argc) {
+        for (int k = i + 1; k < argc; k++) {
+            if (k > i + 1) mc_buf_append_str(&question, " ");
+            mc_buf_append_str(&question, argv[k]);
+        }
+        request = json_object_new_object();
+        json_object_object_add(request, "type", json_object_new_string("triage"));
+        json_object_object_add(request, "text", json_object_new_string((const char *)question.data));
+    } else if (strcmp(cmd, "abilities") == 0 && i + 1 == argc) {
+        request = json_object_new_object();
+        json_object_object_add(request, "type", json_object_new_string("abilities.list"));
     } else if (strcmp(cmd, "sample") == 0 && i + 1 < argc) {
         for (int k = i + 2; k < argc; k++) {
             if (k > i + 2) mc_buf_append_str(&question, " ");

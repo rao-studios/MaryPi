@@ -7,7 +7,8 @@ reaches sewnd and threadd on their own sockets, one connection per operation —
 reached again next time.
 
 - `runtime/daemon.h` — the main loop. It owns every piece of state; worker threads (the turn, the ears'
-  transcription, key calls, Thread deposits) post events to `runtime/queue.h` and never touch it.
+  transcription, key calls, Thread deposits, triage, the skill index, the skills lane) post events to
+  `runtime/queue.h` and never touch it.
 - `runtime/turn.h` — a turn through sewnd: tokens become `reply.delta`, audio goes straight to the speaker's
   ring, and the state is `speaking` from the first audio. Stopping shuts the socket down, which sewnd takes
   as cancel.
@@ -24,7 +25,19 @@ reached again next time.
 
 Skills: the desktop publishes `skills{apps}`; `maryctl skill APP SKILL [JSON]` is decided against that
 policy (unknown, denied, needs_confirmation) and otherwise sent to the desktop as `skill.invoke` through
-computer-use's pipes. The conversation does not call skills yet.
+computer-use's pipes. When the skills arrive maryd writes them into the Thread as `ability` records (over
+threadd's local socket) and builds the skill index triage scores against (sewnd's `embed`).
+
+A turn (PORTING.md 14): the desktop is asked for the world, the ambient engine routes, and triage embeds the
+words. A unique skill winner with a safe argument shape and a single clause dispatches with no model round —
+the receipt is the reply, and the words become a `routing` habit in the Thread. An action turn (or a winner
+that cannot dispatch) runs the skills lane: `complete` rounds through sewnd, calls through the desktop's
+pipes, a protected skill parked on the desktop's confirmation card (`skill.confirm{call_id, app, skill, args,
+summary}` out; `skill.confirm.reply{call_id, yes}` back, or a bare yes or no said to Mary); its answer is
+spoken through sewnd's `speak`. Every other turn is the voice with retrieval (`turn.start`). `reply.end`
+carries the runs, and the episode is sealed and deposited as `behavior` + `interaction` records whenever a
+skill ran. `maryctl triage TEXT` shows who would answer without a model; `maryctl abilities` prints the
+ability records.
 
 Voice: turns are spoken in the voice the desktop sends (`config{voice}`, Marie until then). A sample speaks one
 text through the speaker with sewnd's `speak`, with the ears muted, and stays out of the conversation and Thread.
@@ -39,6 +52,8 @@ maryctl skills
 maryctl skill settings open_pane '{"pane":"sound"}'
 maryctl voices
 maryctl sample fr_marie_happy
+maryctl triage play the music
+maryctl abilities
 ```
 
 Tested end to end against a fake sewnd, a fake threadd and fake desktop clients, with audio injected where

@@ -69,7 +69,7 @@ MARY_TEST(only_allowed_skills_become_mistral_tools) {
     sk_registry r;
     load(&r, MESSAGE);
     struct json_object *tools = sk_tools_json(&r);
-    MARY_ASSERT_EQ(json_object_array_length(tools), 2);
+    MARY_ASSERT_EQ(json_object_array_length(tools), 4);     /* the two that need confirmation ride too: the lane parks them */
     struct json_object *first = mc_json_object(json_object_array_get_idx(tools, 0), "function");
     MARY_ASSERT_STR(mc_json_type(json_object_array_get_idx(tools, 0)), "function");
     MARY_ASSERT_STR(mc_json_string(first, "name"), "settings__open_pane");
@@ -91,9 +91,67 @@ MARY_TEST(only_allowed_skills_become_mistral_tools) {
     sk_registry_free(&r);
 }
 
+MARY_TEST(the_richer_schema_defaults_from_the_effect_and_records_go_to_the_thread) {
+    static const char TEXT[] =
+        "{\"type\":\"skills\",\"apps\":[{\"id\":\"media\",\"name\":\"Media Player\",\"enabled\":true,\"ask\":\"never\",\"summary\":\"Plays music and video.\","
+        "\"aliases\":[\"player\"],\"discipline\":\"multimedia\",\"perception\":[\"file\",\"playing\"],\"skills\":["
+        "{\"id\":\"play_pause\",\"title\":\"Play or pause\",\"summary\":\"Plays or pauses.\",\"params\":null,\"effect\":\"act\",\"enabled\":true,"
+        "\"triggers\":{\"tokens\":[\"play\",\"pause\"],\"phrases\":[\"play the music\"]},\"target_classes\":[\"media\"]},"
+        "{\"id\":\"eject\",\"title\":\"Eject\",\"summary\":\"Ejects the disc.\",\"params\":null,\"effect\":\"destructive\",\"enabled\":true,\"kind\":\"workflow\"}]}]}";
+    struct json_object *msg = mc_json_parse(TEXT, strlen(TEXT));
+    sk_registry r;
+    sk_registry_init(&r);
+    MARY_ASSERT_EQ(sk_registry_load(&r, msg), 0);
+    json_object_put(msg);
+    const sk_app *media = sk_registry_app(&r, "media");
+    MARY_ASSERT_STR(media->title, "Media Player");
+    MARY_ASSERT_STR(media->paradigm, "applicationExpertise");
+    MARY_ASSERT_STR(media->discipline, "multimedia");
+    MARY_ASSERT_EQ(media->alias_count, 1);
+    MARY_ASSERT_EQ(media->perception_count, 2);
+    const sk_skill *play = sk_registry_skill(&r, "media", "play_pause"), *eject = sk_registry_skill(&r, "media", "eject");
+    MARY_ASSERT_EQ(play->kind, SK_KIND_EFFECTFUL);
+    MARY_ASSERT_EQ(play->access, SK_ACCESS_REVERSIBLE);
+    MARY_ASSERT_EQ(play->trigger_count, 2);
+    MARY_ASSERT_STR(play->phrases[0], "play the music");
+    MARY_ASSERT_STR(play->invocation, "media__play_pause");
+    MARY_ASSERT_EQ(eject->kind, SK_KIND_WORKFLOW);
+    MARY_ASSERT_EQ(eject->access, SK_ACCESS_CONFIRM);
+    /* a skill that needs confirmation is still a tool: the lane parks it for the person */
+    struct json_object *tools = sk_tools_json(&r);
+    MARY_ASSERT_EQ(json_object_array_length(tools), 2);
+    json_object_put(tools);
+    char group[80], id[96];
+    sk_ability_group("mary", "media", "applicationExpertise", group, sizeof group);
+    sk_ability_document_id("mary", "media", "applicationExpertise", "play_pause", id, sizeof id);
+    MARY_ASSERT(strncmp(group, "mary-ability-", 13) == 0 && strlen(group) == 13 + 16);
+    MARY_ASSERT(strncmp(id, "mary-ability-schema-", 20) == 0 && strlen(id) == 20 + 16);
+    char again[80];
+    sk_ability_group("Mary ", "MEDIA", "applicationExpertise", again, sizeof again);
+    MARY_ASSERT_STR(again, group);                              /* canonical: lowercase, whitespace folded */
+    struct json_object *records = sk_ability_records(&r, "mary");
+    MARY_ASSERT_EQ(json_object_array_length(records), 4);       /* two skills, the manifest, the discipline */
+    struct json_object *first = json_object_array_get_idx(records, 0);
+    MARY_ASSERT_STR(mc_json_string(first, "document_id"), id);
+    MARY_ASSERT_STR(mc_json_string(first, "group"), group);
+    MARY_ASSERT_STR(mc_json_string(first, "family"), "ability");
+    MARY_ASSERT_STR(mc_json_string(first, "label"), "Ability \xE2\x80\x94 Media Player");
+    const char *text = json_object_get_string(json_object_array_get_idx(mc_json_array(first, "texts"), 0));
+    MARY_ASSERT(strstr(text, "Skill: Play or pause\nApplication: Media Player\n") && strstr(text, "Invocation: media__play_pause\n") && strstr(text, "Listens for: play, pause\n"));
+    MARY_ASSERT_EQ(json_object_array_length(mc_json_array(first, "relationships")), 3);   /* offers, effects, practices */
+    struct json_object *manifest = json_object_array_get_idx(records, 2), *discipline = json_object_array_get_idx(records, 3);
+    MARY_ASSERT_STR(mc_json_string(manifest, "family"), "ability-schema");
+    MARY_ASSERT(strstr(json_object_get_string(json_object_array_get_idx(mc_json_array(manifest, "texts"), 0)), "Publishes: file, playing\n") != NULL);
+    MARY_ASSERT_STR(mc_json_string(discipline, "label"), "Ability \xE2\x80\x94 Multimedia");
+    MARY_ASSERT(strstr(json_object_get_string(json_object_array_get_idx(mc_json_array(discipline, "texts"), 0)), "- Media Player: Play or pause, Eject\n") != NULL);
+    json_object_put(records);
+    sk_registry_free(&r);
+}
+
 int main(void) {
     MARY_RUN(the_desktops_message_becomes_the_registry);
     MARY_RUN(decisions_follow_the_desktops_rule);
     MARY_RUN(only_allowed_skills_become_mistral_tools);
+    MARY_RUN(the_richer_schema_defaults_from_the_effect_and_records_go_to_the_thread);
     MARY_TEST_MAIN_END();
 }
