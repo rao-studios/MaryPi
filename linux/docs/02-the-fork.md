@@ -38,10 +38,12 @@ first-boot service with its script. `overlay-desktop/` carries the desktop
 launcher (`/usr/lib/maryos/desktop`, chapter 9) and the PAM service the
 desktop unit logs in with. `overlay-pi5/boot/firmware/` holds `config.txt`
 and `usercfg.txt`; whatever ends up under `/boot/firmware` in the tree
-becomes the content of the FAT partition. `overlay-vm/` starts WirePlumber's
-speaker at full volume, since the Mac sets how loud the VM is, and gives the
-virtio sound card the buffer settings WirePlumber uses in a virtual machine
-but cannot detect in one started by VZLinuxBootLoader (chapter 10).
+becomes the content of the FAT partition. `overlay-vm/` sets up WirePlumber
+for Apple's virtio sound card: the speaker starts at full volume, since the
+Mac sets how loud the VM is; the card gets the buffer settings WirePlumber
+uses in a virtual machine but cannot detect in one started by
+VZLinuxBootLoader; and a profile set finds its microphone on PCM 1
+(chapter 10).
 
 ## hooks/
 

@@ -143,7 +143,10 @@ its binary changes, the way the launcher does for the compositor. The Pi image n
 The VM hears through the Mac. `ui.sh` boots it with `maryos vm run --microphone`, which gives the guest's sound
 device an input fed by this Mac's microphone; macOS asks once, and until it is allowed (System Settings › Privacy
 & Security › Microphone) the guest hears silence — typed turns work either way. `./ui.sh --no-microphone` keeps
-the microphone out of the VM.
+the microphone out of the VM. Apple's device plays on PCM 0 and records on PCM 1, while PipeWire's default profile
+set looks only at device 0, so the image hands the card a profile set that names both
+(`overlay-vm/usr/share/maryos/alsa-card-profile/virtio-snd.conf`). Before it the VM had no microphone source, and
+WirePlumber gave Mary's wake word the speaker's monitor instead.
 
 ## When she says nothing
 
@@ -170,12 +173,13 @@ was heard, PipeWire did take the audio and it was lost after that: look at the d
 in `wpctl status`, and in the VM at the Mac's own output.
 
 maryd listens and speaks through PipeWire's default devices, so System Settings › Sound chooses both. In the VM the
-output is the Mac's, and a microphone exists only with `--microphone` and macOS's permission. The image starts the
-VM's speaker at full volume, so the Mac's volume alone sets how loud it is (WirePlumber would start it at 40%, about
-−24 dB). It also gives the virtio sound card WirePlumber's buffer settings for virtual machines, which WirePlumber
-applies only when the DMI tables name QEMU or VMware, and a guest started by VZLinuxBootLoader has no DMI tables
-(`overlay-vm/etc/wireplumber/main.lua.d/51-maryos-vm.lua`). Both arrive with `./ui.sh --rebuild`; in a VM booted
-before that, `wpctl set-volume @DEFAULT_AUDIO_SINK@ 100%` raises the volume.
+output is whatever the Mac is playing through (Control Center › Sound): when that is a Bluetooth receiver, Mary is
+heard there and not from the MacBook. A microphone exists only with `--microphone` and macOS's permission. The image
+starts the VM's speaker at full volume, so the Mac's volume alone sets how loud it is (WirePlumber would start it at
+40%, about −24 dB). It also gives the virtio sound card WirePlumber's buffer settings for virtual machines, which
+WirePlumber applies only when the DMI tables name QEMU or VMware, and a guest started by VZLinuxBootLoader has no DMI
+tables (`overlay-vm/etc/wireplumber/main.lua.d/51-maryos-vm.lua`). Both arrive with `./ui.sh --rebuild`; in a VM
+booted before that, `wpctl set-volume @DEFAULT_AUDIO_SINK@ 100%` raises the volume.
 
 ## What is not there yet
 

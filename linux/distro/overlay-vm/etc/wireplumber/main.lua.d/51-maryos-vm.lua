@@ -21,3 +21,15 @@ table.insert(alsa_monitor.rules, {
     ["api.alsa.headroom"] = 8192,
   },
 })
+
+-- Apple's virtio sound device plays on PCM 0 and records on PCM 1, but PipeWire's default
+-- profile set looks only at device 0, so the microphone never became a source and whatever
+-- recorded, Mary's wake word included, was handed the speaker's monitor instead. The card
+-- gets a profile set that names both devices. It is matched by its ALSA name: alsa.driver_name
+-- is only added by the card itself, after these rules have run.
+table.insert(alsa_monitor.rules, {
+  matches = { { { "api.alsa.card.name", "equals", "VirtIO SoundCard" } } },
+  apply_properties = {
+    ["device.profile-set"] = "/usr/share/maryos/alsa-card-profile/virtio-snd.conf",
+  },
+})
