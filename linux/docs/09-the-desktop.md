@@ -373,7 +373,8 @@ so a weekly 9:00 stays at 9:00 when the clocks change. A file another program pu
 there is shown, repeats and all, but never rewritten. The folder is watched, so a
 copied-in file appears at once, and Today moves at midnight on its own.
 
-**System Settings** (pinned, one window) gathers the desktop's preferences and
+**System Settings** (pinned, one window; Spotlight shows it as *Settings* and still
+finds it by its full name) gathers the desktop's preferences and
 the system's in a sidebar of panes. *General* holds the View pill's choices and
 24-hour time for the corner clock; *Dock* chooses which apps a blank Spotlight
 shows; *Keyboard & Mouse* sets key repeat, the layout (an XKB name such as
