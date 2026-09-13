@@ -28,6 +28,7 @@
 #include "runtime/turn.h"
 #include "sewn/client.h"
 #include "sewn/key.h"
+#include "sewn/voices.h"
 #include "skills/registry.h"
 #include "voice/audio.h"
 #include "voice/state.h"
@@ -51,6 +52,9 @@ struct mr_daemon {
     mv_state state;
     bool key_present;
     int ears_session;
+    char voice_id[64];              /* what turns are spoken in: config{voice}, MB_VOICE_ID until then */
+    struct json_object *voices;     /* sewnd's last list of voices, served for ten minutes */
+    int64_t voices_at;
 
     struct {
         mr_turn *worker;
@@ -62,6 +66,15 @@ struct mr_daemon {
     } turn;
     atomic_bool turn_stopping;      /* the audio callback gives up waiting for room */
     atomic_int turn_gen;
+    struct {
+        mr_turn *worker;
+        int gen;
+        unsigned client;            /* who asked */
+        char voice_id[64];
+        bool failed, audio_started, draining;
+        int64_t audio_started_ms;
+    } sample;                       /* one text in a voice (Settings' Play Sample): out of the conversation */
+    atomic_int sample_gen;
 };
 
 mr_config mr_config_default(void) {
@@ -151,15 +164,17 @@ struct key_job {
     bool quiet;             /* a background status check: say nothing when sewnd is away */
     char *key;
     size_t key_len;
+    bool voices;            /* voices.list for `client`, not the key */
+    unsigned client;
 };
 
 static void *key_worker(void *arg) {
     struct key_job *job = arg;
     mr_daemon *d = job->d;
-    struct json_object *reply = NULL, *event = typed("key.reply");
+    struct json_object *reply = NULL, *event = typed(job->voices ? "voices.reply" : "key.reply");
     int fd = sewn_connect(d->sewn_path), rc = fd;
     if (fd >= 0) {
-        struct timeval patience = { .tv_sec = 20 };
+        struct timeval patience = { .tv_sec = job->voices ? 45 : 20 };   /* five pages of voices take longer */
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &patience, sizeof patience);
         if (job->key) {
             rc = sewn_call_key_set(fd, job->key, job->key_len, &reply);
@@ -175,6 +190,7 @@ static void *key_worker(void *arg) {
         free(job->key);
     }
     json_object_object_add(event, "quiet", json_object_new_boolean(job->quiet));
+    json_object_object_add(event, "client", json_object_new_int64(job->client));
     if (rc < 0) json_object_object_add(event, "failure", json_object_new_string(
         rc == -ENOENT || rc == -ECONNREFUSED ? "sewnd is not running" : strerror(-rc)));
     else json_object_object_add(event, "reply", reply);
@@ -195,6 +211,16 @@ static void key_job(mr_daemon *d, const char *type, bool quiet, const char *key,
         job->key[key_len] = 0;
         job->key_len = key_len;
     }
+    spawn(d, key_worker, job);
+}
+
+static void voices_job(mr_daemon *d, mr_client *c) {
+    struct key_job *job = calloc(1, sizeof *job);
+    if (!job) return;
+    job->d = d;
+    snprintf(job->type, sizeof job->type, "voices.list");
+    job->voices = true;
+    job->client = c->id;
     spawn(d, key_worker, job);
 }
 
@@ -324,7 +350,151 @@ static void reset_turn(mr_daemon *d) {
     d->turn.quiet_since = d->turn.audio_started_ms = 0;
 }
 
+/* ---- a voice sample: one text spoken through the speaker, kept out of the conversation and Thread ---- */
+
+struct sample_ctx {
+    mr_daemon *d;
+    int gen;
+    bool heard_audio;
+};
+
+static struct sample_ctx *sample_ctx;       /* the running sample's */
+
+static void post_sample(struct sample_ctx *s, struct json_object *event) {
+    json_object_object_add(event, "gen", json_object_new_int(s->gen));
+    mr_queue_push(&s->d->queue, event);
+}
+
+static void on_sample_audio(const float *samples, size_t count, void *user) {
+    struct sample_ctx *s = user;
+    if (!s->heard_audio) {
+        s->heard_audio = true;
+        post_sample(s, typed("sample.audio"));
+    }
+    mr_daemon *d = s->d;
+    while (d->audio && count && atomic_load(&d->sample_gen) == s->gen) {
+        size_t n = d->aops->play(d->audio, samples, count);
+        samples += n;
+        count -= n;
+        if (!n) usleep(10000);
+    }
+}
+
+static void on_sample_failed(long status, const char *message, void *user) {
+    struct json_object *o = typed("sample.failed");
+    json_object_object_add(o, "message", json_object_new_string(message));
+    post_sample(user, o);
+}
+
+static void on_sample_error(const char *stage, const char *message, void *user) { on_sample_failed(0, message, user); }
+
+static void on_sample_end(bool completed, void *user) { post_sample(user, typed("sample.end")); }
+
+static const mr_turn_events sample_events = { .audio = on_sample_audio, .tts_failed = on_sample_failed,
+                                              .error = on_sample_error, .end = on_sample_end };
+
+/* voice.sample{voice_id, state, message?}, to the client that asked. */
+static void sample_state(mr_daemon *d, const char *state, const char *message) {
+    mr_client *c = mr_desktop_client(&d->desktop, d->sample.client);
+    if (!c) return;
+    struct json_object *o = typed("voice.sample");
+    json_object_object_add(o, "voice_id", json_object_new_string(d->sample.voice_id));
+    json_object_object_add(o, "state", json_object_new_string(state));
+    if (message) json_object_object_add(o, "message", json_object_new_string(message));
+    send_to(d, c, o);
+}
+
+static void close_sample(mr_daemon *d, bool cancelled) {
+    if (!d->sample.worker) return;
+    atomic_store(&d->sample_gen, ++d->sample.gen);  /* the audio callback stops waiting for room */
+    if (cancelled) {
+        mr_turn_cancel(d->sample.worker);
+        if (d->audio) d->aops->stop(d->audio);
+    }
+    mr_turn_free(d->sample.worker);
+    d->sample.worker = NULL;
+    free(sample_ctx);
+    sample_ctx = NULL;
+}
+
+/* A question, listening or Stop ends a sample: whoever asked for it hears it is done. */
+static void stop_sample(mr_daemon *d) {
+    bool active = d->sample.worker || d->sample.draining;
+    close_sample(d, true);
+    if (d->sample.draining && d->audio) d->aops->stop(d->audio);
+    d->sample.draining = false;
+    if (active) {
+        sample_state(d, "done", NULL);
+        standby(d);
+    }
+}
+
+static void start_sample(mr_daemon *d, mr_client *c, struct json_object *msg) {
+    const char *voice = mc_json_string(msg, "voice_id"), *text = mc_json_string(msg, "text");
+    stop_sample(d);
+    d->sample.client = c->id;
+    snprintf(d->sample.voice_id, sizeof d->sample.voice_id, "%s", sewn_voice_id_valid(voice) ? voice : "");
+    if (!d->sample.voice_id[0]) {
+        sample_state(d, "failed", "That is not a voice.");
+        return;
+    }
+    if (d->turn.worker || d->turn.draining || (d->state != MV_STATE_IDLE && d->state != MV_STATE_ERROR)) {
+        sample_state(d, "failed", "Mary is busy; try again when she is quiet.");
+        return;
+    }
+    if (!text || !*text) text = "Hello! This is how I will sound.";
+    if (strlen(text) > SEWN_SPEAK_TEXT_MAX) {
+        sample_state(d, "failed", "That sample is too long.");
+        return;
+    }
+    struct json_object *start = typed("speak");
+    json_object_object_add(start, "voice_id", json_object_new_string(d->sample.voice_id));
+    json_object_object_add(start, "text", json_object_new_string(text));
+    mr_ears_mute(d->ears);                          /* her own voice must not wake her */
+    microphone(d, false);
+    d->sample.failed = d->sample.audio_started = false;
+    sample_ctx = calloc(1, sizeof *sample_ctx);
+    int error = 0;
+    if (sample_ctx) {
+        sample_ctx->d = d;
+        sample_ctx->gen = d->sample.gen;
+        d->sample.worker = mr_turn_start(d->sewn_path, start, &sample_events, sample_ctx, &error);
+    }
+    json_object_put(start);
+    if (!d->sample.worker) {
+        free(sample_ctx);
+        sample_ctx = NULL;
+        standby(d);
+        sample_state(d, "failed", error == -ENOENT || error == -ECONNREFUSED ? "sewnd is not running" : strerror(-error));
+        return;
+    }
+    sample_state(d, "asking", NULL);
+}
+
+static void on_sample_event(mr_daemon *d, const char *type, struct json_object *ev) {
+    int64_t gen = -1;
+    if (!mc_json_int64(ev, "gen", &gen) || gen != d->sample.gen || !d->sample.worker) return;
+    if (strcmp(type, "sample.audio") == 0) {
+        if (!d->audio && d->config.audio) {
+            if (!d->sample.failed) sample_state(d, "failed", "Mary has no speaker: PipeWire could not be opened.");
+            d->sample.failed = true;
+            return;
+        }
+        d->sample.audio_started = true;
+        d->sample.audio_started_ms = mc_now_ms();
+        sample_state(d, "playing", NULL);
+    } else if (strcmp(type, "sample.failed") == 0) {
+        if (!d->sample.failed) sample_state(d, "failed", mc_json_string(ev, "message"));
+        d->sample.failed = true;
+    } else if (strcmp(type, "sample.end") == 0) {
+        close_sample(d, false);
+        if (d->sample.failed) standby(d);
+        else d->sample.draining = true;             /* done once the speaker is quiet (tick) */
+    }
+}
+
 static void start_turn(mr_daemon *d, const char *question, bool voice) {
+    stop_sample(d);
     close_turn(d, true);
     reset_turn(d);
     mr_ears_mute(d->ears);
@@ -345,7 +515,7 @@ static void start_turn(mr_daemon *d, const char *question, bool voice) {
     char *instructions = mb_sewn_instructions(&clock);
     char request_id[64];
     mt_turn_document_id(d->turn.started_wall, request_id, sizeof request_id);
-    mb_turn_request req = { .instructions = instructions, .owner_id = d->owner, .request_id = request_id };
+    mb_turn_request req = { .instructions = instructions, .owner_id = d->owner, .request_id = request_id, .voice_id = d->voice_id };
     struct json_object *start = mb_turn_start(&d->history, &req);
     free(instructions);
 
@@ -369,6 +539,7 @@ static void start_turn(mr_daemon *d, const char *question, bool voice) {
 }
 
 static void stop_everything(mr_daemon *d) {
+    stop_sample(d);
     close_turn(d, true);
     if (d->audio) d->aops->stop(d->audio);
     d->turn.draining = false;
@@ -533,6 +704,7 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
         const char *text = mc_json_string(msg, "text");
         if (text && *text) start_turn(d, text, false);
     } else if (strcmp(type, "listen") == 0) {
+        stop_sample(d);
         close_turn(d, true);
         d->turn.draining = false;
         listen_now(d, false);
@@ -544,7 +716,11 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
                               ? json_object_get_string(field) : NULL;
         size_t len = key ? strlen(key) : 0;
         if (!key || !sewn_key_valid(key, len)) send_to(d, c, error_message("key", "That does not look like a Mistral API key."));
-        else key_job(d, "key.set", false, key, len);
+        else {
+            key_job(d, "key.set", false, key, len);
+            if (d->voices) json_object_put(d->voices);  /* another key may have other voices */
+            d->voices = NULL;
+        }
         if (key) mc_secure_zero((char *)key, len);      /* json-c's copy of it */
     } else if (strcmp(type, "key.verify") == 0 || strcmp(type, "key.status") == 0) {
         key_job(d, type, false, NULL, 0);
@@ -554,6 +730,20 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
             mr_ears_set_wake(d->ears, wake);
             if (d->state == MV_STATE_IDLE) microphone(d, false);
         }
+        const char *voice = mc_json_string(msg, "voice");
+        if (voice && sewn_voice_id_valid(voice)) snprintf(d->voice_id, sizeof d->voice_id, "%s", voice);
+        else if (voice) send_to(d, c, error_message("config", "that is not a voice"));
+    } else if (strcmp(type, "voices.list") == 0) {
+        if (d->voices && mc_now_ms() - d->voices_at < 10 * 60 * 1000) {
+            struct json_object *o = typed("voices");
+            json_object_object_add(o, "ok", json_object_new_boolean(1));
+            json_object_object_add(o, "voices", json_object_get(d->voices));
+            send_to(d, c, o);
+        } else {
+            voices_job(d, c);
+        }
+    } else if (strcmp(type, "voice.sample") == 0) {
+        start_sample(d, c, msg);
     } else if (strcmp(type, "skills") == 0) {
         if (sk_registry_load(&d->skills, msg) < 0) {
             send_to(d, c, error_message("skills", "a skills message that could not be read"));
@@ -588,6 +778,7 @@ static void on_client(mr_desktop *desktop, mr_client *c, bool connected, void *u
     json_object_object_add(hello, "state", json_object_new_string(mv_state_name(d->state)));
     json_object_object_add(hello, "key_present", json_object_new_boolean(d->key_present));
     json_object_object_add(hello, "wake", json_object_new_boolean(mr_ears_can_wake(d->ears)));
+    json_object_object_add(hello, "voice", json_object_new_string(d->voice_id));
     json_object_object_add(hello, "tail", mb_history_spoken_messages(&d->history));
     send_to(d, c, hello);
     if (!d->key_present) key_job(d, "key.status", true, NULL, 0);
@@ -608,6 +799,31 @@ static void on_key_reply(mr_daemon *d, struct json_object *ev) {
     }
 }
 
+/* sewnd's list of voices, for the client that asked; a good one is kept for the next ten minutes. */
+static void on_voices_reply(mr_daemon *d, struct json_object *ev) {
+    int64_t id = 0;
+    mc_json_int64(ev, "client", &id);
+    struct json_object *reply = mc_json_object(ev, "reply");
+    const char *failure = mc_json_string(ev, "failure"), *type = reply ? mc_json_type(reply) : NULL;
+    struct json_object *voices = type && strcmp(type, "voices") == 0 ? mc_json_array(reply, "voices") : NULL;
+    if (voices) {
+        if (d->voices) json_object_put(d->voices);
+        d->voices = json_object_get(voices);
+        d->voices_at = mc_now_ms();
+    }
+    mr_client *c = mr_desktop_client(&d->desktop, (unsigned)id);
+    if (!c) return;
+    struct json_object *o = typed("voices");
+    json_object_object_add(o, "ok", json_object_new_boolean(voices != NULL));
+    if (voices) {
+        json_object_object_add(o, "voices", json_object_get(voices));
+    } else {
+        const char *said = type && strcmp(type, "error") == 0 ? mc_json_string(reply, "message") : NULL;
+        json_object_object_add(o, "message", json_object_new_string(failure ? failure : said ? said : "sewnd did not list the voices"));
+    }
+    send_to(d, c, o);
+}
+
 /* ---- the loop ---- */
 
 static void on_capture(const int16_t *frame, size_t count, void *user) { mr_daemon_hear(user, frame, count); }
@@ -615,7 +831,7 @@ static void on_capture(const int16_t *frame, size_t count, void *user) { mr_daem
 /* Opens the speaker and microphone, and opens them again once PipeWire has gone away (a restart, say), whenever
  * nothing is using them: no turn, no queued voice, Mary idle. A failure is retried after 1 s, doubling to 30 s. */
 static void reopen_audio(mr_daemon *d, int64_t now) {
-    if (!d->config.audio || d->turn.worker || d->turn.draining) return;
+    if (!d->config.audio || d->turn.worker || d->turn.draining || d->sample.worker || d->sample.draining) return;
     if (d->audio && !d->aops->broken(d->audio)) return;
     if ((d->state != MV_STATE_IDLE && d->state != MV_STATE_ERROR) || now < d->audio_retry_at) return;
     bool again = d->audio != NULL;
@@ -641,6 +857,20 @@ static void tick(mr_daemon *d) {
     int64_t now = mc_now_ms();
     mcu_pipes_tick(d->pipes, now);
     reopen_audio(d, now);
+    if (d->sample.draining) {
+        int64_t played = d->audio ? d->aops->last_played_ms(d->audio) : 0;
+        int64_t since = played > d->sample.audio_started_ms ? played : d->sample.audio_started_ms;
+        if (d->audio && d->aops->queued(d->audio) > 0 && now - since >= d->config.speaker_stall_ms) {
+            d->aops->stop(d->audio);
+            d->sample.draining = false;
+            sample_state(d, "failed", "Mary's voice is not reaching the speaker. Check Settings \xE2\x80\xBA Sound.");
+            standby(d);
+        } else if (!d->audio || d->aops->queued(d->audio) == 0) {
+            d->sample.draining = false;
+            sample_state(d, "done", NULL);
+            standby(d);
+        }
+    }
     if (!d->turn.draining) return;
     if (d->audio && d->aops->queued(d->audio) > 0) {
         d->turn.quiet_since = 0;
@@ -688,8 +918,10 @@ mr_daemon *mr_daemon_new(const mr_config *config, int *error) {
         atomic_init(&d->workers, 0);
         atomic_init(&d->turn_stopping, false);
         atomic_init(&d->turn_gen, 0);
+        atomic_init(&d->sample_gen, 0);
         d->state = MV_STATE_IDLE;
         mb_history_init(&d->history);
+        snprintf(d->voice_id, sizeof d->voice_id, "%s", MB_VOICE_ID);
         sk_registry_init(&d->skills);
     }
     if (rc == 0) rc = mr_queue_init(&d->queue);
@@ -715,7 +947,7 @@ int mr_daemon_run(mr_daemon *d) {
     while (!atomic_load(&d->stop)) {
         fds[0] = (struct pollfd){ .fd = mr_queue_fd(&d->queue), .events = POLLIN };
         size_t n = 1 + mr_desktop_pollfds(&d->desktop, fds + 1, sizeof fds / sizeof *fds - 1);
-        int timeout = d->turn.draining || mcu_pipes_pending(d->pipes) ? 50 : 1000;
+        int timeout = d->turn.draining || d->sample.draining || mcu_pipes_pending(d->pipes) ? 50 : 1000;
         if (poll(fds, n, timeout) < 0 && errno != EINTR) break;
         mr_queue_drain(&d->queue);
         struct json_object *ev;
@@ -726,8 +958,12 @@ int mr_daemon_run(mr_daemon *d) {
                 on_turn_event(d, type, ev);
             } else if (strncmp(type, "ears.", 5) == 0) {
                 on_ears_event(d, type, ev);
+            } else if (strncmp(type, "sample.", 7) == 0) {
+                on_sample_event(d, type, ev);
             } else if (strcmp(type, "key.reply") == 0) {
                 on_key_reply(d, ev);
+            } else if (strcmp(type, "voices.reply") == 0) {
+                on_voices_reply(d, ev);
             }
             json_object_put(ev);
         }
@@ -749,6 +985,7 @@ void mr_daemon_hear(mr_daemon *d, const int16_t *samples, size_t count) {
 void mr_daemon_free(mr_daemon *d) {
     if (!d) return;
     if (d->audio) d->aops->capture(d->audio, false);
+    close_sample(d, true);
     close_turn(d, true);
     reset_turn(d);
     mr_ears_free(d->ears);
@@ -758,6 +995,7 @@ void mr_daemon_free(mr_daemon *d) {
     if (d->desktop.path[0]) mr_desktop_close(&d->desktop);
     if (atomic_load(&d->workers) == 0 && d->queue.items) mr_queue_free(&d->queue);
     if (d->skills_message) json_object_put(d->skills_message);
+    if (d->voices) json_object_put(d->voices);
     sk_registry_free(&d->skills);
     mb_history_free(&d->history);
     free(d);

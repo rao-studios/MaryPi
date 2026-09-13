@@ -62,7 +62,7 @@ static int on_frame(uint8_t kind, const unsigned char *p, size_t len, void *user
     } else if (strcmp(type, "error") == 0) {
         const char *stage = mc_json_string(msg, "stage"), *message = mc_json_string(msg, "message");
         if (t->ev.error) t->ev.error(stage ? stage : "sewnd", message ? message : "sewnd reported an error", t->user);
-    } else if (strcmp(type, "turn.end") == 0) {
+    } else if (strcmp(type, "turn.end") == 0 || strcmp(type, "speak.end") == 0) {
         t->completed = true;
         stop = 1;
     }

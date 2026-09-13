@@ -5,7 +5,9 @@
  *   maryctl listen                      opens the microphone, as the Ask Mary button does
  *   maryctl stop
  *   maryctl skills                      what each app lets Mary do, as the desktop published it
- *   maryctl skill APP SKILL [ARGS-JSON] one call through the direct pipes */
+ *   maryctl skill APP SKILL [ARGS-JSON] one call through the direct pipes
+ *   maryctl voices                      Mistral's voices, as Settings › Mary lists them
+ *   maryctl sample VOICE [TEXT...]      one text spoken in VOICE through Mary's speaker, or why not */
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -48,6 +50,22 @@ static void print_skills(struct json_object *msg) {
                    or_else(mc_json_string(skill, "effect"), "act"), on ? "" : " (off)");
         }
     }
+}
+
+static int print_voices(struct json_object *msg) {
+    bool ok = false;
+    mc_json_bool(msg, "ok", &ok);
+    if (!ok) {
+        fprintf(stderr, "maryctl: %s\n", or_else(mc_json_string(msg, "message"), "no voices"));
+        return 1;
+    }
+    struct json_object *voices = mc_json_array(msg, "voices");
+    for (size_t i = 0; voices && i < json_object_array_length(voices); i++) {
+        struct json_object *voice = json_object_array_get_idx(voices, i), *languages = mc_json_array(voice, "languages");
+        const char *language = languages && json_object_array_length(languages) ? json_object_get_string(json_object_array_get_idx(languages, 0)) : "";
+        printf("%-40s %-24s %s\n", or_else(mc_json_string(voice, "voice_id"), "?"), or_else(mc_json_string(voice, "name"), ""), or_else(language, ""));
+    }
+    return 0;
 }
 
 static void conversation(struct ctl *c, const char *type, struct json_object *msg) {
@@ -98,8 +116,9 @@ static int on_line(const char *line, size_t len, void *user) {
             bool key = false, wake = false;
             mc_json_bool(msg, "key_present", &key);
             mc_json_bool(msg, "wake", &wake);
-            printf("state:     %s\nkey:       %s\nwake word: %s\n", or_else(mc_json_string(msg, "state"), "?"),
-                   key ? "stored" : "not set (Settings › Mary)", wake ? "listening for \"Hey Mary\"" : "off");
+            printf("state:     %s\nkey:       %s\nwake word: %s\nvoice:     %s\n", or_else(mc_json_string(msg, "state"), "?"),
+                   key ? "stored" : "not set (Settings › Mary)", wake ? "listening for \"Hey Mary\"" : "off",
+                   or_else(mc_json_string(msg, "voice"), "?"));
             c->done = true;
         }
     } else if (strcmp(c->command, "ask") == 0 || strcmp(c->command, "listen") == 0) {
@@ -123,13 +142,34 @@ static int on_line(const char *line, size_t len, void *user) {
             c->status = 1;
             c->done = true;
         }
+    } else if (strcmp(c->command, "voices") == 0) {
+        if (strcmp(type, "voices") == 0) {
+            c->status = print_voices(msg);
+            c->done = true;
+        }
+    } else if (strcmp(c->command, "sample") == 0) {
+        const char *state = strcmp(type, "voice.sample") == 0 ? or_else(mc_json_string(msg, "state"), "") : NULL;
+        if (state && strcmp(state, "failed") == 0) {
+            fprintf(stderr, "maryctl: not spoken: %s\n", or_else(mc_json_string(msg, "message"), "it failed"));
+            c->status = 1;
+            c->done = true;
+        } else if (state && strcmp(state, "done") == 0) {
+            c->done = true;
+        } else if (state && isatty(2)) {
+            fprintf(stderr, "[%s]\n", state);
+        } else if (strcmp(type, "error") == 0) {
+            fprintf(stderr, "maryctl: %s\n", or_else(mc_json_string(msg, "message"), "error"));
+            c->status = 1;
+            c->done = true;
+        }
     }
     if (msg) json_object_put(msg);
     return c->done;
 }
 
 static void usage(FILE *to) {
-    fprintf(to, "usage: maryctl [--socket PATH] status | ask TEXT... | listen | stop | skills | skill APP SKILL [ARGS-JSON]\n");
+    fprintf(to, "usage: maryctl [--socket PATH] status | ask TEXT... | listen | stop | skills | skill APP SKILL [ARGS-JSON]\n"
+                "                                | voices | sample VOICE [TEXT...]\n");
 }
 
 int main(int argc, char **argv) {
@@ -176,6 +216,18 @@ int main(int argc, char **argv) {
             }
             json_object_object_add(request, "args", args);
         }
+    } else if (strcmp(cmd, "voices") == 0 && i + 1 == argc) {
+        request = json_object_new_object();
+        json_object_object_add(request, "type", json_object_new_string("voices.list"));
+    } else if (strcmp(cmd, "sample") == 0 && i + 1 < argc) {
+        for (int k = i + 2; k < argc; k++) {
+            if (k > i + 2) mc_buf_append_str(&question, " ");
+            mc_buf_append_str(&question, argv[k]);
+        }
+        request = json_object_new_object();
+        json_object_object_add(request, "type", json_object_new_string("voice.sample"));
+        json_object_object_add(request, "voice_id", json_object_new_string(argv[i + 1]));
+        if (question.len) json_object_object_add(request, "text", json_object_new_string((const char *)question.data));
     } else if (strcmp(cmd, "status") != 0 || i + 1 != argc) {
         usage(stderr);
         return 2;
@@ -188,8 +240,8 @@ int main(int argc, char **argv) {
         if (request) json_object_put(request);
         return 1;
     }
-    bool long_wait = strcmp(cmd, "ask") == 0 || strcmp(cmd, "listen") == 0;
-    struct timeval patience = { .tv_sec = long_wait ? 120 : 15 };
+    bool long_wait = strcmp(cmd, "ask") == 0 || strcmp(cmd, "listen") == 0 || strcmp(cmd, "sample") == 0;
+    struct timeval patience = { .tv_sec = long_wait ? 120 : strcmp(cmd, "voices") == 0 ? 60 : 15 };
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &patience, sizeof patience);
     if (request) {
         size_t len = 0;

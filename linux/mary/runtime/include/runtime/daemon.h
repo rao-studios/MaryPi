@@ -3,12 +3,14 @@
  * and the skill pipes — fed by a queue its worker threads post to.
  *
  * desktop → maryd   ask{text}, listen, stop, dismiss, key.set{key}, key.verify, key.status,
- *                   config{wake}, skills{apps}, skill.result{…}; maryctl adds
- *                   skills.list and skill.call{app, skill, args}
- * maryd → clients   hello{state, key_present, wake, tail}, wake, state{state}, level{rms},
+ *                   config{wake?, voice?}, voices.list, voice.sample{voice_id, text?}, skills{apps},
+ *                   skill.result{…}; maryctl adds skills.list and skill.call{app, skill, args}
+ * maryd → clients   hello{state, key_present, wake, voice, tail}, wake, state{state}, level{rms},
  *                   transcript{text, final, source?}, reply.delta{text}, reply.end{cancelled},
  *                   key.status{…}, error{stage, message}, skill.invoke{…} (desktop only),
- *                   skills{apps} and skill.result{…} (to the maryctl that asked)
+ *                   skills{apps} and skill.result{…} (to the maryctl that asked),
+ *                   voices{ok, voices | message} and voice.sample{voice_id, state, message?} (to the client that asked;
+ *                   state is asking, playing, done or failed)
  *
  * A turn: the question joins the history, brain builds turn.start, sewnd streams the
  * reply (reply.delta) and its voice (the speaker's ring), the state is speaking from

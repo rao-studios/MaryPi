@@ -28,6 +28,8 @@ static mr_daemon *maryd;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static atomic_int transcribes, pcm_bytes, index_calls;
 static atomic_int sewn_mode;                /* 1: the reply's voice fails */
+static atomic_int voices_calls;
+static char last_voice[64], spoken_voice[64];
 static int last_turn_messages;
 static bool last_turn_instructed;
 static char last_user[128], indexed_question[128], indexed_reply[128], indexed_source[16];
@@ -55,6 +57,8 @@ static void *sewn_connection(void *arg) {
             pthread_mutex_lock(&lock);
             last_turn_messages = messages ? (int)json_object_array_length(messages) : 0;
             last_turn_instructed = mc_json_string(request, "instructions") != NULL;
+            const char *voice = mc_json_string(mc_json_object(first, "tts"), "voice_id");
+            snprintf(last_voice, sizeof last_voice, "%s", voice ? voice : "");
             if (last_turn_messages)
                 snprintf(last_user, sizeof last_user, "%s", mc_json_string(json_object_array_get_idx(messages, last_turn_messages - 1), "content"));
             pthread_mutex_unlock(&lock);
@@ -82,6 +86,19 @@ static void *sewn_connection(void *arg) {
                 send_json(fd, "{\"type\":\"transcript.delta\",\"text\":\"what time\"}");
                 send_json(fd, "{\"type\":\"transcript.done\",\"text\":\"what time is it\"}");
             }
+        } else if (strcmp(type, "voices.list") == 0) {
+            atomic_fetch_add(&voices_calls, 1);
+            send_json(fd, "{\"type\":\"voices\",\"voices\":[{\"voice_id\":\"fr_marie_neutral\",\"name\":\"Marie\",\"languages\":[\"fr\"],\"custom\":false},"
+                          "{\"voice_id\":\"en_paul_neutral\",\"name\":\"Paul\",\"languages\":[\"en\"],\"custom\":false}]}");
+        } else if (strcmp(type, "speak") == 0) {
+            const char *voice = mc_json_string(first, "voice_id");
+            pthread_mutex_lock(&lock);
+            snprintf(spoken_voice, sizeof spoken_voice, "%s", voice ? voice : "");
+            pthread_mutex_unlock(&lock);
+            send_json(fd, "{\"type\":\"audio.begin\",\"sample_rate\":24000,\"channels\":1,\"bits\":32,\"encoding\":\"f32le\"}");
+            unsigned char pcm[240 * 4] = { 0 };
+            mc_frame_write_fd(fd, MC_FRAME_PCM, pcm, sizeof pcm);
+            send_json(fd, "{\"type\":\"speak.end\"}");
         } else if (strcmp(type, "key.status") == 0) {
             send_json(fd, "{\"type\":\"key.status\",\"present\":true,\"verified_at\":1757700000000}");
         }
@@ -183,6 +200,7 @@ static void setup_with(const mr_audio_ops *audio_ops, int stall_ms) {
     atomic_store(&transcribes, 0);
     atomic_store(&pcm_bytes, 0);
     atomic_store(&sewn_mode, 0);
+    atomic_store(&voices_calls, 0);
 
     mr_config config = mr_config_default();
     config.desktop_socket = mary_sock;
@@ -537,6 +555,100 @@ MARY_TEST(a_speaker_that_breaks_is_opened_again_while_mary_is_idle) {
     teardown();
 }
 
+MARY_TEST(the_voice_settings_chose_is_the_one_sewnd_is_asked_for) {
+    setup();
+    client c;
+    client_open(&c);
+    struct json_object *hello = client_wait(&c, "hello", NULL, NULL, 0);
+    MARY_ASSERT(hello && mc_json_string(hello, "voice") && strcmp(mc_json_string(hello, "voice"), "fr_marie_neutral") == 0);
+    if (hello) json_object_put(hello);
+    client_send(&c, "{\"type\":\"config\",\"voice\":\"en_paul_neutral\"}");
+    client_send(&c, "{\"type\":\"ask\",\"text\":\"Say hello\"}");
+    struct json_object *end = client_wait(&c, "reply.end", NULL, NULL, 0);
+    MARY_ASSERT(end != NULL);
+    if (end) json_object_put(end);
+    pthread_mutex_lock(&lock);
+    MARY_ASSERT_STR(last_voice, "en_paul_neutral");
+    pthread_mutex_unlock(&lock);
+    client_send(&c, "{\"type\":\"config\",\"voice\":\"not a voice!\"}");
+    struct json_object *refused = client_wait(&c, "error", NULL, NULL, 0);
+    MARY_ASSERT(refused && strcmp(mc_json_string(refused, "stage"), "config") == 0);
+    if (refused) json_object_put(refused);
+    client late;
+    client_open(&late);
+    hello = client_wait(&late, "hello", NULL, NULL, 0);
+    MARY_ASSERT(hello && strcmp(mc_json_string(hello, "voice"), "en_paul_neutral") == 0);   /* the refused one changed nothing */
+    if (hello) json_object_put(hello);
+    client_close(&late);
+    client_close(&c);
+    teardown();
+}
+
+MARY_TEST(voices_go_to_the_client_that_asked_then_come_from_the_cache) {
+    setup();
+    client c, other;
+    client_open(&c);
+    client_open(&other);
+    json_object_put(client_wait(&c, "hello", NULL, NULL, 0));
+    json_object_put(client_wait(&other, "hello", NULL, NULL, 0));
+    client_send(&c, "{\"type\":\"voices.list\"}");
+    struct json_object *voices = client_wait(&c, "voices", NULL, NULL, 0);
+    bool ok = false;
+    MARY_ASSERT(voices && mc_json_bool(voices, "ok", &ok) && ok);
+    MARY_ASSERT(voices && json_object_array_length(mc_json_array(voices, "voices")) == 2);
+    if (voices) json_object_put(voices);
+    char seen[256] = "";
+    client_send(&other, "{\"type\":\"skills.list\"}");
+    struct json_object *skills = client_wait(&other, "skills", NULL, seen, sizeof seen);
+    MARY_ASSERT(skills != NULL && strstr(seen, "voices") == NULL);    /* the list went only to the client that asked */
+    if (skills) json_object_put(skills);
+    client_send(&other, "{\"type\":\"voices.list\"}");
+    voices = client_wait(&other, "voices", NULL, NULL, 0);
+    MARY_ASSERT(voices != NULL);
+    if (voices) json_object_put(voices);
+    MARY_ASSERT_EQ(atomic_load(&voices_calls), 1);                   /* the second came from the cache */
+    client_close(&other);
+    client_close(&c);
+    teardown();
+}
+
+MARY_TEST(a_sample_plays_without_joining_the_conversation) {
+    setup();
+    client c;
+    client_open(&c);
+    json_object_put(client_wait(&c, "hello", NULL, NULL, 0));
+    client_send(&c, "{\"type\":\"voice.sample\",\"voice_id\":\"fr_marie_happy\",\"text\":\"Bonjour !\"}");
+    char states[128] = "";
+    for (int i = 0; i < 4; i++) {
+        struct json_object *s = client_wait(&c, "voice.sample", NULL, NULL, 0);
+        if (!s) break;
+        const char *state = mc_json_string(s, "state");
+        size_t used = strlen(states);
+        snprintf(states + used, sizeof states - used, "%s ", state ? state : "?");
+        bool last = !state || strcmp(state, "done") == 0 || strcmp(state, "failed") == 0;
+        json_object_put(s);
+        if (last) break;
+    }
+    MARY_ASSERT_STR(states, "asking playing done ");
+    pthread_mutex_lock(&lock);
+    MARY_ASSERT_STR(spoken_voice, "fr_marie_happy");
+    pthread_mutex_unlock(&lock);
+    client_send(&c, "{\"type\":\"voice.sample\",\"voice_id\":\"../bad\"}");
+    struct json_object *refused = client_wait(&c, "voice.sample", NULL, NULL, 0);
+    MARY_ASSERT(refused && strcmp(mc_json_string(refused, "state"), "failed") == 0);
+    if (refused) json_object_put(refused);
+    client late;
+    client_open(&late);
+    struct json_object *hello = client_wait(&late, "hello", NULL, NULL, 0);
+    MARY_ASSERT(hello && json_object_array_length(mc_json_array(hello, "tail")) == 0);   /* nothing joined the conversation */
+    if (hello) json_object_put(hello);
+    usleep(200000);
+    MARY_ASSERT_EQ(atomic_load(&index_calls), 0);                    /* nor Thread */
+    client_close(&late);
+    client_close(&c);
+    teardown();
+}
+
 int main(void) {
     mc_ignore_sigpipe();
     MARY_RUN(a_typed_question_streams_a_reply_and_is_deposited_in_thread);
@@ -545,5 +657,8 @@ int main(void) {
     MARY_RUN(speech_that_fails_is_reported_and_mary_goes_quiet);
     MARY_RUN(a_speaker_that_never_plays_does_not_keep_mary_speaking);
     MARY_RUN(a_speaker_that_breaks_is_opened_again_while_mary_is_idle);
+    MARY_RUN(the_voice_settings_chose_is_the_one_sewnd_is_asked_for);
+    MARY_RUN(voices_go_to_the_client_that_asked_then_come_from_the_cache);
+    MARY_RUN(a_sample_plays_without_joining_the_conversation);
     MARY_TEST_MAIN_END();
 }
