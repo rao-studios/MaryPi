@@ -1,7 +1,7 @@
 #!/bin/sh
 # Mary's dev loop in the VM, the way the desktop launcher has one for the compositor:
-# with maryos.ui=dev on the kernel command line (ui.sh --dev), sewnd, threadd and
-# maryd run from the tree `make mary` writes to the host share (/mnt/maryos-out/mary)
+# with maryos.ui=dev on the kernel command line (ui.sh --dev), sewnd, threadd, maryd
+# and indexd run from the tree `make mary` writes to the host share (/mnt/maryos-out/mary)
 # and restart whenever that binary changes, so a C edit shows up without rebuilding
 # the image. Without dev mode each is its /usr/bin copy. VM images only: the Pi never
 # gets this. Runs inside the chroot at the vm target stage.
@@ -47,5 +47,7 @@ for unit in sewnd threadd; do
     mkdir -p "/etc/systemd/system/$unit.service.d"
     printf '[Service]\nExecStart=\nExecStart=/usr/lib/maryos/mary-dev-run %s\nSyslogIdentifier=%s\n' "$unit" "$unit" > "/etc/systemd/system/$unit.service.d/10-dev.conf"
 done
-mkdir -p /etc/systemd/user/maryd.service.d
-printf '[Service]\nExecStart=\nExecStart=/usr/lib/maryos/mary-dev-run maryd\nSyslogIdentifier=maryd\n' > /etc/systemd/user/maryd.service.d/10-dev.conf
+for unit in maryd indexd; do
+    mkdir -p "/etc/systemd/user/$unit.service.d"
+    printf '[Service]\nExecStart=\nExecStart=/usr/lib/maryos/mary-dev-run %s\nSyslogIdentifier=%s\n' "$unit" "$unit" > "/etc/systemd/user/$unit.service.d/10-dev.conf"
+done

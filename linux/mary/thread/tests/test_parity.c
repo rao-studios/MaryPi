@@ -101,7 +101,34 @@ MARY_TEST(a_move_re_keys_the_record_and_a_removal_detaches_it) {
     close_store(s);
 }
 
+MARY_TEST(a_deposit_with_a_path_is_keyed_by_the_file_and_replaces_itself) {
+    thread_store *s = open_store(false);
+    const char *one = "{\"group\":\"files-mary\",\"text\":\"one\",\"file\":{\"path\":\"/home/mary/a.txt\",\"kind\":\"text\",\"size\":3}}";
+    struct json_object *first = mc_json_parse(one, strlen(one));
+    struct json_object *reply = NULL;
+    MARY_ASSERT_EQ(thread_store_deposit_json(s, "mary", first, &reply), 0);
+    char id[THREAD_ID_MAX + 1];
+    snprintf(id, sizeof id, "%s", mc_json_string(reply, "document_id"));
+    MARY_ASSERT(strncmp(id, "file-", 5) == 0);
+    MARY_ASSERT_STR(mc_json_string(reply, "family"), "file");
+    json_object_put(reply);
+    const char *two = "{\"group\":\"files-mary\",\"text\":\"two words\",\"file\":{\"path\":\"/home/mary/a.txt\",\"kind\":\"text\",\"size\":9}}";
+    struct json_object *second = mc_json_parse(two, strlen(two));
+    MARY_ASSERT_EQ(thread_store_deposit_json(s, "mary", second, &reply), 0);
+    MARY_ASSERT_STR(mc_json_string(reply, "document_id"), id);           /* the same file, the same record */
+    json_object_put(reply);
+    struct json_object *stats = thread_store_stats_json(s);
+    int64_t docs = 0;
+    mc_json_int64(stats, "documents", &docs);
+    MARY_ASSERT_EQ(docs, 1);
+    json_object_put(stats);
+    json_object_put(first);
+    json_object_put(second);
+    close_store(s);
+}
+
 int main(void) {
+    MARY_RUN(a_deposit_with_a_path_is_keyed_by_the_file_and_replaces_itself);
     MARY_RUN(a_two_page_report_classifies_and_removes_the_orphan_with_its_entity);
     MARY_RUN(a_move_re_keys_the_record_and_a_removal_detaches_it);
     MARY_TEST_MAIN_END();

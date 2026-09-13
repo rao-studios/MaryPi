@@ -39,6 +39,10 @@ and how she is allowed to use the apps.
   `$XDG_RUNTIME_DIR/mary/mary.sock`. It has no `[Install]` section: the desktop launcher
   (`/usr/lib/maryos/desktop`) starts it inside the graphical session, so a console or ssh login never opens
   the microphone.
+- **indexd** (`indexd.service`, a user unit started beside maryd) keeps every file in the home recorded in the
+  Thread: it reconciles the home with threadd at start and every six hours (`journalctl --user -u indexd`
+  reports `reconcile: N seen, 0 missing, 0 stale, 0 orphaned` when they agree) and watches the home so a
+  save, a rename or a deletion reaches the graph within a second. `indexd --once` reconciles on demand.
 - **The desktop** carries the client (`lp_mary`), Spotlight's conversation and the skills. It reconnects to
   maryd by itself whenever maryd comes back.
 

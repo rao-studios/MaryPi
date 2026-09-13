@@ -125,6 +125,12 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | — (parity with the disk, the ledger) | `thread/src/parity.c`, `src/ledger.c` | working — deviation 11 |
 | — | `thread/bin/threadctl.c` | working |
 
+## index — no Swift twin
+
+| Swift | C | Status |
+|---|---|---|
+| — (the home, walked and watched; parity with the Thread) | `index/include/index/{kind,walk,record,client,reconcile,watch}.h`, `index/bin/indexd.c` | working — deviation 11; the watch is Linux only |
+
 ## gita ← Gita (Sewn/Sources/Gita)
 
 | Swift | C | Status |

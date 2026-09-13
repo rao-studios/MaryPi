@@ -214,8 +214,8 @@ MARY_TEST(a_chunked_text_a_computed_id_and_a_file_row) {
     size_t parts = 0;
     MARY_ASSERT_EQ(thread_store_deposit(s, "mary", &d, id, &parts), 0);
     MARY_ASSERT(parts >= 3);
-    MARY_ASSERT(strlen(id) >= 64);                                           /* computeHash: decimal SHA-256 */
-    /* the same text again is the same id; the family comes from the group */
+    MARY_ASSERT(strncmp(id, "file-", 5) == 0 && strlen(id) == 21);          /* a file's record is keyed by its path */
+    /* the same file again is the same id; the family comes from the group */
     char again[THREAD_ID_MAX + 1];
     MARY_ASSERT_EQ(thread_store_deposit(s, "mary", &d, again, NULL), 0);
     MARY_ASSERT_STR(again, id);

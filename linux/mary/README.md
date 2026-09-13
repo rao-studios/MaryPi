@@ -21,6 +21,7 @@ Settings lets you allow, restrict or require confirmation for, per application.
 | [conduit](conduit/) | Conduit | `thread.v1` over gRPC (nghttp2 + protobuf-c) |
 | [sewn](sewn/) | Sewn | `sewnd`: the Mistral key, chat, speech in and out |
 | [thread](thread/) | Thread, MaryThread | `threadd`: MaryOS's memory — the hard drive — and Mary's calls into it |
+| [index](index/) | — | `indexd`: every file in the home has a record in the Thread |
 | [gita](gita/) | Gita | retrieval by other machines (declared) |
 | [skills](skills/) | MaryPlugin, SkillSchema | what Mary can do with each app |
 | [computer-use](computer-use/) | MaryComputerUse | direct pipes into the apps |

@@ -75,4 +75,7 @@ bool thread_store_owns(thread_store *s, const char *owner, const char *document_
 /* One document with its texts, under the lock; NULL when it is not the owner's. */
 struct json_object *thread_store_document_json(thread_store *s, const char *owner, const char *id);
 
+/* "file-<fnv(canonical(owner)|path)>": the id every record of a file gets (parity.c). */
+void thread_file_document_id(const char *owner, const char *path, char out[THREAD_ID_MAX + 1]);
+
 #endif

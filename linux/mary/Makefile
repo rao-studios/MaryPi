@@ -26,7 +26,7 @@ CPPFLAGS += -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DMARY_VERSION=\"$(VERSI
 
 # Packages. A package's include/ is on every path; a package may link only the
 # ones named in its DEPS (dependencies first-to-last is the link order).
-PKGS := common foundation ambient conduit sewn thread gita skills computer-use brain voice runtime fleet frigate
+PKGS := common foundation ambient conduit sewn thread gita index skills computer-use brain voice runtime fleet frigate
 
 DEPS_common :=
 DEPS_foundation := common
@@ -35,6 +35,7 @@ DEPS_conduit := common
 DEPS_sewn := common
 DEPS_thread := conduit foundation common
 DEPS_gita := common
+DEPS_index := foundation common
 DEPS_skills := common
 DEPS_computer-use := skills common
 DEPS_brain := skills foundation common

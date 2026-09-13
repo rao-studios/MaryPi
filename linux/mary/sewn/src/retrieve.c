@@ -7,13 +7,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <unistd.h>
 
-#include "common/io.h"
 #include "common/json.h"
-#include "common/lines.h"
+#include "common/jsonl.h"
 
 void sewn_retrieval_free(sewn_retrieval *r) {
     for (size_t i = 0; i < r->n; i++) {
@@ -113,63 +109,20 @@ int sewn_retrieval_parse(struct json_object *result, sewn_retrieval *out) {
 
 /* MARK: - threadd's local socket */
 
-static struct json_object *reply_line;
-static int take_line(const char *line, size_t len, void *user) {
-    reply_line = mc_json_parse(line, len);
-    return 1;
-}
-
-/* One request line, one reply line. */
+/* One request line, one reply line, over common/jsonl.h. */
 static int local_call(const char *path, struct json_object *request, struct json_object **reply, char *message, size_t cap) {
-    *reply = NULL;
     const char *socket_path = path ? path : SEWN_THREAD_LOCAL_SOCKET;
     const char *env = getenv("THREAD_LOCAL_SOCKET");
     if (!path && env && *env) socket_path = env;
-    int fd = mc_connect_unix(socket_path);
-    if (fd < 0) {
-        snprintf(message, cap, "threadd is not reachable at %s: %s", socket_path, strerror(-fd));
-        return fd;
+    int rc = mc_jsonl_call(socket_path, SEWN_RETRIEVE_TIMEOUT_MS, request, reply, message, cap);
+    if (rc == -EIO && *reply) {
+        char why[200];
+        snprintf(why, sizeof why, "threadd: %s", message);
+        snprintf(message, cap, "%s", why);
+        json_object_put(*reply);
+        *reply = NULL;
     }
-    struct timeval patience = { .tv_sec = SEWN_RETRIEVE_TIMEOUT_MS / 1000 };
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &patience, sizeof patience);
-    size_t n = 0;
-    const char *text = mc_json_compact(request, &n);
-    int rc = mc_write_all(fd, text, n);
-    if (rc == 0) rc = mc_write_all(fd, "\n", 1);
-    if (rc) {
-        close(fd);
-        snprintf(message, cap, "threadd hung up");
-        return rc;
-    }
-    mc_line_reader reader;
-    mc_line_reader_init(&reader, 16u << 20);
-    struct json_object *got = NULL;
-    char buf[65536];
-    for (;;) {
-        ssize_t r = read(fd, buf, sizeof buf);
-        if (r < 0 && errno == EINTR) continue;
-        if (r <= 0) break;
-        reply_line = NULL;
-        if (mc_line_reader_feed(&reader, buf, (size_t)r, take_line, NULL) == 1) {
-            got = reply_line;
-            break;
-        }
-    }
-    mc_line_reader_free(&reader);
-    close(fd);
-    if (!got) {
-        snprintf(message, cap, "threadd did not answer");
-        return -ECONNRESET;
-    }
-    const char *type = mc_json_type(got);
-    if (type && strcmp(type, "error") == 0) {
-        const char *why = mc_json_string(got, "message");
-        snprintf(message, cap, "threadd: %s", why ? why : "error");
-        json_object_put(got);
-        return -EIO;
-    }
-    *reply = got;
-    return 0;
+    return rc;
 }
 
 int sewn_thread_retrieve(const sewn_scope *scope, const char *query, int top_k, sewn_retrieval *out, char *message, size_t cap, void *user) {

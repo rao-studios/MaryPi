@@ -439,6 +439,7 @@ int thread_store_deposit(thread_store *s, const char *owner, const thread_deposi
     }
     char id[THREAD_ID_MAX + 1];
     if (d->document_id && *d->document_id) snprintf(id, sizeof id, "%s", d->document_id);
+    else if (d->file_path && *d->file_path) thread_file_document_id(owner, d->file_path, id);   /* a file's record is keyed by its path */
     else {
         /* Database.computeHash: the ten most frequent words, sorted, hashed */
         mc_buf joined = { 0 };

@@ -15,6 +15,15 @@
 #include "foundation/hash.h"
 #include "thread/ledger.h"
 
+void thread_file_document_id(const char *owner, const char *path, char out[THREAD_ID_MAX + 1]) {
+    char key[4096], hex[17];
+    char *canon_owner = mf_canonical(owner);
+    snprintf(key, sizeof key, "%s|%s", canon_owner ? canon_owner : owner, path);
+    free(canon_owner);
+    mf_fnv1a64_hex(key, hex);
+    snprintf(out, THREAD_ID_MAX + 1, "file-%s", hex);
+}
+
 static char *document_of_path(thread_store *s, const char *owner, const char *path) {
     return thread_db_text(s->db, "SELECT id FROM files WHERE owner = ? AND path = ?", owner, path);
 }
@@ -135,13 +144,8 @@ int thread_store_file_move(thread_store *s, const char *owner, const char *from,
         pthread_mutex_unlock(&s->lock);
         return -ENOENT;
     }
-    char key[4096], hex[17];
-    char *canon_owner = mf_canonical(owner);
-    snprintf(key, sizeof key, "%s|%s", canon_owner ? canon_owner : owner, to);
-    free(canon_owner);
-    mf_fnv1a64_hex(key, hex);
     char new_id[THREAD_ID_MAX + 1];
-    snprintf(new_id, sizeof new_id, "file-%s", hex);
+    thread_file_document_id(owner, to, new_id);
     int rc = thread_db_begin(s->db);
     /* a record already at the destination is replaced */
     if (rc == 0 && strcmp(new_id, old_id) != 0 && thread_db_int(s->db, "SELECT COUNT(*) FROM documents WHERE id = ?", new_id, NULL) > 0)
