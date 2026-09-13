@@ -11,6 +11,12 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include "ambient/engine.h"
+#include "ambient/prompt.h"
+#include "ambient/realm.h"
+#include "ambient/store.h"
+#include "ambient/trace.h"
+#include "ambient/wire.h"
 #include "brain/clock.h"
 #include "brain/history.h"
 #include "brain/prompt.h"
@@ -56,6 +62,19 @@ struct mr_daemon {
     struct json_object *voices;     /* sewnd's last list of voices, served for ten minutes */
     int64_t voices_at;
 
+    /* The ambient world (PARITY D28, D29): the roster of applications, what is in front of the person, where they
+     * have been, and what every turn decided. */
+    ma_roster roster;
+    ma_store *ambient;
+    ma_focus_ledger focus;
+    ma_trace_log *trace;
+    struct {
+        bool active;                /* a turn waiting for the desktop's world (at most 150 ms) */
+        char *question;
+        bool voice;
+        int64_t deadline;
+    } pending;
+
     struct {
         mr_turn *worker;
         int gen;
@@ -64,6 +83,9 @@ struct mr_daemon {
         mc_buf reply;
         struct json_object *contribution, *retrieved;   /* sewnd's turn.end: Gita's contribution and what was retrieved */
         int64_t started_wall, quiet_since, audio_started_ms;
+        char request_id[64];
+        char lanes[4][16];          /* the storage lanes the context was asked from */
+        int lane_count;
     } turn;
     atomic_bool turn_stopping;      /* the audio callback gives up waiting for room */
     atomic_int turn_gen;
@@ -119,6 +141,8 @@ static struct json_object *error_message(const char *stage, const char *message)
     json_object_object_add(o, "message", json_object_new_string(message));
     return o;
 }
+
+static double wall_seconds(void) { return (double)mc_wall_ms() / 1000.0; }
 
 static void set_state(mr_daemon *d, mv_state state) {
     if (d->state == state) return;
@@ -513,31 +537,117 @@ static void on_sample_event(mr_daemon *d, const char *type, struct json_object *
     }
 }
 
-static void start_turn(mr_daemon *d, const char *question, bool voice) {
-    stop_sample(d);
-    close_turn(d, true);
-    reset_turn(d);
-    mr_ears_mute(d->ears);
-    microphone(d, false);
+/* The surfaces the prompt renders: every fresh one, the lead's first. */
+static int lead_first_surfaces(mr_daemon *d, const ma_place *lead, double now, const ma_surface **out, int max) {
+    int n = ma_store_surfaces(d->ambient, now, out, max);
+    for (int i = 1; lead && i < n; i++) {
+        if (!ma_place_equal(&out[i]->place, lead)) continue;
+        const ma_surface *s = out[i];
+        memmove(&out[1], &out[0], (size_t)i * sizeof *out);
+        out[0] = s;
+        break;
+    }
+    return n;
+}
+
+/* The turn proper: the route, the prompt, the trace, and sewnd. */
+static void begin_turn(mr_daemon *d, const char *question, bool voice) {
     d->turn.question = strdup(question);
     d->turn.voice = voice;
     d->turn.started_wall = mc_wall_ms();
-    mb_history_append(&d->history, MB_ROLE_USER, question);
+    double now = wall_seconds();
+    thread_turn_document_id(d->turn.started_wall, d->turn.request_id, sizeof d->turn.request_id);
 
-    struct json_object *said = typed("transcript");
-    json_object_object_add(said, "text", json_object_new_string(question));
-    json_object_object_add(said, "final", json_object_new_boolean(1));
-    json_object_object_add(said, "source", json_object_new_string(voice ? "voice" : "typed"));
-    broadcast(d, said);
+    /* Resolve the turn once, before the prompt is assembled (AmbientEngine.resolve). */
+    ma_focus_signal signal;
+    ma_focus_project(&d->focus, now, &signal);
+    ma_focus_evidence evidence[MA_FOCUS_LEDGER_MAX];
+    int evidence_count = ma_focus_fresh_evidence(&d->focus, now, evidence, MA_FOCUS_LEDGER_MAX);
+    ma_world world;
+    bool has_world = ma_store_world(d->ambient, now, &world);
+    ma_selection claimed;
+    ma_store_claim_selection(d->ambient, now, &claimed);        /* frozen for this turn; the next turn needs a new capture */
+    ma_route *route = malloc(sizeof *route);
+    ma_rendering *rendering = malloc(sizeof *rendering);
+    ma_fact *facts = malloc(72 * sizeof *facts);
+    if (!route || !rendering || !facts) {
+        free(route); free(rendering); free(facts);
+        broadcast(d, error_message("turn", "out of memory"));
+        return;
+    }
+    ma_engine_inputs inputs = {
+        .utterance = question, .classify_edit = true, .bare_decision = -2, .world = has_world ? &world : NULL,
+        .lead_application_id = signal.has_lead && ma_place_is_application(&signal.lead) ? signal.lead.application : NULL,
+        .focus = &signal, .evidence = evidence, .evidence_count = evidence_count, .roster = &d->roster, .now = now,
+    };
+    ma_engine_resolve(&inputs, route);
+    ma_store_note_utterance(d->ambient, question);
+    ma_store_note_route(d->ambient, route);
+    ma_place lead;
+    bool has_lead = ma_route_lead_place(route, &lead);
+    if (has_lead) ma_store_note_lead(d->ambient, &lead, now);
+
+    /* Rank what she holds against the words, render it under the voice budget, and land it last in the instructions. */
+    const ma_surface *surfaces[MA_RENDER_SURFACES];
+    int surface_count = lead_first_surfaces(d, has_lead ? &lead : NULL, now, surfaces, MA_RENDER_SURFACES);
+    int fact_count = ma_store_facts(d->ambient, now, facts, 72);
+    const ma_world *routed = ma_route_routed_world(route);
+    ma_render_inputs render_in = { .facts = facts, .fact_count = fact_count, .utterance = question, .focused = has_lead ? &lead : NULL,
+                                   .world = routed, .surfaces = surfaces, .surface_count = surface_count, .budget = MA_VOICE_BUDGET,
+                                   .now = now, .roster = &d->roster };
+    ma_render(&render_in, rendering);
+    ma_live_work_world live_world;
+    if (surface_count && has_lead && ma_place_equal(&surfaces[0]->place, &lead)) ma_live_work_from_surface(surfaces[0], &d->roster, &live_world);
+    else ma_live_work_from_world(routed, &d->roster, &live_world);
+    mc_buf live = { 0 };
+    ma_prompt_live_work(rendering, &live_world, route->selection_defines_turn, &live);
+    char capability[512] = "";
+    if (has_lead && route->intent != MA_INTENT_CONVERSE) ma_capability_line(&lead, &d->roster, capability, sizeof capability);
 
     mb_clock clock;
     mb_clock_now(&clock);
-    char *instructions = mb_sewn_instructions(&clock);
-    char request_id[64];
-    thread_turn_document_id(d->turn.started_wall, request_id, sizeof request_id);
-    mb_turn_request req = { .instructions = instructions, .owner_id = d->owner, .request_id = request_id, .voice_id = d->voice_id };
+    mb_prompt_inputs prompt = { .conversational = route->intent == MA_INTENT_CONVERSE, .capability = capability[0] ? capability : NULL,
+                                .live_work = live.len ? (const char *)live.data : NULL };
+    char *instructions = mb_sewn_instructions_with(&clock, &prompt);
+    mc_buf_free(&live);
+
+    /* The memory plan's lanes and cues become the scope sewnd retrieves with. */
+    const char *lanes[4], *entities[MA_HINTS_MAX];
+    int lane_count = 0, entity_count = 0;
+    for (int l = 0; l < 2; l++) {
+        ma_lane lane = l == 0 ? MA_LANE_ABILITY : MA_LANE_PERSONAL;
+        if (route->gate.memory.lanes & lane) lane_count += ma_lane_storage_lanes(lane, lanes + lane_count, 4 - lane_count);
+    }
+    for (int i = 0; i < route->gate.memory.hint_count && entity_count < MA_HINTS_MAX; i++) entities[entity_count++] = route->gate.memory.relationship_hints[i];
+    d->turn.lane_count = lane_count;
+    for (int i = 0; i < lane_count; i++) snprintf(d->turn.lanes[i], sizeof d->turn.lanes[i], "%s", lanes[i]);
+    mb_turn_request req = { .instructions = instructions, .owner_id = d->owner, .request_id = d->turn.request_id, .voice_id = d->voice_id,
+                            .lanes = lanes, .lane_count = lane_count, .entities = entities, .entity_count = entity_count };
     struct json_object *start = mb_turn_start(&d->history, &req);
+
+    /* One row in the trace: what was decided, and what it cost. */
+    ma_trace_record *record = calloc(1, sizeof *record);
+    if (record) {
+        snprintf(record->id, sizeof record->id, "%s", d->turn.request_id);
+        record->date = now;
+        snprintf(record->utterance, sizeof record->utterance, "%s", question);
+        record->route = *route;
+        record->system_prompt_chars = instructions ? (int)ma_utf8_count(instructions) : 0;
+        for (int i = 0; i < d->roster.app_count && record->package_count < MA_TRACE_PACKAGES; i++)
+            if (d->roster.apps[i].has_eyes) snprintf(record->packages[record->package_count++], MA_ID_MAX, "%s", d->roster.apps[i].id);
+        record->co_active_count = signal.co_active_count;
+        memcpy(record->co_active, signal.co_active, (size_t)signal.co_active_count * sizeof *signal.co_active);
+        record->glanced_count = signal.glanced_count;
+        memcpy(record->glanced, signal.glanced, (size_t)signal.glanced_count * sizeof *signal.glanced);
+        ma_trace_push(d->trace, record);
+        free(record);
+    }
+    mc_log(MC_LOG_DEBUG, "turn %s: %s via %s%s%s", d->turn.request_id, ma_intent_name(route->intent), ma_signal_name(route->decided_by),
+           has_lead ? ", lead " : "", has_lead ? route->lead_application_id : "");
     free(instructions);
+    free(route);
+    free(rendering);
+    free(facts);
 
     turn_ctx = calloc(1, sizeof *turn_ctx);
     int error = 0;
@@ -558,13 +668,99 @@ static void start_turn(mr_daemon *d, const char *question, bool voice) {
     set_state(d, MV_STATE_THINKING);
 }
 
+static void cancel_pending(mr_daemon *d) {
+    free(d->pending.question);
+    d->pending.question = NULL;
+    d->pending.active = false;
+}
+
+static void begin_pending(mr_daemon *d) {
+    if (!d->pending.active) return;
+    char *question = d->pending.question;
+    bool voice = d->pending.voice;
+    d->pending.question = NULL;
+    d->pending.active = false;
+    begin_turn(d, question, voice);
+    free(question);
+}
+
+/* A turn begins by asking the desktop what is in front of the person (world.request); the answer, or 150 ms,
+ * starts it (AmbientWorld.snapshot at the turn's entry). */
+static void start_turn(mr_daemon *d, const char *question, bool voice) {
+    stop_sample(d);
+    cancel_pending(d);
+    close_turn(d, true);
+    reset_turn(d);
+    mr_ears_mute(d->ears);
+    microphone(d, false);
+    mb_history_append(&d->history, MB_ROLE_USER, question);
+
+    struct json_object *said = typed("transcript");
+    json_object_object_add(said, "text", json_object_new_string(question));
+    json_object_object_add(said, "final", json_object_new_boolean(1));
+    json_object_object_add(said, "source", json_object_new_string(voice ? "voice" : "typed"));
+    broadcast(d, said);
+    set_state(d, MV_STATE_THINKING);
+
+    mr_client *desktop = mr_desktop_the_desktop(&d->desktop);
+    struct json_object *ask = typed("world.request");
+    int sent = desktop ? mr_desktop_send(&d->desktop, desktop, ask) : -ENOTCONN;
+    json_object_put(ask);
+    if (sent == 0) {
+        d->pending.active = true;
+        d->pending.question = strdup(question);
+        d->pending.voice = voice;
+        d->pending.deadline = mc_now_ms() + 150;
+        return;
+    }
+    begin_turn(d, question, voice);
+}
+
 static void stop_everything(mr_daemon *d) {
+    cancel_pending(d);
     stop_sample(d);
     close_turn(d, true);
     if (d->audio) d->aops->stop(d->audio);
     d->turn.draining = false;
     standby(d);
     set_state(d, MV_STATE_IDLE);
+}
+
+/* What the reply's context asked for and what came back, on the turn's trace row (RetrievalTraceLedger). */
+static void note_retrieval(mr_daemon *d) {
+    ma_retrieval_purpose purpose;
+    memset(&purpose, 0, sizeof purpose);
+    snprintf(purpose.name, sizeof purpose.name, "context");
+    purpose.lane_count = d->turn.lane_count;
+    for (int i = 0; i < d->turn.lane_count; i++) snprintf(purpose.lanes[i], sizeof purpose.lanes[i], "%s", d->turn.lanes[i]);
+    if (d->turn.retrieved && json_object_is_type(d->turn.retrieved, json_type_array)) {
+        size_t n = json_object_array_length(d->turn.retrieved);
+        for (size_t i = 0; i < n && purpose.returned_count < MA_TRACE_RETURNED; i++) {
+            struct json_object *hit = json_object_array_get_idx(d->turn.retrieved, i);
+            ma_retrieved *r = &purpose.returned[purpose.returned_count++];
+            const char *id = mc_json_string(hit, "document_id"), *group = mc_json_string(hit, "group_id"), *family = mc_json_string(hit, "family"), *lane = mc_json_string(hit, "lane");
+            snprintf(r->document_id, sizeof r->document_id, "%s", id ? id : "");
+            snprintf(r->group_id, sizeof r->group_id, "%s", group ? group : "");
+            snprintf(r->family, sizeof r->family, "%s", family ? family : "");
+            snprintf(r->lane, sizeof r->lane, "%s", lane ? lane : "");
+            mc_json_double(hit, "score", &r->score);
+        }
+    }
+    if (!purpose.returned_count && purpose.lane_count) snprintf(purpose.warning, sizeof purpose.warning, "asked nothing back");
+    ma_trace_note_retrieval(d->trace, d->turn.request_id, &purpose);
+    if (d->turn.contribution) {
+        struct json_object *owners = mc_json_array(d->turn.contribution, "owners");
+        int owner_count = owners ? (int)json_object_array_length(owners) : 0, documents = 0, passages = 0;
+        for (int i = 0; i < owner_count; i++) {
+            struct json_object *owner = json_object_array_get_idx(owners, i), *ids = mc_json_array(owner, "document_ids"), *spans = mc_json_array(owner, "spans");
+            documents += ids ? (int)json_object_array_length(ids) : 0;
+            passages += spans ? (int)json_object_array_length(spans) : 0;
+        }
+        char summary[200];
+        snprintf(summary, sizeof summary, "%d owner%s, %d document%s, %d passage%s", owner_count, owner_count == 1 ? "" : "s",
+                 documents, documents == 1 ? "" : "s", passages, passages == 1 ? "" : "s");
+        ma_trace_note_contribution(d->trace, d->turn.request_id, summary);
+    }
 }
 
 static void on_turn_event(mr_daemon *d, const char *type, struct json_object *ev) {
@@ -600,6 +796,7 @@ static void on_turn_event(mr_daemon *d, const char *type, struct json_object *ev
         struct json_object *v;
         if (json_object_object_get_ex(ev, "contribution", &v)) d->turn.contribution = json_object_get(v);
         if (json_object_object_get_ex(ev, "retrieved", &v)) d->turn.retrieved = json_object_get(v);
+        note_retrieval(d);
         close_turn(d, false);
         if (failed) {
             set_state(d, MV_STATE_ERROR);
@@ -718,6 +915,77 @@ static void skill_call(mr_daemon *d, mr_client *c, struct json_object *msg) {
     }
 }
 
+/* ---- the ambient world: what the desktop publishes (PARITY D28) ---- */
+
+/* world{places[{place, capturedAt, surface}], focus, windows[]}: every surface is noted, the document each shows
+ * becomes its file fact, and the focused place takes the lead. */
+static void on_world(mr_daemon *d, struct json_object *msg) {
+    double now = wall_seconds();
+    struct json_object *places = mc_json_array(msg, "places");
+    size_t n = places ? json_object_array_length(places) : 0;
+    ma_surface *surface = malloc(sizeof *surface);
+    if (!surface) return;
+    for (size_t i = 0; i < n; i++) {
+        struct json_object *entry = json_object_array_get_idx(places, i);
+        if (ma_surface_parse(entry, now, surface) < 0) continue;
+        ma_store_note_surface(d->ambient, surface, now);
+        ma_fact fact;
+        if (ma_surface_document_fact(entry, surface, &fact)) ma_store_replace_perceived(d->ambient, &surface->place, &fact, 1, now);
+        else ma_store_forget_perceived(d->ambient, &surface->place);
+    }
+    free(surface);
+    const char *focus = mc_json_string(msg, "focus");
+    ma_place lead;
+    if (focus && ma_place_from_token(focus, &lead)) {
+        ma_focus_note(&d->focus, &lead, MA_EVIDENCE_ACTIVATION, now);
+        ma_store_note_lead(d->ambient, &lead, now);
+        ma_world world;
+        memset(&world, 0, sizeof world);
+        world.sense = MA_SENSE_WORKSPACE;
+        world.attention = lead.attention;
+        if (ma_place_is_application(&lead)) snprintf(world.application_id, sizeof world.application_id, "%s", lead.application);
+        const ma_surface *s = ma_store_surface(d->ambient, &lead, now);
+        if (s && s->has_window) snprintf(world.subject, sizeof world.subject, "%s", s->window_title);
+        world.captured_at = now;
+        world.fresh_for = ma_sense_fresh_for(MA_SENSE_WORKSPACE);
+        ma_store_note_world(d->ambient, &world, now);
+    }
+    struct json_object *activity = mc_json_array(msg, "activity");     /* places where real work just happened */
+    for (size_t i = 0; activity && i < json_object_array_length(activity); i++) {
+        const char *token = json_object_get_string(json_object_array_get_idx(activity, i));
+        ma_place place;
+        if (token && ma_place_from_token(token, &place)) ma_focus_note(&d->focus, &place, MA_EVIDENCE_ACTIVITY, now);
+    }
+    if (d->pending.active) begin_pending(d);
+}
+
+static void on_selection(mr_daemon *d, struct json_object *msg) {
+    double now = wall_seconds();
+    ma_selection *sel = malloc(sizeof *sel);
+    if (!sel) return;
+    if (ma_selection_parse(msg, now, sel) == 0) ma_store_record_selection(d->ambient, sel, now);
+    free(sel);
+}
+
+struct app_state_call {
+    mr_daemon *d;
+    unsigned client;
+};
+
+static void on_app_state_done(const mcu_result *r, void *user) {
+    struct app_state_call *call = user;
+    mr_client *c = mr_desktop_client(&call->d->desktop, call->client);
+    if (c) {
+        struct json_object *o = typed("app.state.result");
+        if (r->call_id) json_object_object_add(o, "call_id", json_object_new_string(r->call_id));
+        json_object_object_add(o, "ok", json_object_new_boolean(r->ok));
+        if (r->ok) json_object_object_add(o, "surface", r->result ? json_object_get(r->result) : NULL);
+        else json_object_object_add(o, "error", json_object_new_string(r->error ? r->error : "failed"));
+        send_to(call->d, c, o);
+    }
+    free(call);
+}
+
 /* ---- the desktop's messages ---- */
 
 static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *msg, void *user) {
@@ -774,6 +1042,7 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
         }
         if (d->skills_message) json_object_put(d->skills_message);
         d->skills_message = json_object_get(msg);
+        ma_roster_merge_skills(&d->roster, mc_json_array(msg, "apps"));
         for (int i = 0; i < MR_CLIENTS_MAX; i++) d->desktop.clients[i].desktop = false;
         c->desktop = true;
     } else if (strcmp(type, "skill.result") == 0) {
@@ -784,6 +1053,45 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
         send_to(d, c, o);
     } else if (strcmp(type, "skill.call") == 0) {
         skill_call(d, c, msg);
+    } else if (strcmp(type, "world") == 0) {
+        on_world(d, msg);
+    } else if (strcmp(type, "selection") == 0) {
+        on_selection(d, msg);
+    } else if (strcmp(type, "selection.clear") == 0) {
+        const char *app = mc_json_string(msg, "applicationID");
+        if (app) ma_store_clear_selection(d->ambient, app, wall_seconds());
+    } else if (strcmp(type, "app.state.result") == 0) {
+        mcu_pipes_on_message(d->pipes, msg);
+    } else if (strcmp(type, "app.state") == 0) {
+        const char *app = mc_json_string(msg, "app");
+        struct app_state_call *call = malloc(sizeof *call);
+        if (!call) return;
+        *call = (struct app_state_call){ d, c->id };
+        if (!app || mcu_app_state(d->pipes, app, on_app_state_done, call) < 0) {
+            free(call);
+            struct json_object *o = typed("app.state.result");
+            json_object_object_add(o, "ok", json_object_new_boolean(0));
+            json_object_object_add(o, "error", json_object_new_string(app ? "disconnected" : "unknown"));
+            send_to(d, c, o);
+        }
+    } else if (strcmp(type, "ambient.state") == 0) {
+        double now = wall_seconds();
+        ma_focus_signal signal;
+        ma_focus_project(&d->focus, now, &signal);
+        struct json_object *o = typed("ambient");
+        json_object_object_add(o, "state", ma_ambient_state_json(d->ambient, &d->roster, &signal, now));
+        send_to(d, c, o);
+    } else if (strcmp(type, "trace.list") == 0) {
+        struct json_object *o = typed("trace");
+        json_object_object_add(o, "records", ma_trace_json(d->trace, &d->roster, wall_seconds()));
+        send_to(d, c, o);
+    } else if (strcmp(type, "trace.report") == 0) {
+        mc_buf report = { 0 };
+        ma_trace_report(d->trace, &d->roster, wall_seconds(), &report);
+        struct json_object *o = typed("trace.report");
+        json_object_object_add(o, "text", json_object_new_string(report.data ? (const char *)report.data : ""));
+        mc_buf_free(&report);
+        send_to(d, c, o);
     } else {
         char message[128];
         snprintf(message, sizeof message, "maryd does not know \"%.60s\"", type);
@@ -879,6 +1187,7 @@ static void reopen_audio(mr_daemon *d, int64_t now) {
 static void tick(mr_daemon *d) {
     int64_t now = mc_now_ms();
     mcu_pipes_tick(d->pipes, now);
+    if (d->pending.active && now >= d->pending.deadline) begin_pending(d);    /* the desktop said nothing in time */
     reopen_audio(d, now);
     if (d->sample.draining) {
         int64_t played = d->audio ? d->aops->last_played_ms(d->audio) : 0;
@@ -946,6 +1255,12 @@ mr_daemon *mr_daemon_new(const mr_config *config, int *error) {
         mb_history_init(&d->history);
         snprintf(d->voice_id, sizeof d->voice_id, "%s", MB_VOICE_ID);
         sk_registry_init(&d->skills);
+        ma_roster_maryos(&d->roster);
+        ma_focus_init(&d->focus);
+        d->ambient = ma_store_new();
+        d->trace = ma_trace_log_new(0);
+        if (d->ambient) ma_store_set_roster(d->ambient, &d->roster);
+        if (!d->ambient || !d->trace) rc = -ENOMEM;
     }
     if (rc == 0) rc = mr_queue_init(&d->queue);
     if (rc == 0 && !(d->pipes = mcu_pipes_new(send_to_desktop, d))) rc = -ENOMEM;
@@ -970,7 +1285,7 @@ int mr_daemon_run(mr_daemon *d) {
     while (!atomic_load(&d->stop)) {
         fds[0] = (struct pollfd){ .fd = mr_queue_fd(&d->queue), .events = POLLIN };
         size_t n = 1 + mr_desktop_pollfds(&d->desktop, fds + 1, sizeof fds / sizeof *fds - 1);
-        int timeout = d->turn.draining || d->sample.draining || mcu_pipes_pending(d->pipes) ? 50 : 1000;
+        int timeout = d->turn.draining || d->sample.draining || d->pending.active || mcu_pipes_pending(d->pipes) ? 50 : 1000;
         if (poll(fds, n, timeout) < 0 && errno != EINTR) break;
         mr_queue_drain(&d->queue);
         struct json_object *ev;
@@ -1021,5 +1336,8 @@ void mr_daemon_free(mr_daemon *d) {
     if (d->voices) json_object_put(d->voices);
     sk_registry_free(&d->skills);
     mb_history_free(&d->history);
+    cancel_pending(d);
+    ma_store_free(d->ambient);
+    ma_trace_log_free(d->trace);
     free(d);
 }

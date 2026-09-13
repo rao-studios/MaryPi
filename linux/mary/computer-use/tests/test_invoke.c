@@ -118,7 +118,28 @@ MARY_TEST(an_unsendable_call_is_not_left_waiting) {
     MARY_ASSERT_EQ(mcu_pipes_pending(p), 0);
     MARY_ASSERT_EQ(o.calls, 0);
     MARY_ASSERT_EQ(mcu_invoke(p, NULL, "b", NULL, 1000, record, &o, NULL, 0), -EINVAL);
-    MARY_ASSERT_EQ(mcu_app_state(p, "calendar", record, &o), -ENOSYS);
+    MARY_ASSERT_EQ(mcu_app_state(p, "calendar", record, &o), -EPIPE);
+    MARY_ASSERT_EQ(mcu_pipes_pending(p), 0);
+    mcu_pipes_free(p);
+}
+
+MARY_TEST(an_app_state_asks_the_desktop_for_a_surface) {
+    struct wire w = { 0 };
+    mcu_pipes *p = mcu_pipes_new(send_to, &w);
+    struct outcome o = { 0 };
+    MARY_ASSERT_EQ(mcu_app_state(p, "textedit", record, &o), 0);
+    MARY_ASSERT_EQ(w.count, 1);
+    MARY_ASSERT(strstr(w.sent[0], "\"type\":\"app.state\"") && strstr(w.sent[0], "\"app\":\"textedit\"") && strstr(w.sent[0], "\"call_id\":\"call-1-"));
+    struct json_object *sent = result_line(w.sent[0]);
+    char line[600];
+    snprintf(line, sizeof line, "{\"type\":\"app.state.result\",\"call_id\":\"%s\",\"ok\":true,\"surface\":{\"application\":{\"name\":\"TextEdit\"}}}", mc_json_string(sent, "call_id"));
+    json_object_put(sent);
+    struct json_object *result = result_line(line);
+    MARY_ASSERT_EQ(mcu_pipes_on_message(p, result), 1);
+    json_object_put(result);
+    MARY_ASSERT(o.calls == 1 && o.ok);
+    MARY_ASSERT_STR(o.result, "{\"application\":{\"name\":\"TextEdit\"}}");
+    MARY_ASSERT_EQ(mcu_app_state(p, NULL, record, &o), -EINVAL);
     mcu_pipes_free(p);
 }
 
@@ -127,5 +148,6 @@ int main(void) {
     MARY_RUN(results_match_their_calls_in_any_order);
     MARY_RUN(timeouts_and_a_lost_connection_end_pending_calls);
     MARY_RUN(an_unsendable_call_is_not_left_waiting);
+    MARY_RUN(an_app_state_asks_the_desktop_for_a_surface);
     MARY_TEST_MAIN_END();
 }

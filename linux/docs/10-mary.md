@@ -96,6 +96,31 @@ threadctl graph --entity Paris --documents
 threadctl stats
 ```
 
+## The ambient world
+
+Mary knows what is in front of the person without looking at pixels: the desktop tells her. Every
+application publishes its own **surface** (the window, the document it shows and a window of its text, the
+elements it offers, the selection), and the compositor sends the whole **world** to maryd whenever the focus
+or the windows change, on each app's own poll, and when a turn asks for it (`world.request`, answered within
+150 ms). maryd keeps it in tiers, as the Mac's ambient store does: surfaces that drop after 25 seconds,
+facts keyed by place and slot that lose their authority past their fresh window and are dropped past their
+retention, a 30-second selection packet, the lead place.
+
+Every turn is then **resolved once** before any prompt is assembled: the intent and the signal that decided
+it (the Mac's ladder, from a pending decision through an edit intent, deixis and a named part down to plain
+conversation), the application the turn leads to, the realm of applications that could have served it, the
+memory plan (which of the Thread's lanes retrieval may draw on, and the relationship cues to search with),
+and the ranking mode. What Mary holds is ranked against the words and rendered under a 1,400-character
+budget: the surface lines first, then at most three facts in full, the rest as one-line mentions with their
+bounds and their age, never silence. That section lands last in the voice's instructions, after the persona
+the route chose (conversation, or the in-turn register) and the capability line for the place that leads.
+
+Every resolved turn is one row in maryd's trace (`maryctl trace` prints them the way the Mac's Routes pane
+copies them; `maryctl ambient` prints the world as she holds it), with what retrieval was asked for each
+purpose and what came back. The Ambient app shows the same: **World** (each place, its surface line and its
+facts), **Realms** (the need, the candidates, the chosen place), **Routes** (every turn's route) and **Runs**
+(the skills a turn invoked).
+
 ## Her voice
 
 Mary speaks in Marie (`fr_marie_neutral`) until you choose otherwise. System Settings › Mary › Voice asks

@@ -2,9 +2,10 @@
  * accessibility tree, captures pixels and posts input events; MaryOS's apps are its
  * own, so a skill call is a message instead (PORTING.md deviation 9):
  *
- *   maryd → desktop   skill.invoke{call_id, app, skill, args}
+ *   maryd → desktop   skill.invoke{call_id, app, skill, args}, app.state{call_id, app}
  *   desktop → maryd   skill.result{call_id, ok, result} or {call_id, ok: false,
- *                     error: "denied" | "needs_confirmation" | "failed" | "unknown"}
+ *                     error: "denied" | "needs_confirmation" | "failed" | "unknown"},
+ *                     app.state.result{call_id, ok, surface | error}
  *
  * The desktop calls the app's perform hook, the same code its menus run. This file is
  * maryd's side — call ids, matching results to calls, timeouts and a lost connection —
@@ -52,7 +53,9 @@ void mcu_pipes_tick(mcu_pipes *pipes, int64_t now_ms);
 void mcu_pipes_disconnect(mcu_pipes *pipes);
 size_t mcu_pipes_pending(const mcu_pipes *pipes);
 
-/* Declared for reading app state through the same pipes; -ENOSYS for now. */
+/* The app's surface through the same pipes (PARITY D28): app.state{call_id, app} → app.state.result{call_id, ok,
+ * surface | error}; the result handed to `done` is the surface. 0, or -errno. */
+#define MCU_APP_STATE_TIMEOUT_MS 1500
 int mcu_app_state(mcu_pipes *pipes, const char *app, mcu_result_fn done, void *user);
 
 #endif

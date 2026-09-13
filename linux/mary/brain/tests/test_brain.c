@@ -109,10 +109,49 @@ MARY_TEST(turn_start_is_marys_chat_request) {
     MARY_ASSERT(mb_tools(NULL) == NULL);
 }
 
+MARY_TEST(the_route_chooses_the_persona_and_lands_the_ambient_section_last) {
+    mb_prompt_inputs inputs = { .conversational = false, .capability = "Right now you're co-writing with the user in TextEdit.",
+                                .live_work = "\n\nYou can see what the user is looking at right now." };
+    char *text = mb_sewn_instructions_with(&SATURDAY_EVENING, &inputs);
+    MARY_ASSERT(strstr(text, " This turn is CONVERSATION") == NULL);
+    const char *in_turn = strstr(text, " You are not a read-only assistant."), *capability = strstr(text, " Right now you're co-writing"),
+               *retrieval = strstr(text, "\n\nAnything you REMEMBER"), *live = strstr(text, "\n\nYou can see what the user is looking at right now.");
+    MARY_ASSERT(in_turn && capability && retrieval && live && in_turn < capability && capability < retrieval && retrieval < live);
+    MARY_ASSERT(text[strlen(text) - 1] == '.' && strcmp(text + strlen(text) - strlen(inputs.live_work), inputs.live_work) == 0);   /* nothing follows the live work */
+    free(text);
+    mb_prompt_inputs chat = { .conversational = true };
+    char *plain = mb_sewn_instructions_with(&SATURDAY_EVENING, &chat), *legacy = mb_sewn_instructions(&SATURDAY_EVENING);
+    MARY_ASSERT_STR(plain, legacy);
+    free(plain);
+    free(legacy);
+}
+
+MARY_TEST(turn_start_carries_the_plans_lanes_and_cues) {
+    mb_history h;
+    mb_history_init(&h);
+    mb_history_append(&h, MB_ROLE_USER, "how do I save in TextEdit");
+    const char *lanes[] = { "application", "behavioral" }, *entities[] = { "operates", "supports" };
+    mb_turn_request r = { .owner_id = "mary", .request_id = "r1", .lanes = lanes, .lane_count = 2, .entities = entities, .entity_count = 2 };
+    struct json_object *start = mb_turn_start(&h, &r);
+    struct json_object *sewn = mc_json_object(mc_json_object(start, "request"), "sewn");
+    MARY_ASSERT_STR(mc_json_compact(mc_json_array(sewn, "lanes"), NULL), "[\"application\",\"behavioral\"]");
+    MARY_ASSERT_STR(mc_json_compact(mc_json_array(sewn, "entities"), NULL), "[\"operates\",\"supports\"]");
+    json_object_put(start);
+    mb_turn_request plain = { .owner_id = "mary", .request_id = "r2" };
+    start = mb_turn_start(&h, &plain);
+    sewn = mc_json_object(mc_json_object(start, "request"), "sewn");
+    MARY_ASSERT_STR(mc_json_compact(mc_json_array(sewn, "lanes"), NULL), "[\"conversation\",\"personal\"]");
+    MARY_ASSERT(mc_json_array(sewn, "entities") == NULL);
+    json_object_put(start);
+    mb_history_free(&h);
+}
+
 int main(void) {
     MARY_RUN(the_clock_reads_as_dateformatter_writes_it);
     MARY_RUN(the_voice_instructions_are_the_voice_plan_for_a_maryos_turn);
     MARY_RUN(history_keeps_twelve_spoken_messages_by_whole_exchanges);
     MARY_RUN(turn_start_is_marys_chat_request);
+    MARY_RUN(the_route_chooses_the_persona_and_lands_the_ambient_section_last);
+    MARY_RUN(turn_start_carries_the_plans_lanes_and_cues);
     MARY_TEST_MAIN_END();
 }

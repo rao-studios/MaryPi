@@ -44,9 +44,18 @@ struct json_object *mb_turn_start(const mb_history *history, const mb_turn_reque
     /* The lanes the reply's context may draw on (the storage lanes in thread/families.h);
      * the memory plan narrows and widens these per route. */
     struct json_object *lanes = json_object_new_array();
-    json_object_array_add(lanes, json_object_new_string("conversation"));
-    json_object_array_add(lanes, json_object_new_string("personal"));
+    if (r->lanes && r->lane_count > 0) {
+        for (int i = 0; i < r->lane_count; i++) json_object_array_add(lanes, json_object_new_string(r->lanes[i]));
+    } else {
+        json_object_array_add(lanes, json_object_new_string("conversation"));
+        json_object_array_add(lanes, json_object_new_string("personal"));
+    }
     json_object_object_add(sewn, "lanes", lanes);
+    if (r->entities && r->entity_count > 0) {
+        struct json_object *entities = json_object_new_array();
+        for (int i = 0; i < r->entity_count; i++) json_object_array_add(entities, json_object_new_string(r->entities[i]));
+        json_object_object_add(sewn, "entities", entities);
+    }
     json_object_object_add(sewn, "request_id", json_object_new_string(r->request_id ? r->request_id : ""));
     json_object_object_add(request, "sewn", sewn);
 

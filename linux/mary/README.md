@@ -29,7 +29,7 @@ Settings lets you allow, restrict or require confirmation for, per application.
 | [voice](voice/) | MaryVoice | microphone, wake word, VAD, speaker |
 | [runtime](runtime/) | MaryRuntime | `maryd`, the composition root |
 | [foundation](foundation/) | MaryFoundation | `MaryValue`, envelopes, the hashes ids are minted with |
-| [ambient](ambient/) | MaryAmbient | intents and focus (skeleton) |
+| [ambient](ambient/) | MaryAmbient | the ambient world: places, the store of surfaces and facts, the route a turn takes, the rendering, the trace |
 | [fleet](fleet/) | Fleet | LoRA registry and the JSON gate (skeleton) |
 | [frigate](frigate/) | Frigate | on-device models, for later (skeleton) |
 

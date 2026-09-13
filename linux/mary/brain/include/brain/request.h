@@ -18,6 +18,12 @@ typedef struct mb_turn_request {
     const char *owner_id;       /* sewnd takes the owner from credentials; sent to match Mary's wire */
     const char *request_id;
     const char *voice_id;       /* NULL: MB_VOICE_ID */
+    /* The storage lanes the reply's context may draw on (thread/families.h), from the route's memory plan;
+     * NULL: conversation and personal. And the relationship cues (`entities`) the plan named. */
+    const char *const *lanes;
+    int lane_count;
+    const char *const *entities;
+    int entity_count;
 } mb_turn_request;
 
 /* {"type": "turn.start", "request": {...}, "tts": {"voice_id": ...}}. A new object. */

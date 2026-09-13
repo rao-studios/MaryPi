@@ -26,9 +26,21 @@ compiles, behaviour is not ported; *planned* — the package exists only as a RE
 
 | Swift | C | Status |
 |---|---|---|
-| `MaryAmbient/Ambient/Engine/AmbientIntent.swift` (AmbientIntent, AmbientSignal) | `ambient/include/ambient/intent.h`, `src/intent.c` | skeleton (names, isActing, touchesExistingProse) |
-| `MaryAmbient/Reference/WorkspaceFocusTracker*.swift` | `ma_focus` (desktop-reported) | skeleton — deviation 9 |
-| `MaryAmbient/Selection/AX*.swift`, `SelectionHandoffCoordinator*.swift` | — | not ported — deviation 9 |
+| `MaryAmbient/Ambient/Engine/AmbientIntent.swift` (AmbientIntent, AmbientSignal) | `ambient/include/ambient/intent.h`, `src/intent.c` | working |
+| `MaryAmbient/Ambient/Realm/AmbientPlace.swift`, `Models/AmbientAttention.swift` | `ambient/include/ambient/place.h`, `src/place.c` (`ma_place`, tokens, the inverse) | working — deviation 13 |
+| `MaryAmbient/Ambient/Engine/AmbientCapability.swift` (`ApplicationProfile.isMentioned`), `ApplicationRegistration.swift`, `AbilityCapabilityIndex.swift` | `ma_roster`, `ma_registration`, `ma_ability` in `place.h` (`ma_roster_maryos`, `ma_roster_merge_skills`) | working — deviation 13: the roster is the desktop's own applications; triggers are matched as words |
+| `MaryAmbient/Ambient/Models/AmbientFact.swift`, `AmbientSlot.swift`, `AmbientSurface.swift`, `AmbientSelectionHandoff.swift`, `World/AmbientWorld.swift` (Snapshot), `AmbientSense.swift` | `ambient/include/ambient/store.h` (`ma_fact`, `ma_slot`, `ma_surface`, `ma_selection`, `ma_world`) | working — the fact's windows are the Swift's (5 s live, 30 s body, digests 9/15 min, cursors 12/60 s) |
+| `MaryAmbient/Ambient/World/AmbientContextStore.swift` (+Surface) | `ma_store` in `store.h`, `src/store.c` | working — deviation 13: the selection has one packet and a tombstone per source, no AX channels |
+| `MaryAmbient/Ambient/Engine/EditIntentClassifier*.swift`, `Reference/NamedPartClassifier.swift`, `Engine/RoutingLexicon.swift` | `ambient/include/ambient/classify.h`, `src/classify.c` | working — the regular expressions are word matchers with the same shapes |
+| `MaryAmbient/Ambient/Ranker/AmbientRanker*.swift`, `Models/AmbientRankingMode.swift`, `AmbientRendering.swift` | `ambient/include/ambient/ranker.h`, `src/ranker.c` | working |
+| `MaryAmbient/Ambient/Models/AmbientAge.swift`, `AmbientSurface+Rendering.swift`, `AmbientFact+Rendering.swift` | `ambient/include/ambient/render.h`, `src/render.c` | working |
+| `MaryAmbient/Ambient/Realm/AmbientRealm.swift`, `Engine/AmbientRealmResolver.swift`, `Reference/FocusSignal.swift`, `WorkspaceFocusTracker*.swift` (the ledger) | `ambient/include/ambient/realm.h`, `src/realm.c` (`ma_focus_ledger`, `ma_realm_resolve`) | working — deviation 13: evidence is activation from the desktop's focus, activity when it says so |
+| `MaryAmbient/Ambient/Engine/AmbientEngine.swift`, `AmbientRoute.swift`, `AmbientIntentGate.swift` | `ambient/include/ambient/engine.h`, `src/engine.c` (`ma_engine_resolve`, `ma_gate_resolve`) | working — no address probe (deviation 13); the `ability` thread is the `application` + `behavioral` lanes, `personal` is `personal` + `conversation` |
+| `MaryBrain/Prompt/PromptCatalog+Voice.swift` (`sewnLiveWork`), `LiveWorkWorld.swift`, `MaryPrompts+SewnModeTwo.swift` (`capabilityLine`) | `ambient/include/ambient/prompt.h`, `src/prompt.c` | working |
+| `MaryAmbient/Ambient/Engine/AmbientTraceLog.swift`, `MaryBrain/Trace/RetrievalTraceLedger.swift`, `MaryApp/RouteReport.swift` | `ambient/include/ambient/trace.h`, `src/trace.c` (`ma_trace_log`, `ma_trace_report`) | working |
+| `MaryPlugin/Shared/AmbientSurfaceBridge.swift`, `AmbientSurfaceObserver.swift` (what the desktop publishes) | `ambient/include/ambient/wire.h`, `src/wire.c` (`world`, `selection`, `ambient`, `trace` on maryd's socket) | working — deviation 13 |
+| `MaryAmbient/Ambient/Embedding/AmbientAddressProbe.swift`, `EmbeddingRouting`, `RoutingQuery.swift` | — | planned (the triage of M7) |
+| `MaryAmbient/Selection/AX*.swift`, `SelectionHandoffCoordinator*.swift`, `Passages/*`, `Reference/ReferenceResolver.swift`, `Indexing/*` | — | not ported — deviations 9 and 13 |
 
 ## fleet ← Fleet
 
@@ -216,9 +228,10 @@ What Swift gets from Foundation, URLSession and swift-nio.
    port 9090; no registration with Sewn.
 8. **Persona and instructions.** Mary's persona says she lives on the user's Mac; on MaryOS she lives in
    MaryOS, and "another pass will close" is dropped because no follow-up pass exists yet. The voice
-   instructions render the conversation persona for every turn and leave out `sewnRetrieval`'s reach and
-   sight splices (and the heading, in-turn and capability sections): the conversation cannot call skills or
-   look at the screen yet, and Mary must never promise what she cannot do.
+   instructions render the conversation persona on a `converse` turn and the in-turn persona otherwise,
+   the capability line for the place that leads, and the ambient section (`sewnLiveWork`) last; they leave
+   out `sewnRetrieval`'s reach and sight splices and the heading section: the conversation cannot look at
+   the screen, and Mary must never promise what she cannot do.
 9. **Computer use.** No accessibility tree, screen capture or synthetic input. MaryOS's applications are its
    own, so Mary reads their state and acts through `lp_app.perform` over the desktop socket.
 10. **Abilities.** The `.mary` packages under `Mary/Abilities/` — recipes recorded against a live
@@ -239,3 +252,16 @@ What Swift gets from Foundation, URLSession and swift-nio.
     filled: a request naming `tinker` is answered with `error{stage: "engine"}` before any socket is
     opened and leaves no row in the calls ledger. Thinking Machines is a toggle for a later
     implementation; no key, wire or model for it exists in this phase.
+13. **The ambient world.** On the Mac every application is observed through the accessibility tree by a
+    package that declares how; on MaryOS the applications are the desktop's own, so each publishes its own
+    tier-0 surface (`lp_app.surface`: the window, the document it shows and a window of its text, the
+    elements it offers, the selection) and the compositor sends the whole world to maryd on every focus or
+    window change, on each app's poll, and when a turn asks (`world.request`, answered within 150 ms). The
+    roster of places is the desktop's applications (seeded in `ma_roster_maryos`, renamed by `skills{apps}`);
+    the abilities' triggers and the transform family are matched as whole words rather than embedded
+    against authored seeds, and the discipline cue is the one discipline the words hit; nothing addresses an
+    application by its live contents yet (the address probe waits for the triage of M7). Focus evidence is
+    the desktop's focus (activation) and what it reports as real work (activity); glances have no source.
+    The selection handoff is one packet per source with a tombstone on clear; there are no AX channels,
+    evidence classes or payload recovery. The route, its realm, the rendering and every turn's trace are
+    the Swift's, field for field, and the Ambient app reads them from maryd (`ambient.state`, `trace.list`).

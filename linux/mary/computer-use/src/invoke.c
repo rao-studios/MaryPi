@@ -63,23 +63,16 @@ void mcu_pipes_free(mcu_pipes *p) {
     free(p);
 }
 
-int mcu_invoke(mcu_pipes *p, const char *app, const char *skill, struct json_object *args, int timeout_ms,
-               mcu_result_fn done, void *user, char *call_id, size_t cap) {
-    if (!app || !skill) return -EINVAL;
-    struct call call = { .done = done, .user = user };
+/* Registers the call before sending it (a result may arrive before send returns), then sends. */
+static int send_call(mcu_pipes *p, struct json_object *msg, struct call *call, int timeout_ms, mcu_result_fn done, void *user, char *call_id, size_t cap) {
+    call->done = done;
+    call->user = user;
     pthread_mutex_lock(&p->lock);
-    snprintf(call.id, sizeof call.id, "call-%lu-%lld", ++p->next, (long long)mc_wall_ms());
+    snprintf(call->id, sizeof call->id, "call-%lu-%lld", ++p->next, (long long)mc_wall_ms());
     pthread_mutex_unlock(&p->lock);
-    call.deadline_ms = mc_now_ms() + (timeout_ms > 0 ? timeout_ms : 10000);
+    call->deadline_ms = mc_now_ms() + (timeout_ms > 0 ? timeout_ms : 10000);
+    json_object_object_add(msg, "call_id", json_object_new_string(call->id));
 
-    struct json_object *msg = json_object_new_object();
-    json_object_object_add(msg, "type", json_object_new_string("skill.invoke"));
-    json_object_object_add(msg, "call_id", json_object_new_string(call.id));
-    json_object_object_add(msg, "app", json_object_new_string(app));
-    json_object_object_add(msg, "skill", json_object_new_string(skill));
-    json_object_object_add(msg, "args", args ? json_object_get(args) : json_object_new_object());
-
-    /* Registered before sending: a result may arrive before send returns. */
     pthread_mutex_lock(&p->lock);
     if (p->count == p->cap) {
         size_t grown_cap = p->cap ? p->cap * 2 : 8;
@@ -92,7 +85,7 @@ int mcu_invoke(mcu_pipes *p, const char *app, const char *skill, struct json_obj
         p->calls = grown;
         p->cap = grown_cap;
     }
-    p->calls[p->count++] = call;
+    p->calls[p->count++] = *call;
     pthread_mutex_unlock(&p->lock);
 
     int rc = p->send(msg, p->send_user);
@@ -100,7 +93,7 @@ int mcu_invoke(mcu_pipes *p, const char *app, const char *skill, struct json_obj
     if (rc < 0) {
         pthread_mutex_lock(&p->lock);
         for (size_t i = 0; i < p->count; i++) {
-            if (strcmp(p->calls[i].id, call.id) == 0) {
+            if (strcmp(p->calls[i].id, call->id) == 0) {
                 p->calls[i] = p->calls[--p->count];
                 break;
             }
@@ -108,13 +101,35 @@ int mcu_invoke(mcu_pipes *p, const char *app, const char *skill, struct json_obj
         pthread_mutex_unlock(&p->lock);
         return rc;
     }
-    if (call_id && cap) snprintf(call_id, cap, "%s", call.id);
+    if (call_id && cap) snprintf(call_id, cap, "%s", call->id);
     return 0;
+}
+
+int mcu_invoke(mcu_pipes *p, const char *app, const char *skill, struct json_object *args, int timeout_ms,
+               mcu_result_fn done, void *user, char *call_id, size_t cap) {
+    if (!app || !skill) return -EINVAL;
+    struct call call = { 0 };
+    struct json_object *msg = json_object_new_object();
+    json_object_object_add(msg, "type", json_object_new_string("skill.invoke"));
+    json_object_object_add(msg, "app", json_object_new_string(app));
+    json_object_object_add(msg, "skill", json_object_new_string(skill));
+    json_object_object_add(msg, "args", args ? json_object_get(args) : json_object_new_object());
+    return send_call(p, msg, &call, timeout_ms, done, user, call_id, cap);
+}
+
+int mcu_app_state(mcu_pipes *p, const char *app, mcu_result_fn done, void *user) {
+    if (!app) return -EINVAL;
+    struct call call = { 0 };
+    struct json_object *msg = json_object_new_object();
+    json_object_object_add(msg, "type", json_object_new_string("app.state"));
+    json_object_object_add(msg, "app", json_object_new_string(app));
+    return send_call(p, msg, &call, MCU_APP_STATE_TIMEOUT_MS, done, user, NULL, 0);
 }
 
 int mcu_pipes_on_message(mcu_pipes *p, struct json_object *message) {
     const char *type = mc_json_type(message);
-    if (!type || strcmp(type, "skill.result") != 0) return 0;
+    if (!type || (strcmp(type, "skill.result") != 0 && strcmp(type, "app.state.result") != 0)) return 0;
+    bool state = strcmp(type, "app.state.result") == 0;
     const char *id = mc_json_string(message, "call_id");
     struct call found;
     bool matched = false;
@@ -134,7 +149,7 @@ int mcu_pipes_on_message(mcu_pipes *p, struct json_object *message) {
     const char *error = mc_json_string(message, "error");
     struct json_object *result;
     mcu_result r = { .call_id = found.id, .ok = ok, .error = ok ? NULL : (error ? error : "failed") };
-    r.result = ok && json_object_object_get_ex(message, "result", &result) ? result : NULL;
+    r.result = ok && json_object_object_get_ex(message, state ? "surface" : "result", &result) ? result : NULL;
     if (found.done) found.done(&r, found.user);
     return 1;
 }
@@ -149,4 +164,3 @@ size_t mcu_pipes_pending(const mcu_pipes *p) {
     return n;
 }
 
-int mcu_app_state(mcu_pipes *p, const char *app, mcu_result_fn done, void *user) { return -ENOSYS; }

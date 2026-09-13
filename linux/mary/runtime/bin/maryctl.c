@@ -7,7 +7,10 @@
  *   maryctl skills                      what each app lets Mary do, as the desktop published it
  *   maryctl skill APP SKILL [ARGS-JSON] one call through the direct pipes
  *   maryctl voices                      Mistral's voices, as Settings › Mary lists them
- *   maryctl sample VOICE [TEXT...]      one text spoken in VOICE through Mary's speaker, or why not */
+ *   maryctl sample VOICE [TEXT...]      one text spoken in VOICE through Mary's speaker, or why not
+ *   maryctl ambient                     what is in front of the person, as the Ambient app's World tab shows it
+ *   maryctl trace                       every turn's route, as the Mac's RouteReport (the Routes tab's Copy)
+ *   maryctl state APP                   the app's surface, through the same pipes a turn reads it */
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -142,6 +145,37 @@ static int on_line(const char *line, size_t len, void *user) {
             c->status = 1;
             c->done = true;
         }
+    } else if (strcmp(c->command, "ambient") == 0) {
+        if (strcmp(type, "ambient") == 0) {
+            struct json_object *state = mc_json_object(msg, "state"), *places = mc_json_array(state, "places");
+            const char *lead = mc_json_string(mc_json_object(state, "lead"), "name");
+            printf("lead: %s\n", or_else(lead, "none"));
+            for (size_t k = 0; places && k < json_object_array_length(places); k++) {
+                struct json_object *card = json_object_array_get_idx(places, k), *facts = mc_json_array(card, "facts");
+                printf("%s\n", or_else(mc_json_string(mc_json_object(card, "surface"), "surfaceLine"),
+                                       or_else(mc_json_string(mc_json_object(card, "place"), "name"), "?")));
+                for (size_t f = 0; facts && f < json_object_array_length(facts); f++)
+                    printf("  - %s\n", or_else(mc_json_string(json_object_array_get_idx(facts, f), "mention"), ""));
+            }
+            struct json_object *selection = mc_json_object(state, "selection");
+            if (selection) printf("selection: \"%s\"\n", or_else(mc_json_string(selection, "text"), ""));
+            c->done = true;
+        }
+    } else if (strcmp(c->command, "trace") == 0) {
+        if (strcmp(type, "trace.report") == 0) {
+            printf("%s", or_else(mc_json_string(msg, "text"), ""));
+            c->done = true;
+        }
+    } else if (strcmp(c->command, "state") == 0) {
+        if (strcmp(type, "app.state.result") == 0) {
+            bool ok = false;
+            mc_json_bool(msg, "ok", &ok);
+            struct json_object *surface = mc_json_object(msg, "surface");
+            if (ok) printf("%s\n", surface ? mc_json_compact(surface, NULL) : "{}");
+            else fprintf(stderr, "maryctl: %s\n", or_else(mc_json_string(msg, "error"), "failed"));
+            c->status = ok ? 0 : 1;
+            c->done = true;
+        }
     } else if (strcmp(c->command, "voices") == 0) {
         if (strcmp(type, "voices") == 0) {
             c->status = print_voices(msg);
@@ -169,7 +203,7 @@ static int on_line(const char *line, size_t len, void *user) {
 
 static void usage(FILE *to) {
     fprintf(to, "usage: maryctl [--socket PATH] status | ask TEXT... | listen | stop | skills | skill APP SKILL [ARGS-JSON]\n"
-                "                                | voices | sample VOICE [TEXT...]\n");
+                "                                | voices | sample VOICE [TEXT...] | ambient | trace | state APP\n");
 }
 
 int main(int argc, char **argv) {
@@ -219,6 +253,13 @@ int main(int argc, char **argv) {
     } else if (strcmp(cmd, "voices") == 0 && i + 1 == argc) {
         request = json_object_new_object();
         json_object_object_add(request, "type", json_object_new_string("voices.list"));
+    } else if ((strcmp(cmd, "ambient") == 0 || strcmp(cmd, "trace") == 0) && i + 1 == argc) {
+        request = json_object_new_object();
+        json_object_object_add(request, "type", json_object_new_string(strcmp(cmd, "ambient") == 0 ? "ambient.state" : "trace.report"));
+    } else if (strcmp(cmd, "state") == 0 && i + 2 == argc) {
+        request = json_object_new_object();
+        json_object_object_add(request, "type", json_object_new_string("app.state"));
+        json_object_object_add(request, "app", json_object_new_string(argv[i + 1]));
     } else if (strcmp(cmd, "sample") == 0 && i + 1 < argc) {
         for (int k = i + 2; k < argc; k++) {
             if (k > i + 2) mc_buf_append_str(&question, " ");

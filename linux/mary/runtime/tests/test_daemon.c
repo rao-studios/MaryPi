@@ -31,7 +31,8 @@ static atomic_int sewn_mode;                /* 1: the reply's voice fails */
 static atomic_int voices_calls;
 static char last_voice[64], spoken_voice[64];
 static int last_turn_messages;
-static bool last_turn_instructed;
+static bool last_turn_instructed, last_turn_saw_screen;
+static char last_turn_lanes[128];
 static char last_user[128], indexed_question[128], indexed_reply[128], indexed_source[16];
 
 /* ---- fake sewnd ---- */
@@ -57,6 +58,9 @@ static void *sewn_connection(void *arg) {
             pthread_mutex_lock(&lock);
             last_turn_messages = messages ? (int)json_object_array_length(messages) : 0;
             last_turn_instructed = mc_json_string(request, "instructions") != NULL;
+            last_turn_saw_screen = last_turn_instructed && strstr(mc_json_string(request, "instructions"), "On screen: TextEdit") != NULL;
+            struct json_object *lanes = mc_json_array(mc_json_object(request, "sewn"), "lanes");
+            snprintf(last_turn_lanes, sizeof last_turn_lanes, "%s", lanes ? mc_json_compact(lanes, NULL) : "");
             const char *voice = mc_json_string(mc_json_object(first, "tts"), "voice_id");
             snprintf(last_voice, sizeof last_voice, "%s", voice ? voice : "");
             if (last_turn_messages)
@@ -439,6 +443,113 @@ MARY_TEST(skill_calls_go_through_the_desktops_pipes_and_its_policy) {
     teardown();
 }
 
+MARY_TEST(the_world_the_desktop_publishes_shapes_the_turn_and_its_trace) {
+    setup();
+    client desktop, ctl;
+    client_open(&desktop);
+    client_open(&ctl);
+    json_object_put(client_wait(&desktop, "hello", NULL, NULL, 0));
+    json_object_put(client_wait(&ctl, "hello", NULL, NULL, 0));
+    /* the desktop publishes its skills (so it is the desktop) and what is in front of the person */
+    client_send(&desktop, "{\"type\":\"skills\",\"apps\":[{\"id\":\"textedit\",\"name\":\"TextEdit\",\"enabled\":true,\"ask\":\"never\",\"skills\":[]}]}");
+    client_send(&desktop,
+        "{\"type\":\"world\",\"focus\":\"applications:textedit\",\"places\":[{\"place\":\"applications:textedit\",\"surface\":"
+        "{\"application\":{\"name\":\"TextEdit\",\"id\":\"textedit\"},\"activeWindow\":{\"title\":\"Tides\"},\"windowCount\":1,"
+        "\"elements\":[{\"role\":\"textarea\",\"kind\":\"text area\",\"label\":\"body\",\"focused\":true}],"
+        "\"document\":{\"name\":\"Tides\",\"path\":\"/home/mary/Tides.txt\",\"text\":\"The tide comes in twice a day.\",\"total\":31,\"lower\":0,\"upper\":31}}}]}");
+    /* the Ambient app's World tab */
+    struct json_object *state = NULL;
+    for (int i = 0; i < 50 && !state; i++) {
+        client_send(&ctl, "{\"type\":\"ambient.state\"}");
+        struct json_object *reply = client_wait(&ctl, "ambient", NULL, NULL, 0);
+        struct json_object *places = reply ? mc_json_array(mc_json_object(reply, "state"), "places") : NULL;
+        if (places && json_object_array_length(places) == 1) state = reply;
+        else { if (reply) json_object_put(reply); usleep(20000); }
+    }
+    MARY_ASSERT(state != NULL);
+    if (state) {
+        struct json_object *card = json_object_array_get_idx(mc_json_array(mc_json_object(state, "state"), "places"), 0);
+        bool lead = false;
+        MARY_ASSERT(mc_json_bool(card, "isLead", &lead) && lead);
+        const char *line = mc_json_string(mc_json_object(card, "surface"), "surfaceLine");
+        MARY_ASSERT(line && strncmp(line, "On screen: TextEdit \xE2\x80\x94 \"Tides\" (focused: body)", 40) == 0);
+        MARY_ASSERT_EQ(json_object_array_length(mc_json_array(card, "facts")), 1);
+        MARY_ASSERT_STR(mc_json_string(mc_json_object(mc_json_object(state, "state"), "lead"), "token"), "applications:textedit");
+        json_object_put(state);
+    }
+    /* a turn asks the desktop for the world first, then runs with what it holds */
+    client_send(&ctl, "{\"type\":\"ask\",\"text\":\"what does the document say about the tide?\"}");
+    struct json_object *request = client_wait(&desktop, "world.request", NULL, NULL, 0);
+    MARY_ASSERT(request != NULL);
+    if (request) json_object_put(request);
+    struct json_object *end = client_wait(&ctl, "reply.end", NULL, NULL, 0);
+    MARY_ASSERT(end != NULL);
+    if (end) json_object_put(end);
+    pthread_mutex_lock(&lock);
+    MARY_ASSERT(last_turn_saw_screen);
+    MARY_ASSERT_STR(last_turn_lanes, "[\"personal\",\"conversation\"]");
+    pthread_mutex_unlock(&lock);
+    /* the Routes tab: the turn's row, its route and what retrieval returned */
+    client_send(&ctl, "{\"type\":\"trace.list\"}");
+    struct json_object *trace = client_wait(&ctl, "trace", NULL, NULL, 0);
+    MARY_ASSERT(trace != NULL);
+    if (trace) {
+        struct json_object *records = mc_json_array(trace, "records");
+        MARY_ASSERT(records && json_object_array_length(records) == 1);
+        struct json_object *row = json_object_array_get_idx(records, 0), *route = mc_json_object(row, "route");
+        MARY_ASSERT_STR(mc_json_string(row, "utterance"), "what does the document say about the tide?");
+        MARY_ASSERT_STR(mc_json_string(route, "intent"), "ask");
+        MARY_ASSERT_STR(mc_json_string(route, "decidedBy"), "namedPart");
+        MARY_ASSERT_STR(mc_json_string(route, "leadApplicationID"), "textedit");
+        MARY_ASSERT_STR(mc_json_string(mc_json_object(route, "verdicts"), "namedPart"), "tide");
+        struct json_object *retrieval = mc_json_array(row, "retrieval");
+        MARY_ASSERT(retrieval && json_object_array_length(retrieval) == 1);
+        struct json_object *context = json_object_array_get_idx(retrieval, 0);
+        MARY_ASSERT_STR(mc_json_string(context, "name"), "context");
+        MARY_ASSERT_EQ(json_object_array_length(mc_json_array(context, "returned")), 1);
+        MARY_ASSERT_STR(mc_json_string(row, "contribution"), "1 owner, 1 document, 1 passage");
+        int64_t chars = 0;
+        MARY_ASSERT(mc_json_int64(row, "systemPromptChars", &chars) && chars > 1000);
+        json_object_put(trace);
+    }
+    client_send(&ctl, "{\"type\":\"trace.report\"}");
+    struct json_object *report = client_wait(&ctl, "trace.report", NULL, NULL, 0);
+    MARY_ASSERT(report && strstr(mc_json_string(report, "text"), "--- ask via namedPart ---") != NULL);
+    if (report) json_object_put(report);
+    /* a selection becomes this turn's referent, and a clear forgets it */
+    client_send(&desktop, "{\"type\":\"selection\",\"applicationID\":\"textedit\",\"text\":\"twice a day\",\"document\":\"Tides\",\"lower\":18,\"upper\":29,\"total\":31,\"editable\":true}");
+    client_send(&ctl, "{\"type\":\"ambient.state\"}");
+    state = NULL;
+    for (int i = 0; i < 50 && !state; i++) {
+        struct json_object *reply = client_wait(&ctl, "ambient", NULL, NULL, 0);
+        if (reply && mc_json_object(mc_json_object(reply, "state"), "selection")) state = reply;
+        else { if (reply) json_object_put(reply); usleep(20000); client_send(&ctl, "{\"type\":\"ambient.state\"}"); }
+    }
+    MARY_ASSERT(state != NULL);
+    if (state) {
+        MARY_ASSERT_STR(mc_json_string(mc_json_object(mc_json_object(state, "state"), "selection"), "text"), "twice a day");
+        json_object_put(state);
+    }
+    /* maryctl's app.state rides the pipes to the desktop and back */
+    client_send(&ctl, "{\"type\":\"app.state\",\"app\":\"textedit\"}");
+    struct json_object *ask = client_wait(&desktop, "app.state", NULL, NULL, 0);
+    MARY_ASSERT(ask != NULL);
+    if (ask) {
+        char line[256];
+        snprintf(line, sizeof line, "{\"type\":\"app.state.result\",\"call_id\":\"%s\",\"ok\":true,\"surface\":{\"application\":{\"name\":\"TextEdit\"}}}", mc_json_string(ask, "call_id"));
+        client_send(&desktop, line);
+        json_object_put(ask);
+    }
+    struct json_object *answer = client_wait(&ctl, "app.state.result", NULL, NULL, 0);
+    bool ok = false;
+    MARY_ASSERT(answer && mc_json_bool(answer, "ok", &ok) && ok);
+    MARY_ASSERT_STR(mc_json_string(mc_json_object(mc_json_object(answer, "surface"), "application"), "name"), "TextEdit");
+    if (answer) json_object_put(answer);
+    client_close(&desktop);
+    client_close(&ctl);
+    teardown();
+}
+
 MARY_TEST(a_spoken_question_is_heard_answered_and_followed_up) {
     setup();
     client c;
@@ -660,6 +771,7 @@ int main(void) {
     mc_ignore_sigpipe();
     MARY_RUN(a_typed_question_streams_a_reply_and_is_deposited_in_thread);
     MARY_RUN(skill_calls_go_through_the_desktops_pipes_and_its_policy);
+    MARY_RUN(the_world_the_desktop_publishes_shapes_the_turn_and_its_trace);
     MARY_RUN(a_spoken_question_is_heard_answered_and_followed_up);
     MARY_RUN(speech_that_fails_is_reported_and_mary_goes_quiet);
     MARY_RUN(a_speaker_that_never_plays_does_not_keep_mary_speaking);
