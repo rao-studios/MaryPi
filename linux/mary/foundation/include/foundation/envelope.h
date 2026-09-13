@@ -1,7 +1,8 @@
 /* MaryFoundation/Core/ValueEnvelope.swift in C, with the pieces it names:
  * SourceScope (Core/SourceScope.swift), DataPrivacyClass (Core/ValueSchemas.swift)
- * and ValueProvenance. Declared only — nothing on MaryOS builds envelopes yet.
- * Strings are borrowed; the envelope owns `value`. */
+ * and ValueProvenance. Strings are borrowed; the envelope owns `value`. The
+ * resolution ladder is SourceScope.resolution: a document outranks a workspace or
+ * project, a window, an application, a device; nothing proven is unresolved. */
 #ifndef MARY_FOUNDATION_ENVELOPE_H
 #define MARY_FOUNDATION_ENVELOPE_H
 
@@ -20,6 +21,18 @@ typedef enum mf_privacy {
 
 /* The Swift raw value ("publicDefinition", "private", …), or NULL out of range. */
 const char *mf_privacy_name(mf_privacy privacy);
+bool mf_privacy_from_name(const char *name, mf_privacy *out);
+
+typedef enum mf_source_resolution {
+    MF_SOURCE_UNRESOLVED,
+    MF_SOURCE_DEVICE,
+    MF_SOURCE_APPLICATION,
+    MF_SOURCE_WINDOW,
+    MF_SOURCE_WORKSPACE,
+    MF_SOURCE_DOCUMENT,
+} mf_source_resolution;
+
+const char *mf_source_resolution_name(mf_source_resolution resolution);
 
 /* Where a value came from. On MaryOS the application and window are the
  * desktop's own ids (lp_app.id, the window record), never an AX element. */
@@ -37,6 +50,9 @@ typedef struct mf_source_scope {
     const char *document_id;
     const char *surface_id;
 } mf_source_scope;
+
+/* How far the scope is proven; an empty string counts as absent. */
+mf_source_resolution mf_source_scope_resolution(const mf_source_scope *scope);
 
 typedef struct mf_provenance {
     const char *adapter_id;

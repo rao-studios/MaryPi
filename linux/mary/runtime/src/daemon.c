@@ -21,7 +21,7 @@
 #include "common/peer.h"
 #include "common/secure.h"
 #include "computer-use/invoke.h"
-#include "mary-thread/client.h"
+#include "thread/client.h"
 #include "runtime/desktop.h"
 #include "runtime/ears.h"
 #include "runtime/queue.h"
@@ -226,7 +226,7 @@ static void voices_job(mr_daemon *d, mr_client *c) {
 
 struct deposit_job {
     mr_daemon *d;
-    mt_turn turn;
+    thread_turn turn;
     char *question, *reply;
     char owner[64];
 };
@@ -235,7 +235,7 @@ static void *deposit_worker(void *arg) {
     struct deposit_job *job = arg;
     char id[64];
     int status = 0;
-    int rc = mt_deposit_turn(job->d->thread_path, &job->turn, MT_TIMEOUT_MS, id, sizeof id, &status);
+    int rc = thread_client_deposit_turn(job->d->thread_path, &job->turn, THREAD_CLIENT_TIMEOUT_MS, id, sizeof id, &status);
     if (rc == 0) mc_log(MC_LOG_DEBUG, "deposited %s in Thread", id);
     else if (rc == -EPROTO) mc_log(MC_LOG_WARNING, "threadd refused the turn (status %d)", status);
     else mc_log(MC_LOG_WARNING, "could not reach threadd: %s", strerror(-rc));
@@ -256,7 +256,7 @@ static void deposit(mr_daemon *d, bool cancelled) {
     }
     job->d = d;
     snprintf(job->owner, sizeof job->owner, "%s", d->owner);
-    job->turn = (mt_turn){ .owner_id = job->owner, .user_text = job->question, .reply = job->reply,
+    job->turn = (thread_turn){ .owner_id = job->owner, .user_text = job->question, .reply = job->reply,
                            .source = d->turn.voice ? "voice" : "typed", .started_ms = d->turn.started_wall,
                            .ended_ms = mc_wall_ms(), .cancelled = cancelled };
     spawn(d, deposit_worker, job);
@@ -514,7 +514,7 @@ static void start_turn(mr_daemon *d, const char *question, bool voice) {
     mb_clock_now(&clock);
     char *instructions = mb_sewn_instructions(&clock);
     char request_id[64];
-    mt_turn_document_id(d->turn.started_wall, request_id, sizeof request_id);
+    thread_turn_document_id(d->turn.started_wall, request_id, sizeof request_id);
     mb_turn_request req = { .instructions = instructions, .owner_id = d->owner, .request_id = request_id, .voice_id = d->voice_id };
     struct json_object *start = mb_turn_start(&d->history, &req);
     free(instructions);
@@ -910,7 +910,7 @@ mr_daemon *mr_daemon_new(const mr_config *config, int *error) {
         if (d->config.speaker_stall_ms <= 0) d->config.speaker_stall_ms = 2000;
         d->aops = config->audio_ops ? config->audio_ops : &pipewire_ops;
         resolve(d->sewn_path, sizeof d->sewn_path, config->sewn_socket, "SEWN_SOCKET", SEWN_SOCKET_PATH);
-        resolve(d->thread_path, sizeof d->thread_path, config->thread_socket, "THREAD_SOCKET", MT_SOCKET_PATH);
+        resolve(d->thread_path, sizeof d->thread_path, config->thread_socket, "THREAD_SOCKET", THREAD_CLIENT_SOCKET_PATH);
         if (config->desktop_socket) snprintf(d->desktop_path, sizeof d->desktop_path, "%s", config->desktop_socket);
         else rc = mr_desktop_default_socket(d->desktop_path, sizeof d->desktop_path, true);
         mc_user_name(getuid(), d->owner, sizeof d->owner);

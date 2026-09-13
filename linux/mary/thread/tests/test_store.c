@@ -8,7 +8,6 @@
 #include <unistd.h>
 
 #include "mary_test.h"
-#include "thread/peer.h"
 #include "thread/store.h"
 
 /* rm -rf for a test's own temporary directory, without a shell. */
@@ -195,14 +194,6 @@ MARY_TEST(a_document_moves_to_its_new_group) {
     destroy(s);
 }
 
-MARY_TEST(peering_is_declared_not_built) {
-    MARY_ASSERT_EQ(thread_peer_discover(NULL, NULL, 10), -ENOSYS);
-    MARY_ASSERT_EQ(thread_peer_pair(NULL, NULL, NULL), -ENOSYS);
-    char id[65];
-    MARY_ASSERT_EQ(thread_node_id_from_spki(NULL, 0, id), -ENOSYS);
-    MARY_ASSERT_STR(THREAD_PEER_SERVICE, "_thread._tcp");
-}
-
 int main(void) {
     MARY_RUN(a_turn_is_indexed_listed_and_read_back);
     MARY_RUN(the_node_id_is_made_once);
@@ -210,6 +201,5 @@ int main(void) {
     MARY_RUN(ids_must_be_file_names);
     MARY_RUN(groups_page_by_id);
     MARY_RUN(a_document_moves_to_its_new_group);
-    MARY_RUN(peering_is_declared_not_built);
     MARY_TEST_MAIN_END();
 }

@@ -17,17 +17,17 @@ Settings lets you allow, restrict or require confirmation for, per application.
 
 | Package | Swift twin | What it is |
 |---|---|---|
-| [common](common/) | — | JSON, SSE, base64, frames, secret zeroing, log |
+| [common](common/) | — | JSON, SSE, base64, frames, SHA-256, the framed-socket client, secret zeroing, log |
 | [conduit](conduit/) | Conduit | `thread.v1` over gRPC (nghttp2 + protobuf-c) |
 | [sewn](sewn/) | Sewn | `sewnd`: the Mistral key, chat, speech in and out |
-| [thread](thread/) | Thread | `threadd`: MaryOS's memory |
-| [mary-thread](mary-thread/) | MaryThread | Mary's Thread client |
+| [thread](thread/) | Thread, MaryThread | `threadd`: MaryOS's memory — the hard drive — and Mary's calls into it |
+| [gita](gita/) | Gita | retrieval by other machines (declared) |
 | [skills](skills/) | MaryPlugin, SkillSchema | what Mary can do with each app |
 | [computer-use](computer-use/) | MaryComputerUse | direct pipes into the apps |
 | [brain](brain/) | MaryBrain | the converse turn and its prompt |
 | [voice](voice/) | MaryVoice | microphone, wake word, VAD, speaker |
 | [runtime](runtime/) | MaryRuntime | `maryd`, the composition root |
-| [foundation](foundation/) | MaryFoundation | `MaryValue` and envelopes (skeleton) |
+| [foundation](foundation/) | MaryFoundation | `MaryValue`, envelopes, the hashes ids are minted with |
 | [ambient](ambient/) | MaryAmbient | intents and focus (skeleton) |
 | [fleet](fleet/) | Fleet | LoRA registry and the JSON gate (skeleton) |
 | [frigate](frigate/) | Frigate | on-device models, for later (skeleton) |
@@ -39,11 +39,12 @@ Swift twin. A package links only the packages its `DEPS_` line in the Makefile n
 
 ```sh
 make            # static libraries, tools and daemons for every package whose libraries were found
-make test       # every package's tests
+make test       # every package's tests, and netcheck
+make netcheck   # only sewn may reach the network: every other package is grepped for it
 make check-deps # which optional libraries were found, and which packages were skipped for it
 ```
 
-json-c is required. libcurl, libwebsockets, openssl, libnghttp2, libprotobuf-c and libpipewire are
+json-c is required. libcurl, libwebsockets, openssl, libnghttp2, libprotobuf-c, libsqlite3 and libpipewire are
 optional per package, so the pure packages build and test on a Mac; the MaryPi builder image has all of
 them. Everything is written under `O=` (default `build/`).
 

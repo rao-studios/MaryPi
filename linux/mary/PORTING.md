@@ -12,9 +12,12 @@ compiles, behaviour is not ported; *planned* — the package exists only as a RE
 | Swift | C | Status |
 |---|---|---|
 | `MaryFoundation/Core/MaryValue.swift` | `foundation/include/foundation/value.h`, `src/value.c` | skeleton (build, compare, free; no Codable) |
-| `MaryFoundation/Core/ValueEnvelope.swift` | `foundation/include/foundation/envelope.h` | skeleton |
-| `MaryFoundation/Core/SourceScope.swift` | `mf_source_scope` in `envelope.h` | skeleton |
-| `MaryFoundation/Core/ValueSchemas.swift` (DataPrivacyClass) | `mf_privacy`, `mf_privacy_name` | skeleton |
+| `MaryFoundation/Core/ValueEnvelope.swift` | `foundation/include/foundation/envelope.h`, `src/envelope.c` | skeleton — the envelope is declared, its names and resolution work |
+| `MaryFoundation/Core/SourceScope.swift` (`resolution`) | `mf_source_scope`, `mf_source_scope_resolution` | working |
+| `MaryFoundation/Core/ValueSchemas.swift` (DataPrivacyClass) | `mf_privacy`, `mf_privacy_name`, `mf_privacy_from_name` | working |
+| `MaryBrain/Behavior/ThreadMemoryTopology.swift` (`hash`, `canonical`), `MaryAmbient/Ambient/Indexing/UnitIndexModels.swift` (`UnitIndexHashing`) | `foundation/include/foundation/hash.h` (`mf_fnv1a64_hex`, `mf_canonical`) | working — `canonical` lowercases ASCII and Latin-1 only |
+| `MaryApp/Components/Home/Views/Highlight/ContributionSpans.swift` (`StableHash`) | `mf_djb2` | working |
+| `Thread/Sources/Database/Database+Utilities.swift` (`computeNumericHash`) | `mf_numeric_hash` | working — the decimal-per-byte rendering, digit for digit |
 | `MaryFoundation/Ability/SkillSchemas.swift` (SkillSchema) | `skills/` and MaryUI's `lp_skill` | planned — deviation 10 |
 | `MaryFoundation/Package/*` (`.mary` codec, digest) | — | not ported — deviation 10 |
 | `MaryFoundation/Core/AXFrame.swift` | — | not ported — deviation 9 |
@@ -54,6 +57,8 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `Mary/Sources/MaryBrain/Sewn/SewnRealtimeWire.swift` (frame handling) | `common/include/common/frame.h`, `src/frame.c` | working — length-prefixed frames on a unix socket replace WebSocket frames |
 | Foundation `JSONSerialization` / `Codable` | `common/include/common/json.h` (json-c) | working |
 | Foundation `Data(base64Encoded:)` | `common/include/common/base64.h` | working |
+| swift-crypto `SHA256` | `common/include/common/sha256.h` | working — FIPS 180-4, no library |
+| Foundation `URLSession` to a local daemon | `common/include/common/service.h` (a framed request to a unix socket) | working — sewn/client.h and thread's embedder share it |
 | — | `common/include/common/{buf,lines,secure,io,log}.h` | working |
 
 ## conduit ← Conduit
@@ -86,7 +91,7 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `Sewn/Sources/API/Network/NetworkService+Center.swift` (`MISTRAL_API_KEY`) | `sewn/include/sewn/key.h`, `src/key.c` | working — a 0600 file set from System Settings, never the environment |
 | `Sewn/Sources/SewnServer.swift` (the listener) | `sewn/bin/sewnd.c`, `sewn/include/sewn/server.h`, `src/server.c` | working for `key.status`, `key.set`, `key.verify`; turns and transcription planned |
 | — (checking a key) | `sewn/include/sewn/http.h`, `src/http.c` (`sewn_mistral_verify`: GET `/v1/models`) | working |
-| — | `sewn/bin/sewnctl.c`, `sewn/include/sewn/client.h`, `src/client.c` | working |
+| — | `sewn/bin/sewnctl.c`, `sewn/include/sewn/client.h`, `src/client.c` (over `common/service.h`) | working |
 
 ## thread ← Thread
 
@@ -97,14 +102,16 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `Thread/Sources/Conduit/ThreadGRPCServer.swift`, `Sources/ThreadServer.swift` | `thread/bin/threadd.c` | working — a unix socket, owner from credentials |
 | `Thread/Sources/Utilities/Persistence/FilePersistence.swift`, `NodeIdentity.swift` | `thread/src/store.c` (JSON files, `node-id`) | working — deviation 7 |
 | `Thread/Sources/Conduit/ThreadQueryServiceImpl.swift` (`search`, `remove`), `ThreadUpdateServiceImpl.swift`, `ThreadGraphServiceImpl.swift`, `Sources/Database/*` (embeddings, PQ, graph) | — | planned: answer UNIMPLEMENTED |
-| — (peering between MaryOS machines) | `thread/include/thread/peer.h` | declared — answers ENOSYS |
+| `MaryThread/ThreadDirectClient.swift` (`deposit`, `library`, `documents`) | `thread/include/thread/client.h`, `src/client.c` | working — search, removal and the graph are not ported; the client lives in the thread package because the Thread is the hard drive, not a service Mary is a client of |
 | — | `thread/bin/threadctl.c` | working |
 
-## mary-thread ← MaryThread
+## gita ← Gita (Sewn/Sources/Gita)
 
 | Swift | C | Status |
 |---|---|---|
-| `MaryThread/ThreadDirectClient.swift` (`deposit`, `library`, `documents`) | `mary-thread/include/mary-thread/client.h`, `src/client.c` | working — search, removal and the graph are not ported |
+| `Sewn/Sources/Gita/Gita+Spans.swift`, `Gita+MarkerSpans.swift` (attribution) | `sewn/` — the turn's contribution spans | planned |
+| `Sewn/Sources/Gita/Gita+Royalty.swift`, `Wallet/*`, `Gita.TokenLedger` | — | not ported |
+| — (retrieval by other MaryOS machines: mDNS, mTLS, sync) | `gita/include/gita/peer.h`, `src/peer.c` | declared — answers ENOSYS |
 
 ## skills ← MaryPlugin, SkillSchema
 

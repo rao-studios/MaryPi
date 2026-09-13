@@ -26,27 +26,26 @@ CPPFLAGS += -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DMARY_VERSION=\"$(VERSI
 
 # Packages. A package's include/ is on every path; a package may link only the
 # ones named in its DEPS (dependencies first-to-last is the link order).
-PKGS := common foundation ambient conduit sewn thread mary-thread skills computer-use brain voice runtime fleet frigate
+PKGS := common foundation ambient conduit sewn thread gita skills computer-use brain voice runtime fleet frigate
 
 DEPS_common :=
 DEPS_foundation := common
 DEPS_ambient := foundation common
 DEPS_conduit := common
 DEPS_sewn := common
-DEPS_thread := conduit common
-DEPS_mary-thread := conduit common
+DEPS_thread := conduit foundation common
+DEPS_gita := common
 DEPS_skills := common
 DEPS_computer-use := skills common
 DEPS_brain := skills foundation common
 DEPS_voice := common
-DEPS_runtime := brain voice computer-use skills mary-thread conduit sewn ambient foundation common
+DEPS_runtime := brain voice computer-use skills thread conduit sewn ambient foundation common
 DEPS_fleet := common
 DEPS_frigate := common
 
 # What a package needs beyond json-c (names from OPTIONAL_NAMES); without them it is skipped.
 NEEDS_conduit := NGHTTP2 PROTOBUFC
 NEEDS_thread := NGHTTP2 PROTOBUFC
-NEEDS_mary-thread := NGHTTP2 PROTOBUFC
 NEEDS_runtime := NGHTTP2 PROTOBUFC
 
 # json-c is the one library everything uses.
@@ -71,6 +70,7 @@ $(eval $(call optional_pkgs,SSL,openssl))                   # sewn
 $(eval $(call optional_pkgs,NGHTTP2,libnghttp2))            # conduit: gRPC over HTTP/2
 $(eval $(call optional_pkgs,PROTOBUFC,libprotobuf-c))       # conduit: thread.v1 messages
 $(eval $(call optional_pkgs,PIPEWIRE,libpipewire-0.3))      # voice: microphone and speaker
+$(eval $(call optional_pkgs,SQLITE,sqlite3))                # thread: the hard drive (thread.db)
 # sherpa-onnx ("Hey Mary") has no pkg-config file. The builder unpacks the release
 # pinned in third_party.lock into SHERPA_DIR — include/sherpa-onnx/c-api/c-api.h, lib/,
 # model/ and licenses/ (builder/lib/mary.sh) — and passes it here. voice links it; its
@@ -89,7 +89,7 @@ endif
 # never be empty.)
 HAVE_LINUX := $(if $(filter Linux,$(UNAME)),1)
 
-OPTIONAL_NAMES := CURL LWS SSL NGHTTP2 PROTOBUFC PIPEWIRE SHERPA LINUX
+OPTIONAL_NAMES := CURL LWS SSL NGHTTP2 PROTOBUFC PIPEWIRE SQLITE SHERPA LINUX
 enabled = $(if $(strip $(foreach n,$(NEEDS_$(1)),$(if $(HAVE_$(n)),,x))),,1)
 BUILT_PKGS := $(foreach p,$(PKGS),$(if $(call enabled,$(p)),$(p)))
 SKIPPED_PKGS := $(filter-out $(BUILT_PKGS),$(PKGS))
@@ -108,7 +108,7 @@ ALL_LIBS := $(strip $(foreach p,$(BUILT_PKGS),$(call lib_of,$(p))))
 ALL_BINS := $(strip $(foreach p,$(BUILT_PKGS),$(patsubst $(p)/bin/%.c,$(O)/bin/%,$(wildcard $(p)/bin/*.c))))
 ALL_TESTS := $(strip $(foreach p,$(BUILT_PKGS),$(patsubst $(p)/tests/%.c,$(O)/tests/$(p)/%,$(wildcard $(p)/tests/test_*.c))))
 
-.PHONY: all test install check-deps gen gen-check clean
+.PHONY: all test netcheck install check-deps gen gen-check clean
 all: $(ALL_LIBS) $(ALL_BINS)
 ifneq ($(SKIPPED_PKGS),)
 	@echo "make: skipped $(SKIPPED_PKGS) (make check-deps says what they need)"
@@ -137,8 +137,14 @@ $$(O)/bin/%: $(1)/bin/%.c $$(call libs_of,$(1))
 endef
 $(foreach p,$(PKGS),$(eval $(call package,$(p))))
 
-test: $(ALL_TESTS)
+test: $(ALL_TESTS) netcheck
 	@fail=0; for t in $(ALL_TESTS); do echo "== $$t"; MARY_SRC=$(CURDIR) $$t || fail=1; done; [ $$fail = 0 ]
+
+# Only sewn may reach the network (Rao's rule, and the Linux twin of Mary's
+# PackageLayeringTests): every other package is grepped for the symbols a
+# network call needs.
+netcheck:
+	@sh testing/netcheck.sh $(filter-out sewn,$(PKGS))
 
 install: all
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/doc/mary $(DESTDIR)$(PREFIX)/share/mary

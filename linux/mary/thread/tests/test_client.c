@@ -10,7 +10,7 @@
 #include "common/io.h"
 #include "common/json.h"
 #include "conduit/grpc.h"
-#include "mary-thread/client.h"
+#include "thread/client.h"
 #include "mary_test.h"
 
 static char dir[64], sock[128];
@@ -32,8 +32,8 @@ static void on_index(const uint8_t *request, size_t len, conduit_reply *reply, v
 
 static void on_library(const uint8_t *request, size_t len, conduit_reply *reply, void *user) {
     Thread__V1__ThreadGroup group = THREAD__V1__THREAD_GROUP__INIT;
-    group.id = MT_GROUP_ID;
-    group.label = MT_GROUP_LABEL;
+    group.id = THREAD_CLIENT_GROUP_ID;
+    group.label = THREAD_CLIENT_GROUP_LABEL;
     group.owner_id = "rao";
     Thread__V1__ThreadGroup *groups[] = { &group };
     Thread__V1__ThreadLibraryResponse resp = THREAD__V1__THREAD_LIBRARY_RESPONSE__INIT;
@@ -49,7 +49,7 @@ static void on_documents(const uint8_t *request, size_t len, conduit_reply *repl
     char *texts[] = { "What is the capital of France?", "Paris." };
     Thread__V1__ThreadDocumentContent doc = THREAD__V1__THREAD_DOCUMENT_CONTENT__INIT;
     doc.id = req && req->n_document_ids ? req->document_ids[0] : "";
-    doc.group_id = MT_GROUP_ID;
+    doc.group_id = THREAD_CLIENT_GROUP_ID;
     doc.n_texts = 2;
     doc.texts = texts;
     Thread__V1__ThreadDocumentContent *docs[] = { &doc };
@@ -87,7 +87,7 @@ static void *serve(void *arg) {
 }
 
 static void start(struct fake *f, pthread_t *thread, int calls, size_t route_count) {
-    snprintf(dir, sizeof dir, "/tmp/mary-thread-XXXXXX");
+    snprintf(dir, sizeof dir, "/tmp/thread-client-XXXXXX");
     MARY_ASSERT(mkdtemp(dir) != NULL);
     snprintf(sock, sizeof sock, "%s/thread.sock", dir);
     f->listener = mc_listen_unix(sock, 0600);
@@ -104,7 +104,7 @@ static void stop(struct fake *f, pthread_t thread) {
     rmdir(dir);
 }
 
-static const mt_turn TURN = {
+static const thread_turn TURN = {
     .owner_id = "rao", .user_text = "What is the capital of France?", .reply = "Paris.",
     .source = "voice", .model = "mistral-medium-latest", .started_ms = 1757700000000LL,
     .ended_ms = 1757700004200LL, .cancelled = false,
@@ -112,7 +112,7 @@ static const mt_turn TURN = {
 
 MARY_TEST(a_turns_document_id_carries_its_start) {
     char id[64];
-    mt_turn_document_id(1757700000000LL, id, sizeof id);
+    thread_turn_document_id(1757700000000LL, id, sizeof id);
     MARY_ASSERT_EQ(strncmp(id, "mary-turn-1757700000000-", 24), 0);
     MARY_ASSERT_EQ(strlen(id), 28);
     MARY_ASSERT_EQ(strspn(id + 24, "0123456789abcdef"), 4);
@@ -121,14 +121,14 @@ MARY_TEST(a_turns_document_id_carries_its_start) {
 MARY_TEST(a_turn_becomes_one_document_in_marys_conversations) {
     size_t len = 0;
     char id[64];
-    uint8_t *packed = mt_turn_index_request(&TURN, &len, id, sizeof id);
+    uint8_t *packed = thread_turn_index_request(&TURN, &len, id, sizeof id);
     MARY_ASSERT(packed != NULL);
     Thread__V1__ThreadIndexRequest *req = thread__v1__thread_index_request__unpack(NULL, len, packed);
     free(packed);
     MARY_ASSERT(req != NULL);
     if (!req) return;
     MARY_ASSERT_STR(req->group_id, "mary-conversations");
-    MARY_ASSERT_STR(req->group_label, MT_GROUP_LABEL);
+    MARY_ASSERT_STR(req->group_label, THREAD_CLIENT_GROUP_LABEL);
     MARY_ASSERT_STR(req->scope, "personal");
     MARY_ASSERT_STR(req->owner_id, "rao");
     MARY_ASSERT_EQ(req->n_items, 1);
@@ -147,17 +147,17 @@ MARY_TEST(a_turn_becomes_one_document_in_marys_conversations) {
     json_object_put(meta);
     thread__v1__thread_index_request__free_unpacked(req, NULL);
 
-    mt_turn empty = TURN;
+    thread_turn empty = TURN;
     empty.user_text = "";
-    MARY_ASSERT(mt_turn_index_request(&empty, &len, NULL, 0) == NULL);
+    MARY_ASSERT(thread_turn_index_request(&empty, &len, NULL, 0) == NULL);
 }
 
 MARY_TEST(a_long_question_is_named_by_its_start_on_a_character_boundary) {
-    mt_turn t = TURN;
+    thread_turn t = TURN;
     /* 59 ASCII bytes, then "é" straddling the 60-byte cut. */
     t.user_text = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\xC3\xA9 and more";
     size_t len = 0;
-    uint8_t *packed = mt_turn_index_request(&t, &len, NULL, 0);
+    uint8_t *packed = thread_turn_index_request(&t, &len, NULL, 0);
     Thread__V1__ThreadIndexRequest *req = thread__v1__thread_index_request__unpack(NULL, len, packed);
     free(packed);
     MARY_ASSERT(req && strlen(req->items[0]->name) == 59);
@@ -170,22 +170,22 @@ MARY_TEST(deposit_library_and_documents_reach_threadd) {
     start(&f, &thread, 3, 3);
     char id[64];
     int status = -1;
-    MARY_ASSERT_EQ(mt_deposit_turn(sock, &TURN, 2000, id, sizeof id, &status), 0);
+    MARY_ASSERT_EQ(thread_client_deposit_turn(sock, &TURN, 2000, id, sizeof id, &status), 0);
     MARY_ASSERT_EQ(status, CONDUIT_OK);
     MARY_ASSERT(indexed && indexed->n_items == 1);
     if (indexed) MARY_ASSERT_STR(indexed->items[0]->document_id, id);
 
     Thread__V1__ThreadLibraryResponse *lib = NULL;
-    MARY_ASSERT_EQ(mt_library(sock, 0, NULL, 2000, &lib, NULL), 0);
+    MARY_ASSERT_EQ(thread_client_library(sock, 0, NULL, 2000, &lib, NULL), 0);
     MARY_ASSERT(lib && lib->n_groups == 1);
     if (lib) {
-        MARY_ASSERT_STR(lib->groups[0]->id, MT_GROUP_ID);
+        MARY_ASSERT_STR(lib->groups[0]->id, THREAD_CLIENT_GROUP_ID);
         thread__v1__thread_library_response__free_unpacked(lib, NULL);
     }
 
     const char *ids[] = { id };
     Thread__V1__ThreadDocumentsResponse *docs = NULL;
-    MARY_ASSERT_EQ(mt_documents(sock, ids, 1, 2000, &docs, NULL), 0);
+    MARY_ASSERT_EQ(thread_client_documents(sock, ids, 1, 2000, &docs, NULL), 0);
     MARY_ASSERT(docs && docs->n_documents == 1);
     if (docs) {
         MARY_ASSERT_STR(docs->documents[0]->id, id);
@@ -201,12 +201,12 @@ MARY_TEST(a_refusal_or_a_missing_threadd_is_an_error) {
     start(&f, &thread, 1, 1);                   /* serves Index only */
     Thread__V1__ThreadLibraryResponse *lib = NULL;
     int status = 0;
-    MARY_ASSERT_EQ(mt_library(sock, 0, NULL, 2000, &lib, &status), -EPROTO);
+    MARY_ASSERT_EQ(thread_client_library(sock, 0, NULL, 2000, &lib, &status), -EPROTO);
     MARY_ASSERT_EQ(status, CONDUIT_UNIMPLEMENTED);
     MARY_ASSERT(lib == NULL);
     stop(&f, thread);
 
-    int rc = mt_deposit_turn("/tmp/no-such-dir/thread.sock", &TURN, 500, NULL, 0, NULL);
+    int rc = thread_client_deposit_turn("/tmp/no-such-dir/thread.sock", &TURN, 500, NULL, 0, NULL);
     MARY_ASSERT(rc == -ENOENT || rc == -ECONNREFUSED);
 }
 

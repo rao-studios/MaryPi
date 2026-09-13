@@ -1,4 +1,5 @@
-/* Talking to sewnd: what sewnctl uses now, and maryd later. */
+/* Talking to sewnd: sewnctl, maryd and threadd use it. The connection and the framed
+ * call are common/service.h; what is sewnd's own is the socket path and key.set. */
 #ifndef MARY_SEWN_CLIENT_H
 #define MARY_SEWN_CLIENT_H
 

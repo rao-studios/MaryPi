@@ -137,8 +137,3 @@ void mf_value_free(mf_value *v) {
     }
     free(v);
 }
-
-const char *mf_privacy_name(mf_privacy privacy) {
-    static const char *const names[] = { "publicDefinition", "private", "sensitive", "secret" };
-    return (unsigned)privacy < sizeof names / sizeof names[0] ? names[privacy] : NULL;
-}

@@ -12,9 +12,11 @@ The store (`thread/store.h`) is private JSON files under `/var/lib/thread`: `nod
 from the kernel's peer credentials; nobody can replace or read another owner's documents, and ids must be
 safe file names.
 
-`thread/peer.h` declares what makes Thread MaryOS's hard drive across machines — mDNS discovery of
-`_thread._tcp`, pairing over mutual TLS with node ids proven by certificate keys, sync over conduit — and
-answers `-ENOSYS` until that milestone.
+Mary's own calls into it (`MaryThread/ThreadDirectClient.swift`) are `thread/client.h` in this same
+package — the Thread is MaryOS's hard drive, not a service Mary is a client of: `thread_client_deposit_turn`
+puts each spoken or typed turn in the `mary-conversations` group (id `mary-turn-<started ms>-<4 hex>`, texts
+`[question, reply]`, metadata `{source, model, started_ms, ended_ms, cancelled}`), and `thread_client_library`
+/ `thread_client_documents` read back. Peering with other machines is Gita's (`gita/peer.h`).
 
 Deviations (PORTING.md 7): JSON files instead of property lists; no embeddings, product quantization,
 search or knowledge graph yet; `owner_id` from credentials, never the request; a unix socket instead of TCP

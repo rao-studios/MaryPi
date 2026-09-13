@@ -1,4 +1,4 @@
-#include "mary-thread/client.h"
+#include "thread/client.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -16,12 +16,12 @@
 #define PATH_DOCUMENTS "/thread.v1.ThreadLibrary/Documents"
 #define NAME_MAX_BYTES 60
 
-const char *mt_default_socket(void) {
+const char *thread_client_default_socket(void) {
     const char *path = getenv("THREAD_SOCKET");
-    return path && *path ? path : MT_SOCKET_PATH;
+    return path && *path ? path : THREAD_CLIENT_SOCKET_PATH;
 }
 
-void mt_turn_document_id(int64_t started_ms, char *out, size_t cap) {
+void thread_turn_document_id(int64_t started_ms, char *out, size_t cap) {
     unsigned char r[2] = { 0, 0 };
     int fd = open("/dev/urandom", O_RDONLY);
     if (fd < 0 || read(fd, r, sizeof r) != (ssize_t)sizeof r) {
@@ -45,10 +45,10 @@ static void turn_name(const char *text, char *out, size_t cap) {
     out[n] = 0;
 }
 
-uint8_t *mt_turn_index_request(const mt_turn *turn, size_t *len, char *document_id, size_t cap) {
+uint8_t *thread_turn_index_request(const thread_turn *turn, size_t *len, char *document_id, size_t cap) {
     if (!turn || !turn->user_text || !*turn->user_text) return NULL;
     char id[64], name[NAME_MAX_BYTES + 1];
-    mt_turn_document_id(turn->started_ms, id, sizeof id);
+    thread_turn_document_id(turn->started_ms, id, sizeof id);
     turn_name(turn->user_text, name, sizeof name);
 
     struct json_object *meta = json_object_new_object();
@@ -72,9 +72,9 @@ uint8_t *mt_turn_index_request(const mt_turn *turn, size_t *len, char *document_
     Thread__V1__ThreadIndexItem *items[] = { &item };
     Thread__V1__ThreadIndexRequest req = THREAD__V1__THREAD_INDEX_REQUEST__INIT;
     req.owner_id = (char *)(turn->owner_id ? turn->owner_id : "");
-    req.group_id = MT_GROUP_ID;
-    req.group_label = MT_GROUP_LABEL;
-    req.scope = MT_SCOPE;
+    req.group_id = THREAD_CLIENT_GROUP_ID;
+    req.group_label = THREAD_CLIENT_GROUP_LABEL;
+    req.scope = THREAD_CLIENT_SCOPE;
     req.n_items = 1;
     req.items = items;
 
@@ -92,9 +92,9 @@ uint8_t *mt_turn_index_request(const mt_turn *turn, size_t *len, char *document_
 /* One unary call on its own connection. On 0, res->body is the caller's to free. */
 static int call(const char *path, const char *method, const uint8_t *request, size_t len, int timeout_ms,
                 conduit_result *res, int *status) {
-    int fd = conduit_connect_unix(path ? path : mt_default_socket());
+    int fd = conduit_connect_unix(path ? path : thread_client_default_socket());
     if (fd < 0) return fd;
-    int rc = conduit_call(fd, method, request, len, timeout_ms > 0 ? timeout_ms : MT_TIMEOUT_MS, res);
+    int rc = conduit_call(fd, method, request, len, timeout_ms > 0 ? timeout_ms : THREAD_CLIENT_TIMEOUT_MS, res);
     close(fd);
     if (rc < 0) return rc;
     if (status) *status = res->status;
@@ -106,10 +106,10 @@ static int call(const char *path, const char *method, const uint8_t *request, si
     return 0;
 }
 
-int mt_deposit_turn(const char *socket_path, const mt_turn *turn, int timeout_ms, char *document_id, size_t cap, int *status) {
+int thread_client_deposit_turn(const char *socket_path, const thread_turn *turn, int timeout_ms, char *document_id, size_t cap, int *status) {
     size_t len = 0;
     char id[64];
-    uint8_t *request = mt_turn_index_request(turn, &len, id, sizeof id);
+    uint8_t *request = thread_turn_index_request(turn, &len, id, sizeof id);
     if (!request) return turn && turn->user_text && *turn->user_text ? -ENOMEM : -EINVAL;
     conduit_result res;
     int rc = call(socket_path, PATH_INDEX, request, len, timeout_ms, &res, status);
@@ -123,7 +123,7 @@ int mt_deposit_turn(const char *socket_path, const mt_turn *turn, int timeout_ms
     return rc;
 }
 
-int mt_library(const char *socket_path, int limit, const char *after_id, int timeout_ms,
+int thread_client_library(const char *socket_path, int limit, const char *after_id, int timeout_ms,
                Thread__V1__ThreadLibraryResponse **out, int *status) {
     Thread__V1__ThreadLibraryRequest req = THREAD__V1__THREAD_LIBRARY_REQUEST__INIT;
     req.limit = limit;
@@ -141,7 +141,7 @@ int mt_library(const char *socket_path, int limit, const char *after_id, int tim
     return *out ? 0 : -EPROTO;
 }
 
-int mt_documents(const char *socket_path, const char *const *ids, size_t count, int timeout_ms,
+int thread_client_documents(const char *socket_path, const char *const *ids, size_t count, int timeout_ms,
                  Thread__V1__ThreadDocumentsResponse **out, int *status) {
     Thread__V1__ThreadDocumentsRequest req = THREAD__V1__THREAD_DOCUMENTS_REQUEST__INIT;
     req.n_document_ids = count;
