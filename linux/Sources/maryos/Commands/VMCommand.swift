@@ -33,6 +33,9 @@ struct VMCommand: ParsableCommand {
         @Flag(name: .long, help: "Give the guest this Mac's microphone (its sound device gains an input), so Mary can hear you. macOS asks once.")
         var microphone = false
 
+        @Flag(name: .customLong("no-clipboard"), help: "Keep this Mac's clipboard out of the guest (by default, what you copy on the Mac pastes in the VM's window while it is in front).")
+        var noClipboard = false
+
         @Option(name: .long, help: "Guest memory in MiB (default \(VMSpec.defaultMemoryMiB)).")
         var memory: Int?
 
@@ -97,7 +100,7 @@ struct VMCommand: ParsableCommand {
                 name: config.fullName, cpus: cpus ?? VMSpec.defaultCPUs, memoryMiB: memory ?? VMSpec.defaultMemoryMiB,
                 disk: state.disk, kernel: state.kernel, initrd: state.initrd, commandLine: mode.commandLine(base: boot.cmdline),
                 macAddress: dryRun ? nil : try VMStateManager.macAddress(state),
-                sharedDirectories: shares, headless: headless, bootMode: mode, microphone: microphone
+                sharedDirectories: shares, headless: headless, bootMode: mode, microphone: microphone, clipboard: !noClipboard
             )
             if dryRun {
                 Output.line("vm: \(spec.name): \(spec.summary)")
@@ -244,7 +247,7 @@ enum VMLauncher {
                                     stopVM: @escaping @Sendable () -> Void) -> Never {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        let window = VMWindowController(machine: machine, title: spec.name, width: spec.displayWidth, height: spec.displayHeight)
+        let window = VMWindowController(machine: machine, title: spec.name, width: spec.displayWidth, height: spec.displayHeight, clipboard: runner.clipboard)
         window.onClose = { stopVM() }
         window.showWindow(nil)
         app.activate(ignoringOtherApps: true)

@@ -25,6 +25,7 @@ service are the same code on both targets.
 | `VZVirtioConsoleDeviceSerialPortConfiguration` with a file-handle attachment | `hvc0`; output to `serial.log`, optionally also to your terminal |
 | `VZVirtioGraphicsDeviceConfiguration` (1280×800 scanout), `VZUSBKeyboardConfiguration`, `VZUSBScreenCoordinatePointingDeviceConfiguration` | the window; `tty1` gets a getty there, so the window is a usable console |
 | `VZVirtioFileSystemDeviceConfiguration` per share | virtiofs; `out/` is always shared as `maryos-out` and mounted at `/mnt/maryos-out` in the guest |
+| `VZVirtioConsoleDeviceConfiguration` with a port named `org.maryos.clipboard` | with a window (unless `--no-clipboard`): the Mac's clipboard, sent while the VM's window is in front, which the desktop pastes from |
 | entropy, memory balloon | the usual |
 
 Ubuntu's generic kernel carries all of these as modules and the initramfs

@@ -99,11 +99,13 @@ public struct VMSpec: Sendable, Equatable {
     public var bootMode: VMBootMode
     /// The Mac's microphone as the guest's sound input (`maryos vm run --microphone`), so Mary can hear.
     public var microphone: Bool
+    /// The Mac's clipboard shared into a windowed guest (`VMClipboardBridge`); `vm run --no-clipboard` turns it off.
+    public var clipboard: Bool
 
     public init(name: String, cpus: Int, memoryMiB: Int, disk: URL, kernel: URL, initrd: URL?, commandLine: String,
                 macAddress: String? = nil, sharedDirectories: [SharedDirectory] = [],
                 displayWidth: Int = VMSpec.defaultDisplayWidth, displayHeight: Int = VMSpec.defaultDisplayHeight, headless: Bool = false,
-                bootMode: VMBootMode = .console, microphone: Bool = false) {
+                bootMode: VMBootMode = .console, microphone: Bool = false, clipboard: Bool = true) {
         self.name = name
         self.cpus = cpus
         self.memoryMiB = memoryMiB
@@ -118,6 +120,7 @@ public struct VMSpec: Sendable, Equatable {
         self.headless = headless
         self.bootMode = bootMode
         self.microphone = microphone
+        self.clipboard = clipboard
     }
 
     public var summary: String {

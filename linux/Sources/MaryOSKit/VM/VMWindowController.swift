@@ -8,8 +8,9 @@ public final class VMWindowController: NSWindowController, NSWindowDelegate {
     public let machineView: VZVirtualMachineView
     /// Called when the user closes the window; the caller stops the VM.
     public var onClose: (@MainActor () -> Void)?
+    private var clipboardSync: VMClipboardSync?
 
-    public init(machine: VZVirtualMachine, title: String, width: Int, height: Int) {
+    public init(machine: VZVirtualMachine, title: String, width: Int, height: Int, clipboard: VMClipboardBridge? = nil) {
         let size = NSSize(width: width, height: height)
         machineView = VZVirtualMachineView(frame: NSRect(origin: .zero, size: size))
         machineView.virtualMachine = machine
@@ -24,6 +25,7 @@ public final class VMWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
+        if let clipboard { clipboardSync = VMClipboardSync(bridge: clipboard, window: window) }
     }
 
     @available(*, unavailable)
@@ -32,6 +34,7 @@ public final class VMWindowController: NSWindowController, NSWindowDelegate {
     }
 
     public func windowWillClose(_ notification: Notification) {
+        clipboardSync?.invalidate()
         onClose?()
     }
 }

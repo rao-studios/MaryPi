@@ -45,7 +45,11 @@ System Settings › Mary has a masked field. Save hands the key to maryd, which 
 `key.set` and zeroes every copy it saw; the field zeroes itself too. sewnd checks the caller's credentials as
 the kernel reports them (`SO_PEERCRED`) and refuses anyone outside `sudo`, writes the key atomically to
 `/var/lib/sewn/mistral.key` (0600, in a 0700 directory), and never logs it or sends it back: there is no
-`key.get`. Verify asks sewnd to try the key with Mistral, and the pane shows the answer. From a terminal:
+`key.get`. Verify asks sewnd to try the key with Mistral, and the pane shows the answer.
+
+In the VM, copy the key on the Mac and paste it into the field (right-click › Paste, or Ctrl+V): while the
+VM's window is in front, what you copy on the Mac becomes the guest's clipboard. It only goes that way, and
+`maryos vm run --no-clipboard` keeps the Mac's clipboard out. From a terminal:
 
 ```sh
 sewnctl set        # reads the key from standard input with echo off, never from the command line

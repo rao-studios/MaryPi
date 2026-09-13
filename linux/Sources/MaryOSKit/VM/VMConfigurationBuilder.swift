@@ -9,8 +9,8 @@ import Virtualization
 public enum VMConfigurationBuilder {
     /// The assembled and validated configuration. Validation needs the
     /// virtualization entitlement, so unsigned processes fail here.
-    public static func make(_ spec: VMSpec, serialInput: FileHandle?, serialOutput: FileHandle) throws -> VZVirtualMachineConfiguration {
-        let configuration = try assemble(spec, serialInput: serialInput, serialOutput: serialOutput)
+    public static func make(_ spec: VMSpec, serialInput: FileHandle?, serialOutput: FileHandle, clipboard: VZSerialPortAttachment? = nil) throws -> VZVirtualMachineConfiguration {
+        let configuration = try assemble(spec, serialInput: serialInput, serialOutput: serialOutput, clipboard: clipboard)
         do {
             try configuration.validate()
         } catch {
@@ -20,7 +20,7 @@ public enum VMConfigurationBuilder {
     }
 
     /// The configuration without validation.
-    public static func assemble(_ spec: VMSpec, serialInput: FileHandle?, serialOutput: FileHandle) throws -> VZVirtualMachineConfiguration {
+    public static func assemble(_ spec: VMSpec, serialInput: FileHandle?, serialOutput: FileHandle, clipboard: VZSerialPortAttachment? = nil) throws -> VZVirtualMachineConfiguration {
         let configuration = VZVirtualMachineConfiguration()
 
         let bootLoader = VZLinuxBootLoader(kernelURL: spec.kernel)
@@ -69,6 +69,15 @@ public enum VMConfigurationBuilder {
                 sound.streams.append(input)
             }
             configuration.audioDevices = [sound]
+            // The Mac's clipboard, on a named port the desktop reads (VMClipboardBridge).
+            if let clipboard {
+                let console = VZVirtioConsoleDeviceConfiguration()
+                let port = VZVirtioConsolePortConfiguration()
+                port.name = VMClipboardBridge.portName
+                port.attachment = clipboard
+                console.ports[0] = port
+                configuration.consoleDevices = [console]
+            }
         }
 
         var shares: [VZDirectorySharingDeviceConfiguration] = []

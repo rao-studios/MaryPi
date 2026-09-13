@@ -48,11 +48,30 @@ import Virtualization
         #expect(sound?.streams.count == 2)
         #expect(sound?.streams.contains { ($0 as? VZVirtioSoundDeviceInputStreamConfiguration)?.source is VZHostAudioInputStreamSource } == true)
 
+        #expect(configuration.consoleDevices.isEmpty)
+        let bridge = VMClipboardBridge()
+        let shared = try VMConfigurationBuilder.assemble(spec, serialInput: nil, serialOutput: output, clipboard: bridge.attachment)
+        let console = shared.consoleDevices.first as? VZVirtioConsoleDeviceConfiguration
+        #expect(console?.ports[0]?.name == VMClipboardBridge.portName)
+        #expect(console?.ports[0]?.isConsole == false)
+
         var headless = spec
         headless.headless = true
         let plain = try VMConfigurationBuilder.assemble(headless, serialInput: nil, serialOutput: output)
         #expect(plain.graphicsDevices.isEmpty)
         #expect(plain.keyboards.isEmpty)
+        #expect(try VMConfigurationBuilder.assemble(headless, serialInput: nil, serialOutput: output, clipboard: VMClipboardBridge().attachment).consoleDevices.isEmpty)
+    }
+
+    @Test func clipboardMessages() throws {
+        #expect(VMClipboardBridge.frame("hi") == Data([2, 0, 0, 0, 0x68, 0x69]))
+        #expect(VMClipboardBridge.frame("é")?.count == 6)
+        #expect(VMClipboardBridge.frame("") == nil)
+        #expect(VMClipboardBridge.frame(String(repeating: "a", count: VMClipboardBridge.maximumBytes + 1)) == nil)
+        let bridge = VMClipboardBridge()
+        bridge.send("key")
+        #expect(bridge.toGuest.fileHandleForReading.readData(ofLength: 7) == Data([3, 0, 0, 0, 0x6b, 0x65, 0x79]))
+        #expect(VMSpec(name: "M", cpus: 1, memoryMiB: 1024, disk: URL(fileURLWithPath: "/d"), kernel: URL(fileURLWithPath: "/k"), initrd: nil, commandLine: "").clipboard)
     }
 
     @Test func rejectsBadInput() throws {

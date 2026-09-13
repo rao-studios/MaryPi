@@ -72,6 +72,8 @@ public final class VMRunner {
     private var delegate: VMDelegate?
     private var logHandle: FileHandle?
     private var tee: ConsoleTee?
+    /// The Mac's clipboard for this guest, when it has a window and the spec shares it.
+    public private(set) var clipboard: VMClipboardBridge?
     private var tailer: LogTailer?
     private var consumer: Task<Void, Never>?
     private var waiters: [CheckedContinuation<State, Never>] = []
@@ -117,7 +119,9 @@ public final class VMRunner {
             output = log
         }
 
-        let configuration = try VMConfigurationBuilder.make(spec, serialInput: consoleInput, serialOutput: output)
+        let bridge = spec.headless || !spec.clipboard ? nil : VMClipboardBridge()
+        clipboard = bridge
+        let configuration = try VMConfigurationBuilder.make(spec, serialInput: consoleInput, serialOutput: output, clipboard: bridge?.attachment)
         let vm = VZVirtualMachine(configuration: configuration)
         let delegate = VMDelegate(
             onGuestStop: { [weak self] in self?.finish(.stopped("the guest shut down")) },

@@ -10,7 +10,7 @@ struct VMWindowView: View {
     var body: some View {
         Group {
             if let machine = model.vm?.machine {
-                VMView(machine: machine)
+                VMView(machine: machine, clipboard: model.vm?.clipboard)
             } else {
                 ContentUnavailableView {
                     Label("No VM running", systemImage: "desktopcomputer")
@@ -32,12 +32,31 @@ struct VMWindowView: View {
 
 struct VMView: NSViewRepresentable {
     let machine: VZVirtualMachine
+    let clipboard: VMClipboardBridge?
+
+    @MainActor
+    final class Coordinator {
+        var sync: VMClipboardSync?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> VZVirtualMachineView {
         let view = VZVirtualMachineView()
         view.capturesSystemKeys = true
         view.virtualMachine = machine
+        // The Mac's clipboard follows into the guest while this window is in front; the view has no window until it is shown.
+        if let clipboard {
+            let coordinator = context.coordinator
+            Task { @MainActor in
+                if let window = view.window { coordinator.sync = VMClipboardSync(bridge: clipboard, window: window) }
+            }
+        }
         return view
+    }
+
+    static func dismantleNSView(_ view: VZVirtualMachineView, coordinator: Coordinator) {
+        coordinator.sync?.invalidate()
     }
 
     func updateNSView(_ view: VZVirtualMachineView, context: Context) {
