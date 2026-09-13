@@ -20,7 +20,9 @@ typedef struct mr_turn_events {
     void (*audio)(const float *samples, size_t count, void *user);    /* 24 kHz mono, in order */
     void (*tts_failed)(long status, const char *message, void *user);    /* the voice stopped; the text carries on */
     void (*error)(const char *stage, const char *message, void *user);
-    void (*end)(bool completed, void *user);    /* last, exactly once: completed means turn.end arrived */
+    /* Last, exactly once: completed means turn.end arrived, and `end` is that frame (borrowed; NULL otherwise) —
+     * sewnd's turn.end carries the visible text, Gita's contribution and what was retrieved. */
+    void (*end)(bool completed, struct json_object *end, void *user);
 } mr_turn_events;
 
 typedef struct mr_turn mr_turn;

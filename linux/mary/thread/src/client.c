@@ -58,6 +58,14 @@ uint8_t *thread_turn_index_request(const thread_turn *turn, size_t *len, char *d
     json_object_object_add(meta, "started_ms", json_object_new_int64(turn->started_ms));
     json_object_object_add(meta, "ended_ms", json_object_new_int64(turn->ended_ms));
     json_object_object_add(meta, "cancelled", json_object_new_boolean(turn->cancelled));
+    if (turn->contribution && *turn->contribution) {
+        struct json_object *c = mc_json_parse(turn->contribution, strlen(turn->contribution));
+        if (c) json_object_object_add(meta, "contribution", c);
+    }
+    if (turn->retrieved && *turn->retrieved) {
+        struct json_object *r = mc_json_parse(turn->retrieved, strlen(turn->retrieved));
+        if (r) json_object_object_add(meta, "retrieved", r);
+    }
     size_t meta_len = 0;
     const char *meta_text = mc_json_compact(meta, &meta_len);
 

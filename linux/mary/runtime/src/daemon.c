@@ -62,6 +62,7 @@ struct mr_daemon {
         bool voice, failed, audio_started, draining, speaker_reported;
         char *question;
         mc_buf reply;
+        struct json_object *contribution, *retrieved;   /* sewnd's turn.end: Gita's contribution and what was retrieved */
         int64_t started_wall, quiet_since, audio_started_ms;
     } turn;
     atomic_bool turn_stopping;      /* the audio callback gives up waiting for room */
@@ -227,7 +228,7 @@ static void voices_job(mr_daemon *d, mr_client *c) {
 struct deposit_job {
     mr_daemon *d;
     thread_turn turn;
-    char *question, *reply;
+    char *question, *reply, *contribution, *retrieved;
     char owner[64];
 };
 
@@ -242,8 +243,17 @@ static void *deposit_worker(void *arg) {
     atomic_fetch_sub(&job->d->workers, 1);
     free(job->question);
     free(job->reply);
+    free(job->contribution);
+    free(job->retrieved);
     free(job);
     return NULL;
+}
+
+static char *json_copy(struct json_object *o) {
+    if (!o) return NULL;
+    size_t n = 0;
+    const char *text = mc_json_compact(o, &n);
+    return text ? strndup(text, n) : NULL;
 }
 
 static void deposit(mr_daemon *d, bool cancelled) {
@@ -256,9 +266,11 @@ static void deposit(mr_daemon *d, bool cancelled) {
     }
     job->d = d;
     snprintf(job->owner, sizeof job->owner, "%s", d->owner);
+    job->contribution = json_copy(d->turn.contribution);
+    job->retrieved = json_copy(d->turn.retrieved);
     job->turn = (thread_turn){ .owner_id = job->owner, .user_text = job->question, .reply = job->reply,
                            .source = d->turn.voice ? "voice" : "typed", .started_ms = d->turn.started_wall,
-                           .ended_ms = mc_wall_ms(), .cancelled = cancelled };
+                           .ended_ms = mc_wall_ms(), .cancelled = cancelled, .contribution = job->contribution, .retrieved = job->retrieved };
     spawn(d, deposit_worker, job);
 }
 
@@ -303,9 +315,12 @@ static void on_turn_error(const char *stage, const char *message, void *user) {
     post_turn(user, o);
 }
 
-static void on_turn_end(bool completed, void *user) {
-    struct json_object *o = typed("turn.end");
+static void on_turn_end(bool completed, struct json_object *end, void *user) {
+    struct json_object *o = typed("turn.end"), *v;
     json_object_object_add(o, "completed", json_object_new_boolean(completed));
+    /* Gita's contribution and what was retrieved ride along to the desktop and the Thread. */
+    if (end && json_object_object_get_ex(end, "contribution", &v)) json_object_object_add(o, "contribution", json_object_get(v));
+    if (end && json_object_object_get_ex(end, "retrieved", &v)) json_object_object_add(o, "retrieved", json_object_get(v));
     post_turn(user, o);
 }
 
@@ -339,7 +354,12 @@ static void close_turn(mr_daemon *d, bool cancelled) {
     if (*reply || !d->turn.failed) deposit(d, cancelled);
     struct json_object *o = typed("reply.end");
     json_object_object_add(o, "cancelled", json_object_new_boolean(cancelled));
+    if (d->turn.contribution) json_object_object_add(o, "contribution", json_object_get(d->turn.contribution));
+    if (d->turn.retrieved) json_object_object_add(o, "retrieved", json_object_get(d->turn.retrieved));
     broadcast(d, o);
+    if (d->turn.contribution) json_object_put(d->turn.contribution);
+    if (d->turn.retrieved) json_object_put(d->turn.retrieved);
+    d->turn.contribution = d->turn.retrieved = NULL;
 }
 
 static void reset_turn(mr_daemon *d) {
@@ -388,7 +408,7 @@ static void on_sample_failed(long status, const char *message, void *user) {
 
 static void on_sample_error(const char *stage, const char *message, void *user) { on_sample_failed(0, message, user); }
 
-static void on_sample_end(bool completed, void *user) { post_sample(user, typed("sample.end")); }
+static void on_sample_end(bool completed, struct json_object *end, void *user) { post_sample(user, typed("sample.end")); }
 
 static const mr_turn_events sample_events = { .audio = on_sample_audio, .tts_failed = on_sample_failed,
                                               .error = on_sample_error, .end = on_sample_end };
@@ -577,6 +597,9 @@ static void on_turn_event(mr_daemon *d, const char *type, struct json_object *ev
         bool completed = false;
         mc_json_bool(ev, "completed", &completed);
         bool failed = d->turn.failed && !d->turn.reply.len;
+        struct json_object *v;
+        if (json_object_object_get_ex(ev, "contribution", &v)) d->turn.contribution = json_object_get(v);
+        if (json_object_object_get_ex(ev, "retrieved", &v)) d->turn.retrieved = json_object_get(v);
         close_turn(d, false);
         if (failed) {
             set_state(d, MV_STATE_ERROR);

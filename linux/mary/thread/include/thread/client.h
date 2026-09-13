@@ -9,7 +9,8 @@
  *   group     conversation-<owner> ("Conversation"; the conversation lane), scope "personal"
  *   document  mary-turn-<started ms>-<4 hex>
  *   texts     [what the user said, what Mary answered]
- *   metadata  {family: "conversation", source, model, started_ms, ended_ms, cancelled}  (JSON bytes)
+ *   metadata  {family: "conversation", source, model, started_ms, ended_ms, cancelled,
+ *              contribution?, retrieved?}  (JSON bytes)
  *
  * Results: 0; -errno when threadd cannot be reached or the call fails on the way
  * (-ETIMEDOUT, -EMSGSIZE); -EPROTO when threadd answered with a gRPC status other
@@ -43,6 +44,8 @@ typedef struct thread_turn {
     int64_t started_ms;         /* wall clock */
     int64_t ended_ms;
     bool cancelled;
+    const char *contribution;   /* Gita's contribution for the reply, as JSON text, or NULL */
+    const char *retrieved;      /* what the reply drew on, [{document_id, group_id, family, lane, score}], or NULL */
 } thread_turn;
 
 /* "mary-turn-<started_ms>-<4 hex>", the id a turn's document gets. */

@@ -212,6 +212,10 @@ int thread_store_parity_report(thread_store *s, const char *owner, int64_t *run_
     int64_t started = 0;
     if (rc == 0 && (!run_id || *run_id <= 0)) {
         started = mc_wall_ms();
+        /* Every row this run does not touch must read as older than it, even on a clock that ticks once
+         * a millisecond: a run starts strictly after the newest row was seen. */
+        int64_t newest = thread_db_int(s->db, "SELECT COALESCE(MAX(seen_ms), 0) FROM files WHERE owner = ?", owner, NULL);
+        if (newest >= started) started = newest + 1;
         if (sqlite3_prepare_v2(s->db, "INSERT INTO parity_runs(owner, started_ms) VALUES(?, ?)", -1, &stmt, NULL) == SQLITE_OK) {
             thread_db_bind_text(stmt, 1, owner);
             sqlite3_bind_int64(stmt, 2, started);

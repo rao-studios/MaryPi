@@ -25,6 +25,7 @@ struct mr_turn {
     size_t start_len;
     float *pcm;
     size_t pcm_cap;
+    struct json_object *end;    /* sewnd's turn.end, kept for the end callback */
 };
 
 static int on_frame(uint8_t kind, const unsigned char *p, size_t len, void *user) {
@@ -64,6 +65,8 @@ static int on_frame(uint8_t kind, const unsigned char *p, size_t len, void *user
         if (t->ev.error) t->ev.error(stage ? stage : "sewnd", message ? message : "sewnd reported an error", t->user);
     } else if (strcmp(type, "turn.end") == 0 || strcmp(type, "speak.end") == 0) {
         t->completed = true;
+        if (t->end) json_object_put(t->end);
+        t->end = json_object_get(msg);
         stop = 1;
     }
     json_object_put(msg);
@@ -82,7 +85,8 @@ static void *run(void *arg) {
     }
     if (rc < 0 && !atomic_load(&t->cancelled) && t->ev.error)
         t->ev.error("sewnd", rc == -EAGAIN ? "sewnd stopped answering" : strerror(-rc), t->user);
-    if (t->ev.end) t->ev.end(t->completed && !atomic_load(&t->cancelled), t->user);
+    bool completed = t->completed && !atomic_load(&t->cancelled);
+    if (t->ev.end) t->ev.end(completed, completed ? t->end : NULL, t->user);
     return NULL;
 }
 
@@ -134,5 +138,6 @@ void mr_turn_free(mr_turn *t) {
     close(t->fd);
     free(t->start);
     free(t->pcm);
+    if (t->end) json_object_put(t->end);
     free(t);
 }

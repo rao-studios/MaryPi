@@ -72,7 +72,9 @@ static void *sewn_connection(void *arg) {
                 unsigned char pcm[480 * 4] = { 0 };
                 mc_frame_write_fd(fd, MC_FRAME_PCM, pcm, sizeof pcm);
             }
-            send_json(fd, "{\"type\":\"turn.end\"}");
+            send_json(fd, "{\"type\":\"turn.end\",\"text\":\"Hello there.\",\"contribution\":{\"owners\":[{\"thread_id\":\"\",\"owner_id\":\"mary\","
+                          "\"document_ids\":[\"file-1\"],\"influence\":{\"file-1\":1},\"royalty\":1,\"spans\":[{\"lower\":0,\"upper\":12}]}]},"
+                          "\"retrieved\":[{\"document_id\":\"file-1\",\"group_id\":\"files-mary\",\"family\":\"file\",\"lane\":\"personal\",\"score\":4.2}]}");
         } else if (strcmp(type, "transcribe.start") == 0) {
             atomic_fetch_add(&transcribes, 1);
             send_json(fd, "{\"type\":\"transcribe.ready\"}");
@@ -319,6 +321,11 @@ MARY_TEST(a_typed_question_streams_a_reply_and_is_deposited_in_thread) {
     MARY_ASSERT(end != NULL);
     bool cancelled = true;
     MARY_ASSERT(end && mc_json_bool(end, "cancelled", &cancelled) && !cancelled);
+    /* Gita's contribution and what was retrieved come with the end of the reply (the highlights) */
+    struct json_object *owners = mc_json_array(mc_json_object(end, "contribution"), "owners");
+    MARY_ASSERT(owners && json_object_array_length(owners) == 1);
+    MARY_ASSERT_EQ(json_object_array_length(mc_json_array(json_object_array_get_idx(owners, 0), "spans")), 1);
+    MARY_ASSERT_EQ(json_object_array_length(mc_json_array(end, "retrieved")), 1);
     json_object_put(end);
     /* Other broadcasts (key.status) may land in between; the order that matters is this. */
     const char *said = strstr(seen, "transcript "), *thinking = strstr(seen, "state:thinking "),
