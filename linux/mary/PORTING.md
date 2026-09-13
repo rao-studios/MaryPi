@@ -46,7 +46,15 @@ compiles, behaviour is not ported; *planned* — the package exists only as a RE
 
 ## common — no Swift twin
 
-JSON (json-c), Server-Sent Events, base64, frames, `mc_secure_zero`, log. Planned.
+What Swift gets from Foundation, URLSession and swift-nio.
+
+| Swift | C | Status |
+|---|---|---|
+| `Sewn/Sources/Providers/ModelProvider+Stream.swift` (`sseStream`) | `common/include/common/sse.h`, `src/sse.c` | working — incremental; Sewn buffers the whole body on Linux |
+| `Mary/Sources/MaryBrain/Sewn/SewnRealtimeWire.swift` (frame handling) | `common/include/common/frame.h`, `src/frame.c` | working — length-prefixed frames on a unix socket replace WebSocket frames |
+| Foundation `JSONSerialization` / `Codable` | `common/include/common/json.h` (json-c) | working |
+| Foundation `Data(base64Encoded:)` | `common/include/common/base64.h` | working |
+| — | `common/include/common/{buf,lines,secure,io,log}.h` | working |
 
 ## conduit ← Conduit
 
