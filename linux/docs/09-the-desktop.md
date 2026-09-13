@@ -521,6 +521,24 @@ stop maryos-desktop` gives `tty1` back to a getty.
 
 ## Verified
 
+On September 13, 2026, the last three system apps in the `--dev` loop, with MaryUI at
+905f8f9 and then 465a075, on a VM disk made before this image added iwd and the polkit
+rule (that image was built but has not booted). System Settings opens from Spotlight;
+General shows the View choices and 24-hour time, Sound reads the sink's volume (40,
+matching `wpctl get-volume`), Date & Time shows the date, `UTC` and automatic time as
+`timedatectl show` reports them, and About shows MaryOS 0.0, four virtual Apple silicon
+cores, 3.82 GB and the kernel. Nothing was changed from the app, and the Network, Dock,
+Displays and Keyboard & Mouse panes were not driven; the VM has no Wi-Fi card.
+The Media Player, opened from the Finder, played a spoken AAC clip to its end and a
+six-second VP8 and Vorbis WebM with its picture drawing and the scrubber moving, then
+went on to the next file in the folder. That next file, a `screencapture -V` movie of a
+still screen, is refused by GStreamer itself (qtdemux drops a track shorter than a
+fifth of the movie), and the player says so. Calendar opens on this month; `⌘N`, a title
+and Return made `Standup` at 9:00, drawn in today's cell and written as a floating-time
+`.ics` in `~/.local/share/maryui/calendar`. Two faults turned up and are fixed in
+465a075: the desktop took `⌘N` before Calendar, whose menu lists it, and opened a Finder
+window; and a WebM's track name, `Audio`, became the video's title.
+
 On September 12, 2026, with MaryUI at 00264b1 in the `--dev` loop: a guest with
 no `settings.conf` shows the ambient clock top right; `clock=off` in
 `~/.config/maryui/settings.conf` and a restart of `maryos-desktop` bring the
