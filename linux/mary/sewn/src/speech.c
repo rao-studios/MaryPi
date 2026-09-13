@@ -106,6 +106,16 @@ static const char *reason_of(struct json_object *obj) {
     return said;
 }
 
+void sewn_mistral_reason(const char *body, size_t len, char *out, size_t cap) {
+    if (!cap) return;
+    out[0] = 0;
+    struct json_object *obj = body && len ? mc_json_parse(body, len) : NULL;
+    const char *said = reason_of(obj);
+    if (said) clean(said, strlen(said), out, cap);
+    else if (body && len && body[0] != '<' && body[0] != '{') clean(body, len, out, cap);   /* plain text, not a page */
+    json_object_put(obj);
+}
+
 void sewn_speech_failure(long status, const char *body, size_t len, char *out, size_t cap) {
     if (!cap) return;
     if (status == 401) {
@@ -116,12 +126,8 @@ void sewn_speech_failure(long status, const char *body, size_t len, char *out, s
         snprintf(out, cap, "Mistral is rate-limiting this key");
         return;
     }
-    char reason[REASON_MAX + 1] = "";
-    struct json_object *obj = body && len ? mc_json_parse(body, len) : NULL;
-    const char *said = reason_of(obj);
-    if (said) clean(said, strlen(said), reason, sizeof reason);
-    else if (body && len && body[0] != '<' && body[0] != '{') clean(body, len, reason, sizeof reason);   /* plain text, not a page */
-    json_object_put(obj);
+    char reason[REASON_MAX + 1];
+    sewn_mistral_reason(body, len, reason, sizeof reason);
     if (status == 403 && reason[0]) snprintf(out, cap, "Mistral refused to speak it (HTTP 403: %s)", reason);
     else if (status == 403) snprintf(out, cap, "Mistral refused to speak it (HTTP 403)");
     else if (reason[0]) snprintf(out, cap, "Mistral answered HTTP %ld: %s", status, reason);

@@ -1,6 +1,6 @@
 /* sewnd's side of its socket. A connection carries one operation, named by its
  * first frame: `key.status`, `key.set{key}`, `key.verify`, `turn.start` (sewn/turn.h)
- * and `transcribe.start` (sewn/transcribe.h). Replies are JSON frames:
+ * `transcribe.start` (sewn/transcribe.h), and `voices.list` and `speak` (sewn/voices.h). Replies are JSON frames:
  * `key.status{present, verified_at, ok?, message?}` or `error{stage, message}`. */
 #ifndef MARY_SEWN_SERVER_H
 #define MARY_SEWN_SERVER_H
@@ -8,12 +8,17 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "common/buf.h"
 #include "sewn/key.h"
 #include "sewn/peer.h"
 #include "sewn/transport.h"
 
 /* Checks a key with Mistral: 1 accepted, 0 refused, -errno unreachable. */
 typedef int (*sewn_verify_fn)(const char *key, char *message, size_t cap, void *user);
+/* GETs https://api.mistral.ai<path> with the key: at most `max` bytes of the body into `body`, the HTTP status into
+ * *status. 0; -EMSGSIZE for a longer body; -EIO with `message` filled when Mistral could not be reached. */
+typedef int (*sewn_get_fn)(const char *path, const char *key, mc_buf *body, size_t max, long *status, char *message,
+                           size_t cap, void *user);
 
 typedef struct sewn_service {
     sewn_key_store keys;
@@ -21,6 +26,8 @@ typedef struct sewn_service {
     sewn_group_fn in_group;
     sewn_verify_fn verify;      /* NULL when built without libcurl */
     void *verify_user;
+    sewn_get_fn get;                    /* NULL when built without libcurl */
+    void *get_user;
     sewn_post_stream_fn post_stream;    /* NULL when built without libcurl */
     void *post_stream_user;
     const sewn_ws_ops *ws;              /* NULL when built without libwebsockets */

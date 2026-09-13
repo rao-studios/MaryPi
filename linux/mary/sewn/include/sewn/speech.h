@@ -29,6 +29,10 @@ typedef struct sewn_speech {
 int sewn_speak(const sewn_service *svc, const char *key, const sewn_speech *speech, sewn_pcm_fn on_pcm,
                sewn_stop_fn should_stop, void *user, long *status, char *message, size_t cap);
 
+/* Mistral's own reason in an error body (`message`, `detail`, `detail[0].msg`, `error.message`, or plain text that is
+ * not a page), on one line and trimmed; "" when there is none. */
+void sewn_mistral_reason(const char *body, size_t len, char *out, size_t cap);
+
 /* A refusal in words, from its status and the body that came with it: Mistral's own `message`, `detail`,
  * `detail[0].msg` or `error.message`, on one line and trimmed. 401 is the key. 403 is Mistral refusing to
  * speak the text (moderation, or an account without speech), never the key. */

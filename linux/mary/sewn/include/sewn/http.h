@@ -8,6 +8,7 @@
 
 #include <stddef.h>
 
+#include "common/buf.h"
 #include "sewn/transport.h"
 
 #define SEWN_HTTP_CONNECT_TIMEOUT_MS 10000
@@ -23,6 +24,9 @@ void sewn_http_free_headers(struct curl_slist *headers);
 /* GET /v1/models with the key: 1 when Mistral accepts it, 0 when it refuses
  * (`message` says how), or -EIO when Mistral could not be reached. */
 int sewn_mistral_verify(const char *key, char *message, size_t cap, void *user);
+
+/* sewn_get_fn over libcurl (the voices list): 20 s at most. */
+int sewn_http_get(const char *path, const char *key, mc_buf *body, size_t max, long *status, char *message, size_t cap, void *user);
 
 /* sewn_post_stream_fn over libcurl: POST to https://api.mistral.ai<path> with
  * Accept: text/event-stream. A stalled stream (under 1 byte a second for 60 s) fails. */

@@ -1,6 +1,7 @@
 /* sewnctl: sewnd's key from a terminal. `set` reads the key from standard input,
  * with echo off on a terminal — never from the command line, where any user
- * could read it in /proc. */
+ * could read it in /proc. `voices` lists Mistral's voices, and `speak` writes one
+ * text's audio to standard output, to hear sewnd and Mistral without maryd. */
 #if defined(__APPLE__)
 #define _DARWIN_C_SOURCE
 #endif
@@ -13,6 +14,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "common/frame.h"
+#include "common/io.h"
 #include "common/json.h"
 #include "common/secure.h"
 #include "sewn/client.h"
@@ -75,19 +78,134 @@ static ssize_t read_secret_line(char *out, size_t cap) {
 }
 
 static void usage(FILE *to) {
-    fprintf(to, "usage: sewnctl [--socket PATH] status | verify | set\n"
-                "  set reads the Mistral API key from standard input, never from the command line\n");
+    fprintf(to, "usage: sewnctl [--socket PATH] status | verify | set | voices | speak VOICE TEXT\n"
+                "  set reads the Mistral API key from standard input, never from the command line\n"
+                "  speak writes 24 kHz mono float32 to standard output:\n"
+                "    sewnctl speak fr_marie_neutral \"Bonjour\" | pw-cat --playback --format f32 --rate 24000 --channels 1 -\n");
+}
+
+static int list_voices(const char *socket_path) {
+    int fd = sewn_connect(socket_path);
+    if (fd < 0) {
+        fprintf(stderr, "sewnctl: cannot reach sewnd at %s: %s\n", socket_path, strerror(-fd));
+        return 1;
+    }
+    struct json_object *request = json_object_new_object(), *reply = NULL;
+    json_object_object_add(request, "type", json_object_new_string("voices.list"));
+    int rc = sewn_call(fd, request, &reply);
+    json_object_put(request);
+    close(fd);
+    if (rc < 0) {
+        fprintf(stderr, "sewnctl: %s\n", strerror(-rc));
+        return 1;
+    }
+    const char *type = mc_json_type(reply);
+    struct json_object *voices = type && strcmp(type, "voices") == 0 ? mc_json_array(reply, "voices") : NULL;
+    if (!voices) {
+        int status = print_reply(reply);
+        json_object_put(reply);
+        return status ? status : 1;
+    }
+    size_t n = json_object_array_length(voices);
+    for (size_t i = 0; i < n; i++) {
+        struct json_object *voice = json_object_array_get_idx(voices, i), *languages = mc_json_array(voice, "languages");
+        char langs[64] = "";
+        for (size_t k = 0; languages && k < json_object_array_length(languages); k++) {
+            const char *language = json_object_get_string(json_object_array_get_idx(languages, k));
+            size_t used = strlen(langs);
+            snprintf(langs + used, sizeof langs - used, "%s%s", k ? "," : "", language ? language : "");
+        }
+        bool custom = false;
+        mc_json_bool(voice, "custom", &custom);
+        printf("%-40s %-24s %s%s\n", or_else(mc_json_string(voice, "voice_id"), "?"), or_else(mc_json_string(voice, "name"), ""),
+               langs, custom ? "  (yours)" : "");
+    }
+    if (!n) printf("no voices\n");
+    json_object_put(reply);
+    return 0;
+}
+
+struct spoken {
+    size_t bytes;
+    int status;
+};
+
+static int on_speech(uint8_t kind, const unsigned char *bytes, size_t len, void *user) {
+    struct spoken *s = user;
+    if (kind == MC_FRAME_PCM) {
+        if (fwrite(bytes, 1, len, stdout) != len) {
+            s->status = 1;
+            return 1;
+        }
+        s->bytes += len;
+        return 0;
+    }
+    struct json_object *msg = mc_json_parse((const char *)bytes, len);
+    const char *type = mc_json_type(msg);
+    int stop = 0;
+    if (type && strcmp(type, "tts.failed") == 0) {
+        fprintf(stderr, "sewnctl: not spoken: %s\n", or_else(mc_json_string(msg, "message"), "Mistral could not speak it"));
+        s->status = 1;
+    } else if (type && strcmp(type, "error") == 0) {
+        fprintf(stderr, "sewnctl: %s: %s\n", or_else(mc_json_string(msg, "stage"), "error"), or_else(mc_json_string(msg, "message"), "no message"));
+        s->status = 1;
+        stop = 1;
+    } else if (type && strcmp(type, "speak.end") == 0) {
+        stop = 1;
+    }
+    json_object_put(msg);
+    return stop;
+}
+
+/* One text's audio, 24 kHz mono float32, to standard output: pipe it to pw-cat. */
+static int speak(const char *socket_path, const char *voice_id, const char *text) {
+    if (isatty(1)) {
+        fprintf(stderr, "sewnctl: speak writes raw audio; pipe it: | pw-cat --playback --format f32 --rate 24000 --channels 1 -\n");
+        return 2;
+    }
+    int fd = sewn_connect(socket_path);
+    if (fd < 0) {
+        fprintf(stderr, "sewnctl: cannot reach sewnd at %s: %s\n", socket_path, strerror(-fd));
+        return 1;
+    }
+    struct json_object *request = json_object_new_object();
+    json_object_object_add(request, "type", json_object_new_string("speak"));
+    json_object_object_add(request, "voice_id", json_object_new_string(voice_id));
+    json_object_object_add(request, "text", json_object_new_string(text));
+    int rc = mc_frame_write_json(fd, request);
+    json_object_put(request);
+    struct spoken s = { 0, 0 };
+    if (rc == 0) {
+        mc_frame_reader reader;
+        mc_frame_reader_init(&reader, 0, false);
+        int status;
+        while ((status = mc_frame_reader_read_fd(&reader, fd, on_speech, &s)) == MC_IO_OK) {}
+        mc_frame_reader_free(&reader);
+        if (status != MC_IO_STOPPED && !s.status && !s.bytes) rc = status < 0 ? status : -ECONNRESET;
+    }
+    close(fd);
+    fflush(stdout);
+    if (rc < 0) {
+        fprintf(stderr, "sewnctl: %s\n", strerror(-rc));
+        return 1;
+    }
+    fprintf(stderr, "sewnctl: %zu bytes of 24 kHz float32 audio\n", s.bytes);
+    return s.status;
 }
 
 int main(int argc, char **argv) {
-    const char *socket_path = sewn_default_socket(), *command = NULL;
+    const char *socket_path = sewn_default_socket(), *command = NULL, *operands[2] = { NULL, NULL };
+    int count = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--socket") == 0 && i + 1 < argc) socket_path = argv[++i];
         else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) { usage(stdout); return 0; }
         else if (!command) command = argv[i];
+        else if (count < 2) operands[count++] = argv[i];
         else { usage(stderr); return 2; }
     }
-    if (!command || (strcmp(command, "status") && strcmp(command, "verify") && strcmp(command, "set"))) {
+    if (command && strcmp(command, "voices") == 0 && count == 0) return list_voices(socket_path);
+    if (command && strcmp(command, "speak") == 0 && count == 2) return speak(socket_path, operands[0], operands[1]);
+    if (!command || count || (strcmp(command, "status") && strcmp(command, "verify") && strcmp(command, "set"))) {
         usage(stderr);
         return 2;
     }

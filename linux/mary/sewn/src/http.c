@@ -82,6 +82,54 @@ int sewn_mistral_verify(const char *key, char *message, size_t cap, void *user) 
     return 0;
 }
 
+struct collected {
+    mc_buf *body;
+    size_t max;
+    bool over;
+};
+
+static size_t collect(char *bytes, size_t size, size_t n, void *arg) {
+    struct collected *c = arg;
+    size_t len = size * n;
+    if (c->body->len + len > c->max) {
+        c->over = true;
+        return 0;                                   /* ends the transfer */
+    }
+    return mc_buf_append(c->body, bytes, len) < 0 ? 0 : len;
+}
+
+int sewn_http_get(const char *path, const char *key, mc_buf *body, size_t max, long *status, char *message, size_t cap, void *user) {
+    *status = 0;
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        snprintf(message, cap, "libcurl did not start");
+        return -EIO;
+    }
+    char errbuf[CURL_ERROR_SIZE], url[512];
+    snprintf(url, sizeof url, "https://" SEWN_MISTRAL_HOST "%s", path);
+    sewn_http_harden(curl, errbuf);
+    struct curl_slist *headers = sewn_http_headers(key, NULL);
+    struct collected c = { body, max, false };
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, collect);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &c);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 20000L);
+    CURLcode res = headers ? curl_easy_perform(curl) : CURLE_OUT_OF_MEMORY;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, status);
+    sewn_http_free_headers(headers);
+    curl_easy_cleanup(curl);
+    if (c.over) {
+        snprintf(message, cap, "Mistral's answer was too long");
+        return -EMSGSIZE;
+    }
+    if (res != CURLE_OK) {
+        snprintf(message, cap, "could not reach Mistral: %s", errbuf[0] ? errbuf : curl_easy_strerror(res));
+        return -EIO;
+    }
+    return 0;
+}
+
 struct stream {
     CURL *curl;
     sewn_bytes_fn on_bytes;

@@ -19,6 +19,7 @@
 #include "sewn/http.h"
 #include "sewn/transcribe.h"
 #include "sewn/turn.h"
+#include "sewn/voices.h"
 #include "sewn/ws.h"
 
 void sewn_service_init(sewn_service *svc, const char *state_dir) {
@@ -28,6 +29,7 @@ void sewn_service_init(sewn_service *svc, const char *state_dir) {
     svc->in_group = sewn_uid_in_group;
 #ifdef HAVE_CURL
     svc->verify = sewn_mistral_verify;
+    svc->get = sewn_http_get;
     svc->post_stream = sewn_http_post_stream;
 #endif
 #ifdef HAVE_LWS
@@ -129,6 +131,8 @@ static int dispatch(sewn_service *svc, int fd, const sewn_peer *peer, mc_frame_r
     if (strcmp(type, "key.verify") == 0) return key_verify(svc, fd);
     if (strcmp(type, "turn.start") == 0) return sewn_run_turn(svc, fd, reader, request);
     if (strcmp(type, "transcribe.start") == 0) return sewn_run_transcribe(svc, fd, reader, request);
+    if (strcmp(type, "voices.list") == 0) return sewn_run_voices(svc, fd);
+    if (strcmp(type, "speak") == 0) return sewn_run_speak(svc, fd, reader, request);
     return send_error(fd, "request", "unknown operation");
 }
 
