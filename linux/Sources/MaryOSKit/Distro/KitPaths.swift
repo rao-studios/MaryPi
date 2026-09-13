@@ -45,6 +45,11 @@ public struct KitPaths: Sendable, Equatable {
     /// The compiled desktop: a DESTDIR tree (`usr/bin/maryui-desktop`, `usr/share/maryui/`) the `ui` stage writes.
     public var uiOutDirectory: URL { outDirectory.appending(path: "ui") }
     public var uiBinary: URL { uiOutDirectory.appending(path: "usr/bin/maryui-desktop") }
+    /// Mary's C packages (`linux/mary`): part of this repository, never an override.
+    public var marySource: URL { root.appending(path: "mary") }
+    /// Mary's compiled packages: a DESTDIR tree (`usr/bin/sewnd`, `usr/share/doc/mary/`) the `mary` stage writes.
+    public var maryOutDirectory: URL { outDirectory.appending(path: "mary") }
+    public var maryVersionFile: URL { maryOutDirectory.appending(path: "usr/share/doc/mary/mary.env") }
     public var maryUIMakefile: URL { maryUISource.appending(path: "Makefile") }
     public var hasMaryUISources: Bool { FileManager.default.fileExists(atPath: maryUIMakefile.path) }
 

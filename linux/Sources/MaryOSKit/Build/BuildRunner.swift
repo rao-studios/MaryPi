@@ -5,6 +5,8 @@ public enum BuildStage: Sendable, Equatable {
     case rootfs
     /// The desktop (MaryUI/linux) compiled into `out/ui`.
     case ui
+    /// Mary's packages (linux/mary) compiled into `out/mary`.
+    case mary
     case target(ImageTarget)
     case image(ImageTarget)
 }
@@ -25,6 +27,7 @@ public enum BuildLog {
         switch name {
         case "rootfs_build": return .rootfs
         case "ui_build": return .ui
+        case "mary_build": return .mary
         case "target_build": return target.map(BuildStage.target)
         case "image_build": return target.map(BuildStage.image)
         default: return nil
@@ -64,7 +67,7 @@ public struct BuildRunner: Sendable {
     }
 
     /// Stages that take no target: they run once for every image.
-    public static let targetlessStages = ["rootfs", "ui"]
+    public static let targetlessStages = ["rootfs", "ui", "mary"]
 
     /// `build.sh all <target>` (or a single stage); throws when the builder fails.
     public func build(target: ImageTarget, stage: String = "all", fresh: Bool = false, keep: Bool = false, dryRun: Bool = false, log: @escaping Logger) async throws {
@@ -146,6 +149,50 @@ public struct UIArtifacts: Sendable, Equatable {
     public var summary: String {
         guard isBuilt else { return "not built yet (maryos build --stage ui)" }
         return "maryui \(gitSHA ?? "unknown"), built \(built ?? "?")"
+    }
+}
+
+/// What the builder's `mary` stage leaves in `out/mary`: Mary's packages as a
+/// DESTDIR tree with PREFIX=/usr (`usr/bin/sewnd`, `threadd`, `maryd`, …), plus
+/// `usr/share/doc/mary/mary.env` naming the MaryPi commit they came from.
+public struct MaryArtifacts: Sendable, Equatable {
+    public let directory: URL
+    public let binaries: URL
+    public let versionFile: URL
+
+    public static func locate(paths: KitPaths) -> MaryArtifacts {
+        MaryArtifacts(directory: paths.maryOutDirectory, binaries: paths.maryOutDirectory.appending(path: "usr/bin"),
+                      versionFile: paths.maryVersionFile)
+    }
+
+    public init(directory: URL, binaries: URL, versionFile: URL) {
+        self.directory = directory
+        self.binaries = binaries
+        self.versionFile = versionFile
+    }
+
+    /// The stage writes mary.env last, so its presence means the tree is whole.
+    public var isBuilt: Bool { FileManager.default.fileExists(atPath: versionFile.path) }
+
+    /// `MARY_GIT_SHA`, `SOURCE`, `BUILT` from mary.env.
+    public var info: [String: String] {
+        guard let text = try? String(contentsOf: versionFile, encoding: .utf8) else { return [:] }
+        return (try? ConfParser.parse(text)) ?? [:]
+    }
+
+    public var gitSHA: String? { info["MARY_GIT_SHA"] }
+    public var built: String? { info["BUILT"] }
+
+    /// The programs the stage installed, by name.
+    public var programs: [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: binaries.path)) ?? []).sorted()
+    }
+
+    /// `mary abc123def456, built 2026-09-12T20:00:00Z: maryctl maryd sewnd` or `not built yet`.
+    public var summary: String {
+        guard isBuilt else { return "not built yet (maryos build --stage mary)" }
+        let list = programs
+        return "mary \(gitSHA ?? "unknown"), built \(built ?? "?")" + (list.isEmpty ? "" : ": \(list.joined(separator: " "))")
     }
 }
 

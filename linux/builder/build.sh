@@ -5,9 +5,10 @@
 #
 #   builder/build.sh rootfs                base rootfs tarball (cached by content of distro/)
 #   builder/build.sh ui                    compile the desktop (MaryUI/linux: linux/maryui or $MARYUI_DIR) -> out/ui
+#   builder/build.sh mary                  compile Mary's packages (linux/mary) -> out/mary
 #   builder/build.sh target <pi5|vm>       base + desktop + target packages, overlay, hooks -> rootfs tree
 #   builder/build.sh image  <pi5|vm>       rootfs tree -> out/<id>-<version>-<target>.img (vm: + out/vm/)
-#   builder/build.sh all    [pi5|vm|both]  rootfs, ui, target, image (default: both targets)
+#   builder/build.sh all    [pi5|vm|both]  rootfs, ui, mary, target, image (default: both targets)
 #
 #   --fresh     rebuild the base rootfs even when a cached one matches
 #   --keep      leave the rootfs tree in the work directory after the image
@@ -69,6 +70,8 @@ fi
 # shellcheck disable=SC1091
 . "$BUILDER_DIR/lib/ui.sh"
 # shellcheck disable=SC1091
+. "$BUILDER_DIR/lib/mary.sh"
+# shellcheck disable=SC1091
 . "$BUILDER_DIR/lib/target.sh"
 # shellcheck disable=SC1091
 . "$BUILDER_DIR/lib/image.sh"
@@ -98,6 +101,8 @@ case $CMD in
         stage rootfs_build ;;
     ui)
         stage ui_build ;;
+    mary)
+        stage mary_build ;;
     target)
         t=$(targets_of "${1:?usage: build.sh target <pi5|vm>}")
         [ "$t" = "pi5 vm" ] && die "target takes one of pi5, vm"
@@ -109,6 +114,7 @@ case $CMD in
     all)
         stage rootfs_build
         stage ui_build
+        stage mary_build
         for t in $(targets_of "${1:-both}"); do
             stage target_build "$t"
             stage image_build "$t"
@@ -116,5 +122,5 @@ case $CMD in
     -h|--help|help)
         usage 0 ;;
     *)
-        die "unknown command $CMD (rootfs, ui, target, image, all)" ;;
+        die "unknown command $CMD (rootfs, ui, mary, target, image, all)" ;;
 esac

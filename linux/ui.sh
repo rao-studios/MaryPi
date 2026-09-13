@@ -2,7 +2,7 @@
 # Boot MaryOS's desktop (Liquid Platinum, maryui-desktop) in a Virtualization.framework
 # window with one command. vm.sh boots the same image to a login prompt.
 #
-#   linux/ui.sh                  compile the desktop (make ui), build the VM image if missing, boot the fresh desktop
+#   linux/ui.sh                  compile the desktop and Mary (make ui mary), build the VM image if missing, boot the fresh desktop
 #   linux/ui.sh --no-build       boot without compiling, running whatever out/ui already holds
 #   linux/ui.sh --image          boot the desktop embedded in the image instead of out/ui (no live reload)
 #   linux/ui.sh --rebuild        rebuild the image (embedding the fresh desktop) and boot it from a fresh disk
@@ -74,6 +74,8 @@ if [ "$BUILD" = 1 ] || [ ! -x "$UI" ]; then
     need_docker
     echo "ui.sh: compiling the desktop from MaryUI" >&2
     "$CLI" build --stage ui
+    echo "ui.sh: compiling Mary's packages (linux/mary)" >&2
+    "$CLI" build --stage mary
 fi
 
 if [ "$running" = 1 ]; then

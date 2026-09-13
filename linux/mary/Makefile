@@ -80,9 +80,10 @@ srcs_of = $(wildcard $(1)/src/*.c)
 lib_of = $(if $(call srcs_of,$(1)),$(O)/lib/lib$(1).a)
 libs_of = $(foreach d,$(1) $(DEPS_$(1)),$(call lib_of,$(d)))
 
-ALL_LIBS := $(foreach p,$(BUILT_PKGS),$(call lib_of,$(p)))
-ALL_BINS := $(foreach p,$(BUILT_PKGS),$(patsubst $(p)/bin/%.c,$(O)/bin/%,$(wildcard $(p)/bin/*.c)))
-ALL_TESTS := $(foreach p,$(BUILT_PKGS),$(patsubst $(p)/tests/%.c,$(O)/tests/$(p)/%,$(wildcard $(p)/tests/test_*.c)))
+# strip: foreach joins empty results with spaces, and `ifneq ($(ALL_BINS),)` must see "".
+ALL_LIBS := $(strip $(foreach p,$(BUILT_PKGS),$(call lib_of,$(p))))
+ALL_BINS := $(strip $(foreach p,$(BUILT_PKGS),$(patsubst $(p)/bin/%.c,$(O)/bin/%,$(wildcard $(p)/bin/*.c))))
+ALL_TESTS := $(strip $(foreach p,$(BUILT_PKGS),$(patsubst $(p)/tests/%.c,$(O)/tests/$(p)/%,$(wildcard $(p)/tests/test_*.c))))
 
 .PHONY: all test install check-deps clean
 all: $(ALL_LIBS) $(ALL_BINS)

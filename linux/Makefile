@@ -6,6 +6,7 @@
 # The desktop (MaryUI/linux, Liquid Platinum) is compiled by the builder's ui
 # stage from the submodule maryui/ or from MARYUI_DIR=/path/to/MaryUI:
 #   make ui                  compile it into out/ui (seconds; Docker)
+#   make mary                compile Mary's packages (linux/mary: sewnd, threadd, maryd) into out/mary
 #   make desktop / ui-dev    ui.sh: compile, then boot the VM to that desktop (out/ui, restarted on every rebuild);
 #                            run again while the VM is up to rebuild into it; ARGS=--image for the embedded desktop
 SWIFT ?= swift
@@ -38,6 +39,9 @@ rootfs:
 ui:
 	builder/build.sh ui
 
+mary:
+	builder/build.sh mary
+
 image:
 	builder/build.sh all $(TARGET)
 
@@ -54,6 +58,6 @@ flash: build
 	$(BIN_CLI) flash --disk $(DISK)
 
 clean:
-	rm -rf .build dist work out/ui
+	rm -rf .build dist work out/ui out/mary
 
-.PHONY: build test cli run-app app rootfs ui image vm desktop ui-dev flash clean
+.PHONY: build test cli run-app app rootfs ui mary image vm desktop ui-dev flash clean

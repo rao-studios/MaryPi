@@ -96,6 +96,7 @@ target_build() {
     copy_overlay "$root" "$DISTRO_DIR/overlay-$target"
     copy_overlay "$root" "$DISTRO_DIR/overlay-desktop"
     ui_install "$root"
+    mary_install "$root"
     chroot_run_hooks "$root" "$DISTRO_DIR/hooks/$target"
     chroot_run_hooks "$root" "$DISTRO_DIR/hooks/desktop"
     COLLECTED_KERNEL_VERSION=""

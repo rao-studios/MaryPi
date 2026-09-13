@@ -81,9 +81,13 @@ public final class PrepareCoordinator {
         case .ui:
             plan.set(.buildRootfs, .done)
             plan.set(.buildUI, .running)
+        case .mary:
+            plan.set(.buildUI, .done)
+            plan.set(.buildMary, .running)
         case .target:
             plan.set(.buildRootfs, .done)
             plan.set(.buildUI, .done)
+            plan.set(.buildMary, .done)
             plan.set(.buildTarget, .running)
         case .image:
             plan.set(.buildTarget, .done)
@@ -120,6 +124,7 @@ public final class PrepareCoordinator {
                 })
                 plan.set(.buildRootfs, .done)
                 plan.set(.buildUI, .done)
+                plan.set(.buildMary, .done)
                 plan.set(.buildTarget, .done)
                 plan.set(.buildImage, .done, detail: artifacts.image.lastPathComponent)
             } else {

@@ -5,6 +5,7 @@ public enum StepKind: String, CaseIterable, Sendable, Codable, Hashable {
     case doctor
     case buildRootfs
     case buildUI
+    case buildMary
     case buildTarget
     case buildImage
     case verifyTarget
@@ -17,6 +18,7 @@ public enum StepKind: String, CaseIterable, Sendable, Codable, Hashable {
         case .doctor: return "Check this Mac"
         case .buildRootfs: return "Build the base rootfs (Ubuntu Noble + MaryOS)"
         case .buildUI: return "Compile the desktop (MaryUI, Liquid Platinum)"
+        case .buildMary: return "Compile Mary (sewnd, threadd, maryd)"
         case .buildTarget: return "Add the target's packages and boot files"
         case .buildImage: return "Assemble the disk image"
         case .verifyTarget: return "Verify target disk"
@@ -78,7 +80,7 @@ public struct StepPlan: Sendable, Equatable {
     /// write to a target disk.
     public static func standard(build: Bool, hasTarget: Bool) -> StepPlan {
         var kinds: [StepKind] = [.doctor]
-        if build { kinds += [.buildRootfs, .buildUI, .buildTarget, .buildImage] }
+        if build { kinds += [.buildRootfs, .buildUI, .buildMary, .buildTarget, .buildImage] }
         if hasTarget { kinds += [.verifyTarget, .unmount, .write, .eject] }
         return StepPlan(steps: kinds.map { Step($0) })
     }
