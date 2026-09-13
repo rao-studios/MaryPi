@@ -19,6 +19,7 @@
 #include "common/sse.h"
 #include "sewn/chunker.h"
 #include "sewn/mistral.h"
+#include "sewn/speech.h"
 
 /* Core/Sewn.swift handleChat. */
 static const char BASE_RULES[] =
@@ -278,66 +279,11 @@ static int enqueue(const char *chunk, size_t len, void *user) {
     return 0;
 }
 
-struct speech {
-    struct turn *t;
-    mc_sse_parser sse;
-    mc_buf pcm;
-    bool done;
-    int error;
-};
+static int lane_pcm(const unsigned char *pcm, size_t len, void *user) { return send_pcm(user, pcm, len) < 0; }
 
-static int on_speech_event(const char *event, const char *data, size_t len, void *user) {
-    struct speech *s = user;
-    int rc = sewn_speech_event(event, data, len, &s->pcm);
-    if (rc == SEWN_SPEECH_AUDIO) {
-        size_t whole = s->pcm.len - s->pcm.len % 4;
-        if (whole && send_pcm(s->t, s->pcm.data, whole) < 0) return 1;
-        mc_buf_consume(&s->pcm, whole);
-        return 0;
-    }
-    if (rc == SEWN_SPEECH_DONE) {
-        s->done = true;
-        return 1;
-    }
-    if (rc < 0) {
-        s->error = rc;
-        return 1;
-    }
-    return 0;
-}
-
-/* The transport hands one pointer to both callbacks: the speech state, which knows its turn. */
-static bool speech_should_stop(void *user) {
-    struct speech *s = user;
-    return atomic_load(&s->t->cancelled);
-}
-
-static int on_speech_bytes(const char *bytes, size_t len, long status, void *user) {
-    struct speech *s = user;
-    if (status && (status < 200 || status > 299)) return 1;
-    return mc_sse_feed(&s->sse, bytes, len, on_speech_event, s) != 0;
-}
-
-static bool speak(struct turn *t, const char *sentence) {
-    struct json_object *body = sewn_speech_body(t->req->tts_model, sentence, t->req->voice_id);
-    size_t len = 0;
-    const char *text = mc_json_compact(body, &len);
-    struct speech s = { .t = t };
-    mc_sse_init(&s.sse, SSE_LINE_MAX);
-    char message[256] = "";
-    long status = 0;
-    int rc = t->svc->post_stream(SEWN_MISTRAL_SPEECH_PATH, t->key, text, len, on_speech_bytes, speech_should_stop, &s,
-                                 &status, message, sizeof message, t->svc->post_stream_user);
-    json_object_put(body);
-    if (rc >= 0 && !s.done && !s.error && !atomic_load(&t->cancelled)) mc_sse_finish(&s.sse, on_speech_event, &s);
-    bool ok = rc >= 0 && s.error == 0 && (status == 0 || (status >= 200 && status <= 299));
-    if (!ok && !atomic_load(&t->cancelled)) {
-        if (rc < 0) mc_log(MC_LOG_WARNING, "speech failed: %s", message);
-        else mc_log(MC_LOG_WARNING, "speech failed: HTTP %ld", status);
-    }
-    mc_sse_free(&s.sse);
-    mc_buf_free(&s.pcm);
-    return ok;
+static bool lane_should_stop(void *user) {
+    struct turn *t = user;
+    return atomic_load(&t->cancelled);
 }
 
 static void *speech_lane(void *arg) {
@@ -352,12 +298,18 @@ static void *speech_lane(void *arg) {
         char *sentence = t->queue[t->head++];
         if (--t->count == 0) t->head = 0;
         pthread_mutex_unlock(&t->lane_lock);
-        bool ok = speak(t, sentence);
+        sewn_speech speech = { .model = t->req->tts_model, .voice_id = t->req->voice_id, .text = sentence };
+        char why[256] = "";
+        long status = 0;
+        int rc = sewn_speak(t->svc, t->key, &speech, lane_pcm, lane_should_stop, t, &status, why, sizeof why);
         free(sentence);
-        if (!ok) {
-            /* Sewn's TTS lane ends at its first failure; the words keep coming. */
-            if (!atomic_load(&t->cancelled)) {
+        if (rc < 0) {
+            /* Sewn's TTS lane ends at its first failure; the words keep coming, and the client hears why. */
+            if (rc != -ECANCELED && !atomic_load(&t->cancelled)) {
+                mc_log(MC_LOG_WARNING, "speech failed: %s", why);
                 struct json_object *failed = typed("tts.failed");
+                json_object_object_add(failed, "status", json_object_new_int64(status));
+                json_object_object_add(failed, "message", json_object_new_string(why));
                 send_json(t, failed);
             }
             break;

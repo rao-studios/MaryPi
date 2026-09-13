@@ -91,11 +91,35 @@ MARY_TEST(stopping_and_oversize_events_are_reported) {
     mc_sse_free(&p);
 }
 
+MARY_TEST(bare_json_lines_dispatch_when_asked) {
+    const char *s = "{\"audio_data\":\"AAAA\"}\ndata: {\"x\":1}\n\n{\"done\":true}";
+    mc_sse_parser p;
+    mc_sse_init(&p, 4096);
+    struct events plain = { 0 };
+    MARY_ASSERT_EQ(mc_sse_feed(&p, s, strlen(s), collect, &plain), 0);
+    MARY_ASSERT_EQ(mc_sse_finish(&p, collect, &plain), 0);
+    MARY_ASSERT_EQ(plain.count, 1);             /* a bare line is not SSE: only the data event */
+    mc_sse_free(&p);
+
+    mc_sse_init(&p, 4096);
+    p.bare_json = true;
+    struct events ndjson = { 0 };
+    feed_bytewise(&p, s, &ndjson);
+    MARY_ASSERT_EQ(mc_sse_finish(&p, collect, &ndjson), 0);
+    MARY_ASSERT_EQ(ndjson.count, 3);
+    MARY_ASSERT_STR(ndjson.event[0], "");
+    MARY_ASSERT_STR(ndjson.data[0], "{\"audio_data\":\"AAAA\"}");
+    MARY_ASSERT_STR(ndjson.data[1], "{\"x\":1}");
+    MARY_ASSERT_STR(ndjson.data[2], "{\"done\":true}");
+    mc_sse_free(&p);
+}
+
 int main(void) {
     MARY_RUN(mistral_chat_chunks_and_done_arrive_byte_by_byte);
     MARY_RUN(crlf_split_across_reads_still_ends_the_line);
     MARY_RUN(named_events_join_their_data_lines);
     MARY_RUN(a_stream_ending_without_a_blank_line_is_finished);
     MARY_RUN(stopping_and_oversize_events_are_reported);
+    MARY_RUN(bare_json_lines_dispatch_when_asked);
     MARY_TEST_MAIN_END();
 }

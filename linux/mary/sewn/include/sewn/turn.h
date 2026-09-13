@@ -8,7 +8,7 @@
  *   token{phase: "grounded", text}                                as Mistral streams
  *   audio.begin{sample_rate, channels, bits, encoding: "f32le"}   before the first audio
  *   PCM frames                                                    float32 LE mono 24 kHz, whole samples, in order
- *   tts.failed                                                    speech stopped; the text carries on
+ *   tts.failed{status, message}                                   speech stopped, with Mistral's reason; the text carries on
  *   error{stage, message}                                         "request", "key", "network", "grounded"
  *   turn.end                                                      a turn that ran to its end
  *

@@ -26,6 +26,7 @@ typedef struct sewn_service {
     const sewn_ws_ops *ws;              /* NULL when built without libwebsockets */
     void *ws_user;
     int transcribe_wait_ms;             /* how long to wait for Voxtral's final transcript; 0: the default */
+    size_t speech_line_max;             /* the longest speech event read; 0: SEWN_SPEECH_LINE_MAX (tests shrink it) */
 } sewn_service;
 
 void sewn_service_init(sewn_service *svc, const char *state_dir);

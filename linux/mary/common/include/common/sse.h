@@ -22,6 +22,7 @@ typedef struct mc_sse_parser {
     mc_buf data;
     char event[64];
     bool have_data;
+    bool bare_json;             /* a line that is a bare JSON object is an event of its own (NDJSON); set after init */
 } mc_sse_parser;
 
 /* `max_line` also caps one event's accumulated data. */

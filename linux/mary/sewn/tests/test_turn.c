@@ -16,6 +16,7 @@
 #include "mary_test.h"
 #include "sewn/mistral.h"
 #include "sewn/server.h"
+#include "sewn/speech.h"
 #include "sewn/turn.h"
 
 static const char *KEY = "abcdEFGH1234ijklMNOP5678qrst";
@@ -204,6 +205,9 @@ struct seen {
     char error_message[256];
     int client_fd;
     int act_on_first_token;     /* 1: send cancel, 2: close */
+    long tts_status;
+    char tts_message[256];
+    bool saw_key;
 };
 
 static int on_frame(uint8_t kind, const unsigned char *bytes, size_t len, void *user) {
@@ -214,6 +218,9 @@ static int on_frame(uint8_t kind, const unsigned char *bytes, size_t len, void *
         if (s->count < 64) snprintf(s->types[s->count++], 24, "pcm");
         return 0;
     }
+    char copy[4096];
+    snprintf(copy, sizeof copy, "%.*s", (int)(len < sizeof copy - 1 ? len : sizeof copy - 1), (const char *)bytes);
+    if (strstr(copy, KEY)) s->saw_key = true;
     struct json_object *msg = mc_json_parse((const char *)bytes, len);
     const char *type = mc_json_type(msg);
     if (s->count < 64) snprintf(s->types[s->count++], 24, "%s", type ? type : "?");
@@ -227,6 +234,13 @@ static int on_frame(uint8_t kind, const unsigned char *bytes, size_t len, void *
         } else if (s->act_on_first_token == 2) {
             stop = 1;
         }
+    }
+    if (type && strcmp(type, "tts.failed") == 0) {
+        int64_t status = 0;
+        mc_json_int64(msg, "status", &status);
+        s->tts_status = (long)status;
+        const char *why = mc_json_string(msg, "message");
+        snprintf(s->tts_message, sizeof s->tts_message, "%s", why ? why : "");
     }
     if (type && strcmp(type, "error") == 0) {
         snprintf(s->error_stage, sizeof s->error_stage, "%s", mc_json_string(msg, "stage"));
@@ -316,6 +330,7 @@ MARY_TEST(failed_speech_leaves_the_words) {
     run_turn(&seen, TURN);
     MARY_ASSERT_STR(seen.text, "Paris is the capital of France. It is **lovely**.");
     MARY_ASSERT(index_of(&seen, "tts.failed") > 0);
+    MARY_ASSERT_STR(seen.tts_message, "the network is down");
     MARY_ASSERT_EQ(index_of(&seen, "audio.begin"), -1);
     MARY_ASSERT_STR(seen.types[seen.count - 1], "turn.end");
     MARY_ASSERT_EQ(script.speech_calls, 1);      /* the lane ends at its first failure */
@@ -361,6 +376,97 @@ MARY_TEST(audio_split_mid_sample_goes_out_whole) {
     teardown();
 }
 
+MARY_TEST(refused_speech_says_what_mistral_said) {
+    setup(true);
+    snprintf(script.speech, sizeof script.speech,
+             "{\"object\":\"error\",\"message\":\"Invalid voice: fr_nobody\",\"type\":\"invalid_request_error\"}");
+    script.speech_status = 422;
+    struct seen seen = { 0 };
+    run_turn(&seen, TURN);
+    MARY_ASSERT_STR(seen.text, "Paris is the capital of France. It is **lovely**.");
+    MARY_ASSERT(index_of(&seen, "tts.failed") > 0);
+    MARY_ASSERT_EQ(seen.tts_status, 422);
+    MARY_ASSERT_STR(seen.tts_message, "Mistral answered HTTP 422: Invalid voice: fr_nobody");
+    MARY_ASSERT_STR(seen.types[seen.count - 1], "turn.end");
+    MARY_ASSERT_EQ(script.speech_calls, 1);
+    MARY_ASSERT(!seen.saw_key);
+    teardown();
+}
+
+MARY_TEST(forbidden_speech_is_not_a_refused_key) {
+    setup(true);
+    snprintf(script.speech, sizeof script.speech, "{\"detail\":[{\"type\":\"moderation\",\"msg\":\"The input\\nwas blocked\"}]}");
+    script.speech_status = 403;
+    struct seen seen = { 0 };
+    run_turn(&seen, TURN);
+    MARY_ASSERT_EQ(seen.tts_status, 403);
+    MARY_ASSERT_STR(seen.tts_message, "Mistral refused to speak it (HTTP 403: The input was blocked)");
+    teardown();
+}
+
+MARY_TEST(an_oversize_speech_event_fails_the_lane) {
+    setup(true);
+    svc.speech_line_max = 64;                   /* the audio event in setup's script is longer */
+    struct seen seen = { 0 };
+    run_turn(&seen, TURN);
+    MARY_ASSERT(index_of(&seen, "tts.failed") > 0);
+    MARY_ASSERT_EQ(index_of(&seen, "audio.begin"), -1);
+    MARY_ASSERT_STR(seen.tts_message, "Mistral's speech came in a piece too large to read");
+    MARY_ASSERT_EQ(script.speech_calls, 1);
+    teardown();
+}
+
+MARY_TEST(speech_that_carries_no_audio_fails) {
+    setup(true);
+    snprintf(script.speech, sizeof script.speech, "event: speech.audio.done\ndata: {\"event\":\"speech.audio.done\",\"data\":{}}\n\n");
+    struct seen seen = { 0 };
+    run_turn(&seen, TURN);
+    MARY_ASSERT(index_of(&seen, "tts.failed") > 0);
+    MARY_ASSERT_STR(seen.tts_message, "Mistral answered with no audio");
+    teardown();
+}
+
+MARY_TEST(bare_json_lines_are_spoken_too) {
+    setup(true);
+    const unsigned char samples[8] = { 0, 0, 128, 63, 0, 0, 128, 191 };
+    char b64[16];
+    mc_base64_encode(samples, sizeof samples, b64, sizeof b64, NULL);
+    snprintf(script.speech, sizeof script.speech, "{\"audio_data\":\"%s\"}\n{\"event\":\"speech.audio.done\",\"data\":{}}\n", b64);
+    struct seen seen = { 0 };
+    run_turn(&seen, TURN);
+    MARY_ASSERT_EQ(index_of(&seen, "tts.failed"), -1);
+    MARY_ASSERT_EQ(seen.pcm_bytes, 16);
+    teardown();
+}
+
+MARY_TEST(a_refusal_never_repeats_the_key_or_the_words) {
+    char out[256];
+    const char *noisy = "{\"message\":\"bad\\u0007  thing\\t here\"}";
+    sewn_speech_failure(400, noisy, strlen(noisy), out, sizeof out);
+    MARY_ASSERT_STR(out, "Mistral answered HTTP 400: bad thing here");
+    sewn_speech_failure(502, "<html>Bad gateway</html>", 24, out, sizeof out);
+    MARY_ASSERT_STR(out, "Mistral answered HTTP 502");
+    sewn_speech_failure(401, "{\"message\":\"whatever\"}", 22, out, sizeof out);
+    MARY_ASSERT_STR(out, "Mistral rejected the key");
+    sewn_speech_failure(500, "Upstream timed out", 18, out, sizeof out);
+    MARY_ASSERT_STR(out, "Mistral answered HTTP 500: Upstream timed out");
+    char long_reason[512] = "{\"message\":\"";
+    for (int i = 0; i < 150; i++) strcat(long_reason, "\xC3\xA9");   /* 300 bytes of \u00e9 */
+    strcat(long_reason, "\"}");
+    sewn_speech_failure(400, long_reason, strlen(long_reason), out, sizeof out);
+    size_t n = strlen(out);
+    MARY_ASSERT(n < 200);
+    MARY_ASSERT(((unsigned char)out[n - 1] & 0xC0) == 0x80 && (unsigned char)out[n - 2] == 0xC3);   /* ends on a whole character */
+
+    setup(true);                                /* Mistral echoing the words back: the reason is dropped */
+    snprintf(script.speech, sizeof script.speech, "{\"message\":\"cannot say Paris is the capital of France.\"}");
+    script.speech_status = 400;
+    struct seen seen = { 0 };
+    run_turn(&seen, TURN);
+    MARY_ASSERT_STR(seen.tts_message, "Mistral answered HTTP 400");
+    teardown();
+}
+
 int main(void) {
     MARY_RUN(the_system_prompt_is_sewns_for_a_turn_with_no_context);
     MARY_RUN(request_defaults_follow_sewn);
@@ -372,5 +478,11 @@ int main(void) {
     MARY_RUN(a_refused_key_is_reported_and_the_turn_still_ends);
     MARY_RUN(no_key_means_no_turn);
     MARY_RUN(audio_split_mid_sample_goes_out_whole);
+    MARY_RUN(refused_speech_says_what_mistral_said);
+    MARY_RUN(forbidden_speech_is_not_a_refused_key);
+    MARY_RUN(an_oversize_speech_event_fails_the_lane);
+    MARY_RUN(speech_that_carries_no_audio_fails);
+    MARY_RUN(bare_json_lines_are_spoken_too);
+    MARY_RUN(a_refusal_never_repeats_the_key_or_the_words);
     MARY_TEST_MAIN_END();
 }

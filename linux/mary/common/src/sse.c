@@ -37,6 +37,12 @@ static int on_line(const char *line, size_t len, void *user) {
     mc_sse_parser *p = f->p;
     if (len == 0) return dispatch(f);
     if (line[0] == ':') return 0;
+    if (p->bare_json && line[0] == '{') {
+        if (dispatch(f)) return 1;
+        int stop = f->fn("", line, len, f->user);
+        if (stop) f->stopped = 1;
+        return stop;
+    }
     const char *colon = memchr(line, ':', len);
     size_t name_len = colon ? (size_t)(colon - line) : len;
     const char *value = colon ? colon + 1 : line + len;
