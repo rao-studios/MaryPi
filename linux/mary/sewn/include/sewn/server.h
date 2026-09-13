@@ -1,6 +1,6 @@
 /* sewnd's side of its socket. A connection carries one operation, named by its
- * first frame: `key.status`, `key.set{key}`, `key.verify`, and — in the commits
- * that follow — `turn.start` and `transcribe.start`. Replies are JSON frames:
+ * first frame: `key.status`, `key.set{key}`, `key.verify`, `turn.start` (sewn/turn.h)
+ * and — in the commit that follows — `transcribe.start`. Replies are JSON frames:
  * `key.status{present, verified_at, ok?, message?}` or `error{stage, message}`. */
 #ifndef MARY_SEWN_SERVER_H
 #define MARY_SEWN_SERVER_H
@@ -10,6 +10,7 @@
 
 #include "sewn/key.h"
 #include "sewn/peer.h"
+#include "sewn/transport.h"
 
 /* Checks a key with Mistral: 1 accepted, 0 refused, -errno unreachable. */
 typedef int (*sewn_verify_fn)(const char *key, char *message, size_t cap, void *user);
@@ -20,6 +21,8 @@ typedef struct sewn_service {
     sewn_group_fn in_group;
     sewn_verify_fn verify;      /* NULL when built without libcurl */
     void *verify_user;
+    sewn_post_stream_fn post_stream;    /* NULL when built without libcurl */
+    void *post_stream_user;
 } sewn_service;
 
 void sewn_service_init(sewn_service *svc, const char *state_dir);

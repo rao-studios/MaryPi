@@ -73,7 +73,10 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `Sewn/Sources/Providers/ModelProvider+Stream.swift` (`runStreamMistral` body, `handle(payload:)`) | `sewn/include/sewn/mistral.h`, `src/mistral.c` (`sewn_chat_body`, `sewn_chat_event_parse`) | working |
 | `Sewn/Sources/Utilities/MistralTTSStream.swift` (`makeRequest`, `extractPCM`) | `sewn_speech_body`, `sewn_speech_event` | working |
 | — (Voxtral Realtime transcription, from mistralai client-python) | `sewn_stt_session_update`, `sewn_stt_append`, `sewn_stt_event_parse` | working — deviation 2 |
-| `Sewn/Sources/API/Routes/Realtime/RealtimeWire.swift`, `Realtime.swift` | `sewn/src/realtime.c` | planned — deviation 5 |
+| `Sewn/Sources/API/Routes/Realtime/RealtimeWire.swift`, `Realtime.swift`, `RealtimeTurnEngine.swift` | `sewn/include/sewn/turn.h`, `src/turn.c` (`sewn_run_turn`) | working — deviation 5 |
+| `Sewn/Sources/Core/Personality.swift` (`chatPersonaSection`), `Core/Sewn.swift` (`handleChat` prompt), `Core/Commands/Sewn+Compact.swift` (`memoryInstruction`) | `sewn_turn_system_prompt`, `sewn_turn_messages` | working |
+| `Sewn/Sources/Core/ModelConfig.swift` (Mistral model names), `API/GenerationDefaults.swift` | `sewn_turn_request_parse` | working |
+| `Sewn/Sources/Providers/ModelProvider+Stream.swift` (`sseStream`), `Utilities/MistralTTSStream.swift` (`stream`) | `sewn/include/sewn/transport.h`, `sewn_http_post_stream` | working — streams on Linux too |
 | `Sewn/Sources/API/Middleware/AuthMiddleware.swift`, `TokenValidator.swift` | `sewn/include/sewn/peer.h`, `src/peer.c` | working — deviation 4 |
 | `Sewn/Sources/API/Network/NetworkService+Center.swift` (`MISTRAL_API_KEY`) | `sewn/include/sewn/key.h`, `src/key.c` | working — a 0600 file set from System Settings, never the environment |
 | `Sewn/Sources/SewnServer.swift` (the listener) | `sewn/bin/sewnd.c`, `sewn/include/sewn/server.h`, `src/server.c` | working for `key.status`, `key.set`, `key.verify`; turns and transcription planned |
@@ -145,6 +148,9 @@ What Swift gets from Foundation, URLSession and swift-nio.
 4. **Sewn authentication.** Callers are authorized by unix-socket peer credentials; there is no Supabase
    sign-in. The owner of a turn is the local user.
 5. **Sewn's turn.** One grounded pass. No fast opener, retrieval, Sinatra tuning or Gita accounting.
+   With nothing retrieved, Sewn sends the model only the latest question and the system message; sewnd
+   never retrieves, so it keeps up to ten earlier turns as real messages, the way Sewn does when it has
+   verbatim context. Speech streams on Linux as well — Sewn's Linux build buffers each sentence whole.
 6. **Barge-in.** No interrupting by voice while Mary speaks — there is no echo cancellation yet. Esc or the
    Ask Mary button stops her.
 7. **Thread.** Documents are JSON files; no embeddings, product quantization or knowledge graph yet;

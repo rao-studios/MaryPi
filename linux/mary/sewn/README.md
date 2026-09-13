@@ -18,6 +18,14 @@ may replace it; there is no operation that returns it. `key.verify` asks Mistral
 is accepted, over libcurl held to HTTPS, TLS 1.2+, verified peers and no redirects. The key is never logged
 and every buffer that held it is zeroed.
 
-Status: the chunker, the TTS sanitizer, Mistral's wire (`sewn/mistral.h`), the key store, peer checks and
-`sewnd`'s `key.status` / `key.set` / `key.verify` are working; turns and transcription follow (commits 6–7).
+## A turn
+
+`turn.start{request, tts}` carries Mary's ChatRequest. sewnd composes Sewn's system prompt for a turn with
+no retrieved context, streams Mistral's chat reply as `token` frames, and feeds the sentence chunker; a
+single speech lane turns finished sentences into `audio.begin` and whole-sample PCM frames, in order. A
+`cancel` frame or a closed connection stops both at once. Mistral is reached through one transport function
+(`sewn/transport.h`), so the turn is tested against scripted streams.
+
+Status: the chunker, the TTS sanitizer, Mistral's wire (`sewn/mistral.h`), the key store, peer checks,
+`key.status` / `key.set` / `key.verify` and `turn.start` are working; transcription follows (commit 7).
 Prefix `sewn_`. Everything builds on macOS too (getpeereid stands in for SO_PEERCRED).

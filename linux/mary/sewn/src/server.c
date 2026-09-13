@@ -17,6 +17,7 @@
 #include "common/log.h"
 #include "common/secure.h"
 #include "sewn/http.h"
+#include "sewn/turn.h"
 
 void sewn_service_init(sewn_service *svc, const char *state_dir) {
     memset(svc, 0, sizeof *svc);
@@ -25,6 +26,7 @@ void sewn_service_init(sewn_service *svc, const char *state_dir) {
     svc->in_group = sewn_uid_in_group;
 #ifdef HAVE_CURL
     svc->verify = sewn_mistral_verify;
+    svc->post_stream = sewn_http_post_stream;
 #endif
 }
 
@@ -109,7 +111,7 @@ static const char *loggable(const char *type) {
     return type;
 }
 
-static int dispatch(sewn_service *svc, int fd, const sewn_peer *peer, struct json_object *request) {
+static int dispatch(sewn_service *svc, int fd, const sewn_peer *peer, mc_frame_reader *reader, struct json_object *request) {
     const char *type = mc_json_type(request);
     if (!type) return send_error(fd, "request", "the first frame must be a JSON message with a type");
     if (!sewn_peer_may(peer, type, svc->admin_group, svc->in_group)) {
@@ -120,8 +122,8 @@ static int dispatch(sewn_service *svc, int fd, const sewn_peer *peer, struct jso
     if (strcmp(type, "key.status") == 0) return send_status(fd, svc, -1, NULL);
     if (strcmp(type, "key.set") == 0) return key_set(svc, fd, request);
     if (strcmp(type, "key.verify") == 0) return key_verify(svc, fd);
-    if (strcmp(type, "turn.start") == 0 || strcmp(type, "transcribe.start") == 0)
-        return send_error(fd, "request", "not available yet");
+    if (strcmp(type, "turn.start") == 0) return sewn_run_turn(svc, fd, reader, request);
+    if (strcmp(type, "transcribe.start") == 0) return send_error(fd, "request", "not available yet");
     return send_error(fd, "request", "unknown operation");
 }
 
@@ -141,7 +143,7 @@ int sewn_serve_connection(sewn_service *svc, int fd, const sewn_peer *peer) {
     } else {
         struct json_object *request = mc_json_parse_secret((const char *)payload.data, payload.len);
         mc_secure_zero(payload.data, payload.len);
-        rc = dispatch(svc, fd, peer, request);
+        rc = dispatch(svc, fd, peer, &reader, request);
         json_object_put(request);
     }
     mc_buf_free_secure(&payload);

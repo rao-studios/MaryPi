@@ -81,6 +81,70 @@ int sewn_mistral_verify(const char *key, char *message, size_t cap, void *user) 
     else snprintf(message, cap, "Mistral answered HTTP %ld", status);
     return 0;
 }
+
+struct stream {
+    CURL *curl;
+    sewn_bytes_fn on_bytes;
+    sewn_stop_fn should_stop;
+    void *user;
+    bool stopped_by_consumer;
+};
+
+static size_t stream_write(char *bytes, size_t size, size_t n, void *arg) {
+    struct stream *s = arg;
+    if (s->should_stop && s->should_stop(s->user)) return 0;
+    long status = 0;
+    curl_easy_getinfo(s->curl, CURLINFO_RESPONSE_CODE, &status);
+    if (s->on_bytes(bytes, size * n, status, s->user)) {
+        s->stopped_by_consumer = true;
+        return 0;
+    }
+    return size * n;
+}
+
+static int stream_progress(void *arg, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
+    struct stream *s = arg;
+    return s->should_stop && s->should_stop(s->user) ? 1 : 0;
+}
+
+int sewn_http_post_stream(const char *path, const char *key, const char *body, size_t body_len,
+                          sewn_bytes_fn on_bytes, sewn_stop_fn should_stop, void *user,
+                          long *status, char *message, size_t cap, void *transport_user) {
+    *status = 0;
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        snprintf(message, cap, "libcurl did not start");
+        return -EIO;
+    }
+    char errbuf[CURL_ERROR_SIZE], url[256];
+    snprintf(url, sizeof url, "https://" SEWN_MISTRAL_HOST "%s", path);
+    sewn_http_harden(curl, errbuf);
+    struct curl_slist *headers = sewn_http_headers(key, "application/json");
+    struct curl_slist *more = headers ? curl_slist_append(headers, "Accept: text/event-stream") : NULL;
+    if (more) headers = more;
+    struct stream s = { curl, on_bytes, should_stop, user, false };
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)body_len);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &s);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, stream_progress);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &s);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
+    CURLcode res = more ? curl_easy_perform(curl) : CURLE_OUT_OF_MEMORY;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, status);
+    sewn_http_free_headers(headers);
+    curl_easy_cleanup(curl);
+    if (res == CURLE_OK) return 0;
+    if (s.stopped_by_consumer) return SEWN_STREAM_STOPPED;
+    if (should_stop && should_stop(user)) return -ECANCELED;
+    snprintf(message, cap, "could not reach Mistral: %s", errbuf[0] ? errbuf : curl_easy_strerror(res));
+    return -EIO;
+}
 #else
 typedef int sewn_http_without_curl;
 #endif
