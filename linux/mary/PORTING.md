@@ -121,9 +121,12 @@ What Swift gets from Foundation, URLSession and swift-nio.
 
 | Swift | C | Status |
 |---|---|---|
-| `MaryBrain/Prompt/PromptCatalog+Voice.swift` (sewnPreamble, sewnCompany, sewnPersonaConverse) | `brain/src/prompt.c` | planned — deviation 8 |
-| `MaryBrain/Brain/MaryBrain+History.swift` (spokenMessages) | `brain/src/history.c` | planned |
-| `MaryBrain/Sewn/SewnWire.swift` (ChatRequest, Persona) | `brain/src/request.c` | planned |
+| `MaryBrain/Prompt/PromptCatalog+Voice.swift` (`sewnPreamble`, `sewnCompany`, `sewnPersonaConverse`, `sewnRetrieval`), `PromptPlan.swift` (`voice`), `MaryPrompts+SewnModeTwo.swift` | `brain/include/brain/prompt.h`, `src/prompt.c` (`mb_sewn_instructions`) | working — deviation 8 |
+| `MaryBrain/Prompt/PromptSection.swift` (`formatter`) | `brain/include/brain/clock.h`, `src/clock.c` | working — English names |
+| `MaryBrain/Brain/MaryBrain+History.swift` (`spokenMessages`, `trimHistory`), `MaryBrain.swift` (`historyMessageLimit`) | `brain/include/brain/history.h`, `src/history.c` | working |
+| `MaryBrain/Sewn/SewnWire.swift` (`ChatRequest`, `Persona.mary`), `SewnRealtimeWire.swift` (`TurnStart`) | `brain/include/brain/request.h`, `src/request.c` (`mb_turn_start`) | working — deviation 8 |
+| `MaryBrain/Brain/MaryBrain+Turn.swift` (routing, Lane B, dispatch), `Abilities/*`, `Engine/*` | — | not ported |
+| — (skills as Mistral tools) | `brain/include/brain/tools.h` | skeleton |
 
 ## voice ← MaryVoice
 
@@ -162,7 +165,11 @@ What Swift gets from Foundation, URLSession and swift-nio.
    Ask Mary button stops her.
 7. **Thread.** Documents are JSON files; no embeddings, product quantization or knowledge graph yet;
    `owner_id` comes from the caller's credentials; a unix socket replaces TCP port 9090.
-8. **Persona.** Mary's persona says she lives on the user's Mac; on MaryOS it is reworded.
+8. **Persona and instructions.** Mary's persona says she lives on the user's Mac; on MaryOS she lives in
+   MaryOS, and "another pass will close" is dropped because no follow-up pass exists yet. The voice
+   instructions render the conversation persona for every turn and leave out `sewnRetrieval`'s reach and
+   sight splices (and the heading, in-turn and capability sections): the conversation cannot call skills or
+   look at the screen yet, and Mary must never promise what she cannot do.
 9. **Computer use.** No accessibility tree, screen capture or synthetic input. MaryOS's applications are its
    own, so Mary reads their state and acts through `lp_app.perform` over the desktop socket.
 10. **Abilities.** The `.mary` packages under `Mary/Abilities/` — recipes recorded against a live
