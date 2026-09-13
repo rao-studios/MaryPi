@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "mary_test.h"
+#include "thread/proto.h"
 #include "thread/service.h"
 #include "thread/store.h"
 
@@ -124,7 +125,11 @@ MARY_TEST(threadd_indexes_lists_and_reads_over_grpc) {
     thread__v1__thread_documents_response__free_unpacked(content, NULL);
     free(r.body);
 
-    MARY_ASSERT_EQ(call("mary", "/thread.v1.ThreadQuery/Search", &lib.base, &r), 0);
+    Thread__V1__ThreadSearchRequest search = THREAD__V1__THREAD_SEARCH_REQUEST__INIT;
+    search.query_text = "capital of France";
+    MARY_ASSERT_EQ(call("mary", THREAD_PATH_SEARCH, &search.base, &r), 0);
+    MARY_ASSERT_EQ(r.status, CONDUIT_FAILED_PRECONDITION);          /* this store has no embedder */
+    MARY_ASSERT_EQ(call("mary", "/thread.v1.ThreadQuery/Nothing", &lib.base, &r), 0);
     MARY_ASSERT_EQ(r.status, CONDUIT_UNIMPLEMENTED);
     MARY_ASSERT_EQ(call("mary", THREAD_PATH_INDEX, NULL, &r), 0);
     MARY_ASSERT_EQ(r.status, CONDUIT_INVALID_ARGUMENT);
@@ -136,11 +141,52 @@ MARY_TEST(threadd_indexes_lists_and_reads_over_grpc) {
     MARY_ASSERT_EQ(call("guest", THREAD_PATH_INDEX, &index.base, &r), 0);
     MARY_ASSERT_EQ(r.status, CONDUIT_PERMISSION_DENIED);
 
+    Thread__V1__ThreadGraphQueryRequest gq = THREAD__V1__THREAD_GRAPH_QUERY_REQUEST__INIT;
+    MARY_ASSERT_EQ(call("mary", THREAD_PATH_GRAPH, &gq.base, &r), 0);
+    MARY_ASSERT_EQ(r.status, CONDUIT_OK);
+    Thread__V1__ThreadGraphQueryResponse *g = thread__v1__thread_graph_query_response__unpack(NULL, r.body_len, r.body);
+    MARY_ASSERT(g != NULL && g->stats != NULL);
+    MARY_ASSERT(g->n_entities > 0);                                  /* the keyword concepts, until sewnd extracts */
+    thread__v1__thread_graph_query_response__free_unpacked(g, NULL);
+    free(r.body);
+
+    Thread__V1__ThreadStatsRequest sq = THREAD__V1__THREAD_STATS_REQUEST__INIT;
+    MARY_ASSERT_EQ(call("mary", THREAD_PATH_STATS, &sq.base, &r), 0);
+    Thread__V1__ThreadStatsResponse *stats = thread__v1__thread_stats_response__unpack(NULL, r.body_len, r.body);
+    MARY_ASSERT_EQ(stats->document_count, 1);
+    MARY_ASSERT_EQ(stats->group_count, 1);
+    thread__v1__thread_stats_response__free_unpacked(stats, NULL);
+    free(r.body);
+
+    Thread__V1__ThreadRemoveRequest rm = THREAD__V1__THREAD_REMOVE_REQUEST__INIT;
+    rm.n_document_ids = 1;
+    rm.document_ids = ids;
+    MARY_ASSERT_EQ(call("guest", THREAD_PATH_REMOVE, &rm.base, &r), 0);
+    Thread__V1__ThreadRemoveResponse *removed = thread__v1__thread_remove_response__unpack(NULL, r.body_len, r.body);
+    MARY_ASSERT_EQ(removed->removed_count, 0);                       /* another owner removes nothing */
+    thread__v1__thread_remove_response__free_unpacked(removed, NULL);
+    free(r.body);
+    MARY_ASSERT_EQ(call("mary", THREAD_PATH_REMOVE, &rm.base, &r), 0);
+    removed = thread__v1__thread_remove_response__unpack(NULL, r.body_len, r.body);
+    MARY_ASSERT_EQ(removed->removed_count, 1);
+    thread__v1__thread_remove_response__free_unpacked(removed, NULL);
+    free(r.body);
+
     thread_store_close(store);
     remove_tree(dir);
 }
 
+/* The trust rule: only a trusted connection (the sewn uid) may name another owner. */
+MARY_TEST(only_the_trusted_caller_may_name_an_owner) {
+    thread_caller plain = { .owner = "guest" }, trusted = { .owner = "sewn", .trusted = true };
+    MARY_ASSERT_STR(thread_caller_owner(&plain, "mary"), "guest");
+    MARY_ASSERT_STR(thread_caller_owner(&trusted, "mary"), "mary");
+    MARY_ASSERT_STR(thread_caller_owner(&trusted, ""), "sewn");
+    MARY_ASSERT_STR(thread_caller_owner(&trusted, NULL), "sewn");
+}
+
 int main(void) {
     MARY_RUN(threadd_indexes_lists_and_reads_over_grpc);
+    MARY_RUN(only_the_trusted_caller_may_name_an_owner);
     MARY_TEST_MAIN_END();
 }

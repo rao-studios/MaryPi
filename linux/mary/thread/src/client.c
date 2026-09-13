@@ -52,6 +52,7 @@ uint8_t *thread_turn_index_request(const thread_turn *turn, size_t *len, char *d
     turn_name(turn->user_text, name, sizeof name);
 
     struct json_object *meta = json_object_new_object();
+    json_object_object_add(meta, "family", json_object_new_string("conversation"));
     json_object_object_add(meta, "source", json_object_new_string(turn->source ? turn->source : "typed"));
     if (turn->model) json_object_object_add(meta, "model", json_object_new_string(turn->model));
     json_object_object_add(meta, "started_ms", json_object_new_int64(turn->started_ms));
@@ -71,8 +72,10 @@ uint8_t *thread_turn_index_request(const thread_turn *turn, size_t *len, char *d
     item.metadata.len = meta_len;
     Thread__V1__ThreadIndexItem *items[] = { &item };
     Thread__V1__ThreadIndexRequest req = THREAD__V1__THREAD_INDEX_REQUEST__INIT;
+    char group[128];
+    snprintf(group, sizeof group, "%s%s", THREAD_CLIENT_GROUP_PREFIX, turn->owner_id && *turn->owner_id ? turn->owner_id : "mary");
     req.owner_id = (char *)(turn->owner_id ? turn->owner_id : "");
-    req.group_id = THREAD_CLIENT_GROUP_ID;
+    req.group_id = group;
     req.group_label = THREAD_CLIENT_GROUP_LABEL;
     req.scope = THREAD_CLIENT_SCOPE;
     req.n_items = 1;

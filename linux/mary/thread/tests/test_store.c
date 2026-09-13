@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "mary_test.h"
+#include "thread/proto.h"
 #include "thread/store.h"
 
 /* rm -rf for a test's own temporary directory, without a shell. */
@@ -97,9 +98,11 @@ MARY_TEST(a_turn_is_indexed_listed_and_read_back) {
 
     char path[128];
     struct stat st;
-    snprintf(path, sizeof path, "%s/documents/mary-turn-1.json", dir);
+    snprintf(path, sizeof path, "%s/thread.db", dir);          /* the one file that is the drive */
     MARY_ASSERT_EQ(stat(path, &st), 0);
     MARY_ASSERT_EQ(st.st_mode & 0777, 0600);
+    snprintf(path, sizeof path, "%s/documents", dir);
+    MARY_ASSERT(stat(path, &st) != 0);                          /* no JSON files any more */
     destroy(s);
 }
 
@@ -134,13 +137,16 @@ MARY_TEST(one_owner_cannot_touch_anothers) {
     destroy(s);
 }
 
-MARY_TEST(ids_must_be_file_names) {
+MARY_TEST(ids_are_names_not_paths) {
     MARY_ASSERT(thread_id_valid("mary-turn-1757700000000-ab12"));
     MARY_ASSERT(thread_id_valid("a:b.c_d"));
+    MARY_ASSERT(thread_id_valid("mary-routing-open|finder|3"));   /* Mary's routing ids carry bars */
+    MARY_ASSERT(thread_id_valid("café"));
     MARY_ASSERT(!thread_id_valid(""));
-    MARY_ASSERT(!thread_id_valid(".."));
     MARY_ASSERT(!thread_id_valid("a/b"));
     MARY_ASSERT(!thread_id_valid("with space"));
+    MARY_ASSERT(!thread_id_valid("tab\there"));
+    MARY_ASSERT(!thread_id_valid("\xff"));
     thread_store *s = fresh();
     MARY_ASSERT_EQ(put(s, "mary", "../groups", NULL, "turn", "x", NULL), -EINVAL);
     MARY_ASSERT_EQ(put(s, "mary", "g", NULL, "../../escape", "x", NULL), -EINVAL);
@@ -198,7 +204,7 @@ int main(void) {
     MARY_RUN(a_turn_is_indexed_listed_and_read_back);
     MARY_RUN(the_node_id_is_made_once);
     MARY_RUN(one_owner_cannot_touch_anothers);
-    MARY_RUN(ids_must_be_file_names);
+    MARY_RUN(ids_are_names_not_paths);
     MARY_RUN(groups_page_by_id);
     MARY_RUN(a_document_moves_to_its_new_group);
     MARY_TEST_MAIN_END();

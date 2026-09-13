@@ -6,10 +6,10 @@
  *
  * Every spoken or typed turn is deposited as one document in Mary's conversations group:
  *
- *   group     THREAD_CLIENT_GROUP_ID ("mary-conversations"), scope "personal"
+ *   group     conversation-<owner> ("Conversation"; the conversation lane), scope "personal"
  *   document  mary-turn-<started ms>-<4 hex>
  *   texts     [what the user said, what Mary answered]
- *   metadata  {source, model, started_ms, ended_ms, cancelled}  (JSON bytes)
+ *   metadata  {family: "conversation", source, model, started_ms, ended_ms, cancelled}  (JSON bytes)
  *
  * Results: 0; -errno when threadd cannot be reached or the call fails on the way
  * (-ETIMEDOUT, -EMSGSIZE); -EPROTO when threadd answered with a gRPC status other
@@ -25,8 +25,9 @@
 
 /* The same socket service.h serves; spelled here so the client needs no server header. */
 #define THREAD_CLIENT_SOCKET_PATH "/run/thread/thread.sock"
-#define THREAD_CLIENT_GROUP_ID "mary-conversations"
-#define THREAD_CLIENT_GROUP_LABEL "Conversations with Mary"
+/* The conversation lane's group: conversation-<owner> (thread/families.h). */
+#define THREAD_CLIENT_GROUP_PREFIX "conversation-"
+#define THREAD_CLIENT_GROUP_LABEL "Conversation"
 #define THREAD_CLIENT_SCOPE "personal"
 #define THREAD_CLIENT_TIMEOUT_MS 5000
 

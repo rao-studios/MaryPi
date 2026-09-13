@@ -97,12 +97,22 @@ What Swift gets from Foundation, URLSession and swift-nio.
 
 | Swift | C | Status |
 |---|---|---|
-| `Thread/Sources/Conduit/ThreadQueryServiceImpl.swift` (`index`) | `thread/include/thread/store.h` (`thread_store_index`), `src/service.c` | working — deviation 7 |
-| `Thread/Sources/Conduit/ThreadLibraryServiceImpl.swift` (`library`, `documents`) | `thread_store_library`, `thread_store_documents` | working — deviation 7 |
-| `Thread/Sources/Conduit/ThreadGRPCServer.swift`, `Sources/ThreadServer.swift` | `thread/bin/threadd.c` | working — a unix socket, owner from credentials |
-| `Thread/Sources/Utilities/Persistence/FilePersistence.swift`, `NodeIdentity.swift` | `thread/src/store.c` (JSON files, `node-id`) | working — deviation 7 |
-| `Thread/Sources/Conduit/ThreadQueryServiceImpl.swift` (`search`, `remove`), `ThreadUpdateServiceImpl.swift`, `ThreadGraphServiceImpl.swift`, `Sources/Database/*` (embeddings, PQ, graph) | — | planned: answer UNIMPLEMENTED |
-| `MaryThread/ThreadDirectClient.swift` (`deposit`, `library`, `documents`) | `thread/include/thread/client.h`, `src/client.c` | working — search, removal and the graph are not ported; the client lives in the thread package because the Thread is the hard drive, not a service Mary is a client of |
+| `Thread/Sources/Conduit/ThreadQueryServiceImpl.swift` (`index`, `search`, `remove`) | `thread/include/thread/proto.h`, `src/proto.c`, `src/service.c` | working — deviations 7, 11 |
+| `Thread/Sources/Conduit/ThreadLibraryServiceImpl.swift` (`library`, `documents`, `exportCorpus`) | `thread_store_library`, `thread_store_documents`, `thread_store_export` | working |
+| `Thread/Sources/Conduit/ThreadGraphServiceImpl.swift`, `ThreadUpdateServiceImpl.swift` | `thread_store_graph_proto`, `thread_store_update_group/document`, `thread_store_stats_json` | working |
+| `Thread/Sources/Conduit/ThreadGRPCServer.swift`, `Sources/ThreadServer.swift` | `thread/bin/threadd.c` (two unix sockets, owner from credentials) | working — deviation 7 |
+| — (the MaryOS ops: lanes, schemas, ledger, parity, file records, repair) | `thread/include/thread/local.h`, `src/local.c` (`/run/thread/local.sock`, newline JSON) | working — deviation 11 |
+| `Thread/Sources/Database/Persistence/ThreadRegistry.swift`, `FilePersistence.swift`, `NodeIdentity.swift` | `thread/include/thread/db.h`, `src/db.c` (`thread.db`, SQLite WAL), `src/store.c` | working — deviation 7 |
+| `Thread/Sources/Database/PartitionTable.swift` (`put`, `search`, `remove`, the ADC distance) | `thread/include/thread/vectors.h`, `src/vectors.c`, `src/search.c` | working — deviation 11 (exact scan, no PQ) |
+| `Thread/Sources/Database/GraphStore.swift`, `GraphStore+Repair.swift`, `GraphStore+Search.swift` | `thread/include/thread/graph.h`, `src/graph.c` | working |
+| `Thread/Sources/Database/Graph/ExtractionPolicy.swift`, `GraphExtractionParser.swift`, `GraphEnrichment.swift` | `thread_policy`, `thread_graph_payload_parse`, `thread_graph_apply_policy` | working |
+| `Thread/Sources/Database/Utilities/TextChunker.swift`, `TagGenerator.swift`, `Database+Utilities.swift` (`computeHash`, `numericHash`) | `thread/include/thread/text.h`, `src/text.c`, `foundation/hash.h` (`mf_numeric_hash`) | working |
+| `Thread/Sources/Database/Providers/MistralEmbeddingProvider.swift`, `MistralGraphExtractionProvider.swift` | `thread/include/thread/embedder.h`, `src/embedder.c` (sewnd's `embed`, `graph.extract`) | working — deviation 11 |
+| `Thread/Sources/Database/Enrichment/*` (the enrichment queue) | `thread/src/enrich.c` (`jobs` table, one worker, backoff) | working |
+| `Thread/Sources/Database/Sinatra*` | — | not ported — Sinatra is scrapped |
+| `MaryThread/ThreadDirectClient.swift` (`deposit`, `library`, `documents`) | `thread/include/thread/client.h`, `src/client.c` | working — the client lives in the thread package because the Thread is the hard drive, not a service Mary is a client of |
+| — (the record families and their lanes) | `thread/include/thread/families.h`, `src/families.c` | working — deviation 11 |
+| — (parity with the disk, the ledger) | `thread/src/parity.c`, `src/ledger.c` | working — deviation 11 |
 | — | `thread/bin/threadctl.c` | working |
 
 ## gita ← Gita (Sewn/Sources/Gita)
@@ -182,8 +192,10 @@ What Swift gets from Foundation, URLSession and swift-nio.
    verbatim context. Speech streams on Linux as well — Sewn's Linux build buffers each sentence whole.
 6. **Barge-in.** No interrupting by voice while Mary speaks — there is no echo cancellation yet. Esc or the
    Ask Mary button stops her.
-7. **Thread.** Documents are JSON files; no embeddings, product quantization or knowledge graph yet;
-   `owner_id` comes from the caller's credentials; a unix socket replaces TCP port 9090.
+7. **Thread.** One SQLite file (`/var/lib/thread/thread.db`) instead of Thread's property-list snapshots,
+   so the memory is one file that backs up and moves with the drive; `owner_id` comes from the caller's
+   credentials (only the `sewn` user may name another owner, for auto-memory); two unix sockets replace TCP
+   port 9090; no registration with Sewn.
 8. **Persona and instructions.** Mary's persona says she lives on the user's Mac; on MaryOS she lives in
    MaryOS, and "another pass will close" is dropped because no follow-up pass exists yet. The voice
    instructions render the conversation persona for every turn and leave out `sewnRetrieval`'s reach and
@@ -195,3 +207,12 @@ What Swift gets from Foundation, URLSession and swift-nio.
     accessibility tree — are not ported. Applications declare their skills in code (`lp_skill`), and
     System Settings holds the policy per application: whether Mary may use it, which skills, and when she
     must ask first. `SkillSchema` maps to `lp_skill`; `AbilityDispatching.dispatch` maps to `mcu_invoke`.
+11. **The Thread is the hard drive.** threadd never touches the network: embeddings and graph extraction
+    come from sewnd over its socket (Thread called Mistral itself). Vector search is an exact float32 scan
+    with Thread's sub-vector distance (product quantization is not ported; at one machine's scale the scan
+    is faster and strictly better). Every document carries a record `family`, and the families group into
+    four **lanes** — `personal`, `conversation`, `application`, `behavioral` — so any search can be
+    constrained to the lanes a purpose may draw on (`lanes[]` beside `group_ids[]`, applied to the graph
+    expansion too). indexd keeps a record for every file in the home and threadd proves parity with the
+    disk; a ledger records every deposit, search, enrichment and repair. `top_k` is honoured (Thread ignores
+    it). Sinatra is scrapped.

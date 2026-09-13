@@ -45,7 +45,7 @@ DEPS_frigate := common
 
 # What a package needs beyond json-c (names from OPTIONAL_NAMES); without them it is skipped.
 NEEDS_conduit := NGHTTP2 PROTOBUFC
-NEEDS_thread := NGHTTP2 PROTOBUFC
+NEEDS_thread := NGHTTP2 PROTOBUFC SQLITE
 NEEDS_runtime := NGHTTP2 PROTOBUFC
 
 # json-c is the one library everything uses.

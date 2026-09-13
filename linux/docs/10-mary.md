@@ -24,9 +24,12 @@ and how she is allowed to use the apps.
   that talks to Mistral: chat, Voxtral Realtime transcription and Voxtral speech, over TLS 1.2+ with the
   certificate and host checked. It listens on `/run/sewn/sewn.sock` (0660, group `sewn`) and never on the
   network.
-- **threadd** (`threadd.service`, user `thread`) is Mary's memory: Conduit's `thread.v1` gRPC on
-  `/run/thread/thread.sock` (group `thread`), documents per owner in `/var/lib/thread`. Peering with other
-  MaryOS machines is declared and not built, so the unit has no network at all (`PrivateNetwork=yes`).
+- **threadd** (`threadd.service`, user `thread`) is Mary's memory, the hard drive's own record of what is on
+  it: one SQLite file, `/var/lib/thread/thread.db`, with every owner's documents, their embeddings, the
+  knowledge graph and a ledger. It serves Conduit's `thread.v1` gRPC on `/run/thread/thread.sock` and the
+  MaryOS ops as JSON lines on `/run/thread/local.sock` (both group `thread`). Embeddings and graph extraction
+  come from sewnd; threadd itself has no network at all (`PrivateNetwork=yes`). Peering with other MaryOS
+  machines is declared and not built.
 - **maryd** (`maryd.service`, a user unit) is Mary on the desktop: PipeWire's microphone and speaker, the wake
   word, turns through sewnd, deposits into threadd, and the desktop's socket at
   `$XDG_RUNTIME_DIR/mary/mary.sock`. It has no `[Install]` section: the desktop launcher
@@ -74,11 +77,15 @@ the wake word. Plain Enter still launches what the search found. [Chapter 9](09-
 conversation's look.
 
 **Remembered.** Each turn, spoken or typed, finished or stopped, becomes a document in Thread's
-`mary-conversations` group with the question, the answer and when it happened:
+`conversation-<you>` group with the question, the answer and when it happened, and is embedded and folded
+into the knowledge graph as soon as sewnd has a key:
 
 ```sh
 threadctl library
 threadctl documents mary-turn-1789264000000-3fa2
+threadctl search --lane conversation what did I ask about Paris
+threadctl graph --entity Paris --documents
+threadctl stats
 ```
 
 ## Her voice

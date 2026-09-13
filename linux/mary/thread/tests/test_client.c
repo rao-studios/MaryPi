@@ -32,7 +32,7 @@ static void on_index(const uint8_t *request, size_t len, conduit_reply *reply, v
 
 static void on_library(const uint8_t *request, size_t len, conduit_reply *reply, void *user) {
     Thread__V1__ThreadGroup group = THREAD__V1__THREAD_GROUP__INIT;
-    group.id = THREAD_CLIENT_GROUP_ID;
+    group.id = "conversation-rao";
     group.label = THREAD_CLIENT_GROUP_LABEL;
     group.owner_id = "rao";
     Thread__V1__ThreadGroup *groups[] = { &group };
@@ -49,7 +49,7 @@ static void on_documents(const uint8_t *request, size_t len, conduit_reply *repl
     char *texts[] = { "What is the capital of France?", "Paris." };
     Thread__V1__ThreadDocumentContent doc = THREAD__V1__THREAD_DOCUMENT_CONTENT__INIT;
     doc.id = req && req->n_document_ids ? req->document_ids[0] : "";
-    doc.group_id = THREAD_CLIENT_GROUP_ID;
+    doc.group_id = "conversation-rao";
     doc.n_texts = 2;
     doc.texts = texts;
     Thread__V1__ThreadDocumentContent *docs[] = { &doc };
@@ -127,7 +127,7 @@ MARY_TEST(a_turn_becomes_one_document_in_marys_conversations) {
     free(packed);
     MARY_ASSERT(req != NULL);
     if (!req) return;
-    MARY_ASSERT_STR(req->group_id, "mary-conversations");
+    MARY_ASSERT_STR(req->group_id, "conversation-rao");
     MARY_ASSERT_STR(req->group_label, THREAD_CLIENT_GROUP_LABEL);
     MARY_ASSERT_STR(req->scope, "personal");
     MARY_ASSERT_STR(req->owner_id, "rao");
@@ -141,6 +141,7 @@ MARY_TEST(a_turn_becomes_one_document_in_marys_conversations) {
     int64_t ended = 0;
     bool cancelled = true;
     MARY_ASSERT_STR(mc_json_string(meta, "source"), "voice");
+    MARY_ASSERT_STR(mc_json_string(meta, "family"), "conversation");
     MARY_ASSERT_STR(mc_json_string(meta, "model"), "mistral-medium-latest");
     MARY_ASSERT(mc_json_int64(meta, "ended_ms", &ended) && ended == 1757700004200LL);
     MARY_ASSERT(mc_json_bool(meta, "cancelled", &cancelled) && !cancelled);
@@ -179,7 +180,7 @@ MARY_TEST(deposit_library_and_documents_reach_threadd) {
     MARY_ASSERT_EQ(thread_client_library(sock, 0, NULL, 2000, &lib, NULL), 0);
     MARY_ASSERT(lib && lib->n_groups == 1);
     if (lib) {
-        MARY_ASSERT_STR(lib->groups[0]->id, THREAD_CLIENT_GROUP_ID);
+        MARY_ASSERT_STR(lib->groups[0]->id, "conversation-rao");
         thread__v1__thread_library_response__free_unpacked(lib, NULL);
     }
 
