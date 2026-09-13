@@ -1,0 +1,51 @@
+# sewnd (linux/mary/sewn): the only process on MaryOS that holds the Mistral API key.
+# It listens on /run/sewn/sewn.sock (0660, group sewn; the desktop user is a member,
+# hooks/desktop/64-mary.sh) and reaches api.mistral.ai over TLS; nothing listens on
+# the network. The key lives in /var/lib/sewn (0700) and is never logged.
+[Unit]
+Description=sewnd: Mary's connection to Mistral
+Documentation=file:/usr/share/doc/mary/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sewn
+Group=sewn
+ExecStart=/usr/bin/sewnd
+Restart=on-failure
+RestartSec=2
+StateDirectory=sewn
+StateDirectoryMode=0700
+RuntimeDirectory=sewn
+RuntimeDirectoryMode=0750
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

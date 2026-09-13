@@ -1,0 +1,51 @@
+# threadd (linux/mary/thread): MaryOS's memory. It serves Conduit's thread.v1 gRPC on
+# /run/thread/thread.sock (0660, group thread; the desktop user is a member) and keeps
+# each owner's documents in /var/lib/thread (0700). Peering with other MaryOS machines
+# is not built yet, so it has no network at all.
+[Unit]
+Description=threadd: Mary's memory (Thread)
+Documentation=file:/usr/share/doc/mary/README.md
+After=local-fs.target
+
+[Service]
+Type=simple
+User=thread
+Group=thread
+ExecStart=/usr/bin/threadd
+Restart=on-failure
+RestartSec=2
+StateDirectory=thread
+StateDirectoryMode=0700
+RuntimeDirectory=thread
+RuntimeDirectoryMode=0750
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

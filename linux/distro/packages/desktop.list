@@ -63,3 +63,13 @@ rtkit
 # System Settings › Network: iwd joins Wi-Fi networks (configured by overlay-desktop/etc/iwd
 # and hooks/desktop/62-wifi.sh); networkd keeps addressing, as for the wired link.
 iwd
+# Mary (linux/mary, the builder's mary stage): what sewnd, threadd and maryd link.
+# sherpa-onnx, for the wake word, ships inside out/mary (/usr/lib/maryos/sherpa-onnx),
+# not from apt; ca-certificates, which sewnd verifies Mistral against, is in base.list.
+libjson-c5
+libcurl4t64
+libwebsockets19t64
+libssl3t64
+libnghttp2-14
+libprotobuf-c1
+libpipewire-0.3-0t64

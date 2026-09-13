@@ -18,6 +18,7 @@ the work was done, so they say what exists and what does not.
 | 7 | [Status and next steps](07-status-and-next-steps.md) | What works, what is still plain Ubuntu, known issues, milestones |
 | 8 | [Troubleshooting](08-troubleshooting.md) | Docker, the entitlement, blank windows, cards that do not boot |
 | 9 | [The desktop](09-the-desktop.md) | MaryUI and the parity contract, the `ui` stage, `vm.sh` vs `ui.sh`, the unit and the launcher, the dev loop, inside the compositor, limitations |
+| 10 | [Mary](10-mary.md) | sewnd, threadd and maryd; how the key is kept; "Hey Mary", a typed turn and memory; skills and their policy; the units, the dev loop, what is missing |
 | – | [Glossary](glossary.md) | Terms used throughout |
 
 Conventions: paths like `distro/...` and `builder/...` are inside `linux/`

@@ -1,0 +1,19 @@
+# maryd (linux/mary/runtime): Mary on this desktop — the microphone, the wake word,
+# the speaker, turns through sewnd, memory through threadd, and the desktop's socket
+# at $XDG_RUNTIME_DIR/mary/mary.sock. A user unit with no [Install]: the desktop
+# launcher (/usr/lib/maryos/desktop) starts it inside the graphical session, so a
+# console or ssh login never opens the microphone.
+[Unit]
+Description=maryd: Mary on this desktop
+Documentation=file:/usr/share/doc/mary/README.md
+After=pipewire.service wireplumber.service
+Wants=pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/maryd
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+LockPersonality=yes
+SystemCallArchitectures=native
