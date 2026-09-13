@@ -29,6 +29,7 @@ struct mv_audio {
     atomic_bool reset_framer;       /* set when capture pauses; the capture callback clears the partial frame */
     atomic_llong last_played_ms;
     atomic_bool broken;             /* a stream failed or was disconnected */
+    atomic_bool closing;            /* mv_audio_close is taking the streams down, which is no failure */
 };
 
 static void on_capture(void *data) {
@@ -69,7 +70,8 @@ static void on_playback(void *data) {
 /* Every transition is logged; a stream that errors or loses PipeWire stays broken until maryd reopens the audio. */
 static void report_state(struct mv_audio *a, const char *name, enum pw_stream_state old, enum pw_stream_state state,
                          const char *error) {
-    bool lost = state == PW_STREAM_STATE_ERROR || (state == PW_STREAM_STATE_UNCONNECTED && old != PW_STREAM_STATE_UNCONNECTED);
+    bool lost = !atomic_load(&a->closing) &&
+                (state == PW_STREAM_STATE_ERROR || (state == PW_STREAM_STATE_UNCONNECTED && old != PW_STREAM_STATE_UNCONNECTED));
     if (lost) atomic_store(&a->broken, true);
     mc_log(lost ? MC_LOG_WARNING : MC_LOG_DEBUG, "%s: %s -> %s%s%s", name, pw_stream_state_as_string(old),
            pw_stream_state_as_string(state), error ? ": " : "", error ? error : "");
@@ -152,6 +154,7 @@ mv_audio *mv_audio_open(const mv_audio_config *config, mv_capture_fn on_frame, v
 
 void mv_audio_close(mv_audio *a) {
     if (!a) return;
+    atomic_store(&a->closing, true);
     if (a->loop) pw_thread_loop_stop(a->loop);
     if (a->capture) pw_stream_destroy(a->capture);
     if (a->playback) pw_stream_destroy(a->playback);
