@@ -420,7 +420,11 @@ without root.
 
 ## Inside the compositor
 
-Five scene layers: wallpaper, windows, the clock, menus, Spotlight. The clock sits top right with its letters cut from brushed platinum: the desktop's one sheet of metal shows through the glyphs, over a dark keyline and a soft shadow so it reads on any wallpaper, with no plate behind (`lp_clock.h`, shared with `lp-render --clock`). Everything the library
+Five scene layers: wallpaper, windows, the clock, menus, Spotlight. The wallpaper is live by default: **lava**,
+a lighter variant of the molten shader that moves on its own like a blurry wavy lava lamp. It is computed on the
+CPU at a quarter of the screen each way, fifteen times a second, and the scene stretches each frame to the output
+with bilinear filtering, which is the blur (`lp_lava.h`, PARITY D33). The timer skips a screen that windows cover
+entirely, and Reduce Motion holds a still frame. The clock sits top right with its letters cut from brushed platinum: the desktop's one sheet of metal shows through the glyphs, over a dark keyline and a soft shadow so it reads on any wallpaper, with no plate behind (`lp_clock.h`, shared with `lp-render --clock`). Everything the library
 paints is a *chrome*: a Cairo buffer wrapped as a `wlr_buffer` and shown as a
 `wlr_scene_buffer`; three rotate so the renderer never reads a buffer being
 painted. A chrome's paint function runs an EVENT pass on input (no Cairo; hit
@@ -469,7 +473,8 @@ device: Device not taken` when those virtual devices vanish; it is noise.
 ## Settings and the wallpaper cache
 
 Spotlight's View pill writes `$XDG_CONFIG_HOME/maryui/settings.conf` (accent,
-folders, liquid merge, wallpaper mode, molten tone, reduced motion, clock) —
+folders, liquid merge, wallpaper mode — `lava` (the default), `molten` or `procedural` — molten tone, which grades
+lava too, reduced motion, clock) —
 MaryPi ships no defaults for it, so an unwritten file means the compiled
 defaults, which mirror the web's `settings.ts`. `clock` is the one key the web
 does not have: View › Show Clock writes `clock=off` and the time leaves the
@@ -482,7 +487,8 @@ each app's own dock flag), and values out of range are pulled back in on load. T
 virtiofs), then `/usr/share/maryui/`, then `$XDG_CACHE_HOME/maryui/`; a render
 that had to happen is written to the last of those. That is why the `ui` stage
 bakes `wallpaper-1280x800.png` and `molten-platinum-1280x800.png` into the tree:
-at the VM's scanout size both are already there, and nothing renders at boot.
+at the VM's scanout size both are already there, and nothing renders at boot. Lava is never cached: its first
+frame takes milliseconds.
 
 ## Limitations
 
@@ -502,6 +508,14 @@ at the VM's scanout size both are already there, and nothing renders at boot.
   still bake the `ui` stage shipped. The animated flow — `molten.flow` shader
   seconds per second of window motion, then a full-resolution still after
   `molten.settle-ms` — is written but has never run, because no Pi has booted.
+- The lava wallpaper is the exception to "an idle desktop handles no frames": while it shows, the compositor
+  renders fifteen field frames a second, about 3 ms of CPU each on the Mac and 4.5 ms in the Noble builder for a
+  1280×800 screen (`lp-render --lava-bench`), and the scene recomposites the wallpaper's visible area.
+  `MARYUI_DEBUG=frames` logs its frames, their cost and how many were skipped because windows covered it.
+  Measured in the VM on 2026-09-14 with nothing covering the wallpaper: 72 frames in every 5 seconds at about
+  9 ms of wall-clock time each (15 ms at worst, on a loaded host), scene commits about 1 ms, and the desktop
+  process at 16–17% of one core in `top`. Choosing Molten or Procedural in System Settings › General returns
+  the desktop to zero idle frames.
 - No clipboard between host and guest, no Xwayland, no screen locking, no
   greeter: the desktop is the session.
 - Clients that insist on client-side decorations get a frame around their frame.
