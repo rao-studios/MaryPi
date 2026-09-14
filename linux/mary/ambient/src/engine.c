@@ -137,6 +137,12 @@ bool ma_route_lead_place(const ma_route *route, ma_place *out) {
     return true;
 }
 
+bool ma_route_spawn_place(const ma_route *route, ma_place *out) {
+    if (!route->realm.has_spawn) return false;
+    *out = route->realm.spawn;
+    return true;
+}
+
 bool ma_route_is_action_turn(const ma_route *route) {
     return route->intent == MA_INTENT_OPERATE || route->intent == MA_INTENT_COMPOSE || route->verdicts.has_edit;
 }
@@ -188,6 +194,8 @@ static void classify(const ma_engine_inputs *in, const ma_verdicts *v, const ma_
             const ma_registration *reg = ma_roster_registration(in->roster, gate->applications[i]);
             writing = reg && has_ability(reg->abilities, reg->ability_count, "writing");
         }
+        /* nothing leads and nothing was named: the words themselves ask for writing ("write … in a new note") */
+        if (!lead && !gate->application_count) writing = writing || has_ability(gate->requested_abilities, gate->requested_count, "writing");
         *intent = writing ? MA_INTENT_COMPOSE : MA_INTENT_OPERATE;
         *signal = writing ? MA_SIGNAL_WRITING_REGISTER : MA_SIGNAL_ACTION_COMMAND;
         return;

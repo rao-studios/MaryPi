@@ -29,8 +29,10 @@ computer-use's pipes. When the skills arrive maryd builds the skill index triage
 `embed`) and writes one `style` record per discipline into the Thread (over threadd's local socket);
 nothing per skill or app is recorded (PORTING.md 15).
 
-A turn (PORTING.md 14): the desktop is asked for the world, the ambient engine routes, and triage embeds the
-words. A unique skill winner with a safe argument shape and a single clause dispatches with no model round —
+A turn (PORTING.md 14): the desktop is asked for the world, triage embeds the words, and the ambient engine
+routes with triage's verdict (an action-shaped request is an action turn; a unique winner is the intent);
+when nothing open serves the need, the realm's spawn — the closest application of it — leads, and the
+lane's call opens it. A unique skill winner with a safe argument shape and a single clause dispatches with no model round —
 the receipt is the reply, and the words become a `routing` habit in the Thread. An action turn (or a winner
 that cannot dispatch) runs the skills lane: `complete` rounds through sewnd, calls through the desktop's
 pipes, a protected skill parked on the desktop's confirmation card (`skill.confirm{call_id, app, skill, args,

@@ -32,5 +32,8 @@ struct mc_buf;
 int ma_prompt_live_work(const ma_rendering *rendering, const ma_live_work_world *world, bool inspired_sight, struct mc_buf *out);
 /* MaryPrompts.capabilityLine: what her hands do in the place that leads, or "" when nothing leads. */
 void ma_capability_line(const ma_place *lead, const ma_roster *r, char *out, size_t n);
+/* The line for an application the turn would open (the realm's spawn): it is not open, and a call to one of
+ * its skills opens it with a fresh document. */
+void ma_spawn_line(const ma_place *spawn, const ma_roster *r, char *out, size_t n);
 
 #endif

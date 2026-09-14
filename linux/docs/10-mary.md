@@ -108,6 +108,14 @@ published them. Then one of three things happens:
 
 Only one lane runs per turn, where the Mac runs both and joins them (`mary/PORTING.md`, deviation 14).
 
+Triage runs before the route, so the route sees its verdict: a request is an **action turn** when it
+carries an edit intent, when its first word after the courtesies is some skill's trigger ("write", "play",
+"open"), or when its words land near a skill at all (the Mac read this off an intent corpus; MaryOS reads
+it off the skill index). And when nothing open can serve the need, the realm names the closest application
+of it — "write hello world in a new note" with nothing open leads to TextEdit, the writing discipline's
+app — and the lane's call opens it: every skill performs through the app's own code, and an app with no
+window opens one. Ambient › Realms shows it as the turn's *spawn*.
+
 **Remembered.** The conversation is not kept turn by turn: every seventh exchange, or on a change of
 topic, sewnd writes a **memory** note into the Thread's `memory-<you>` group, and that is what a later reply
 retrieves. Every turn that ran a skill seals a **behaviour** record — the request, the ambient capture,
@@ -168,7 +176,7 @@ Mary never reads the screen or synthesises input on MaryOS. The apps are the des
 its skills in code — an id, a title, a JSON Schema for the arguments, whether it reads, acts or cannot be
 undone, and the Mac's schema words: how it is classed, when it may run, the tokens and phrases that call it,
 what it acts on, how an enum value is said — and performs one through the same code its menus run. TextEdit
-reads, inserts, replaces the selection and saves; the Finder opens and reveals; the Calculator calculates;
+reads, inserts, replaces the selection, writes a new note and saves; the Finder opens and reveals; the Calculator calculates;
 Calendar reads the day; the Media Player plays and pauses; System Settings opens a pane; and the desktop
 itself lists, closes, shades and brings forward windows. Mary is the operating system, so nothing of this
 is recorded in the Thread as knowledge: triage embeds the skills as the desktop publishes them, the skills

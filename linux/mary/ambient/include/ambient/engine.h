@@ -106,6 +106,8 @@ typedef struct ma_route {
 } ma_route;
 
 bool ma_route_lead_place(const ma_route *route, ma_place *out);
+/* The application an action turn would open when nothing open serves it (the realm's spawn). */
+bool ma_route_spawn_place(const ma_route *route, ma_place *out);
 /* The post-route answer: the turn acts rather than converses. */
 bool ma_route_is_action_turn(const ma_route *route);
 /* The world the route accepted as its referent, or NULL (a rejected packet stays on the route for diagnostics). */

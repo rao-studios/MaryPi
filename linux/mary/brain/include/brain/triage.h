@@ -21,6 +21,8 @@
 #define MB_ROUTING_FLOOR 0.62f
 #define MB_ROUTING_MARGIN 0.04f
 #define MB_SINGLE_CLAUSE_WORDS 12
+/* isActionShaped, without the Mac's intent corpus: the words land near some skill at all. */
+#define MB_ACTION_FLOOR 0.50f
 
 struct json_object;
 
@@ -77,6 +79,10 @@ void mb_spoken_span(const char *utterance, const sk_skill *skill, const sk_app *
  * or false. `value` and `spoken_as` are filled. */
 bool mb_spoken_enum(const sk_skill *skill, const char *parameter, const char *utterance, char *value, size_t vn, char *spoken_as, size_t sn);
 
+/* TurnTriage's isActionShaped, as MaryOS can know it: the best skill affinity clears MB_ACTION_FLOOR, or the
+ * request's first content word (after the preamble — "hey mary", "can you", "please") is a trigger token
+ * of some skill. The route treats an action-shaped turn as an action turn (MaryBrain+Turn: actionTurn). */
+bool mb_action_shaped(const mb_affinity *affinities, int n, const char *utterance, const sk_registry *registry);
 /* DeterministicTier.decision: a bare, exact yes or no. 1, 0, or -1. */
 int mb_deterministic_decision(const char *utterance);
 

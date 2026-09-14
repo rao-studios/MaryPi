@@ -89,6 +89,12 @@ typedef struct ma_realm {
     bool has_place;
     ma_place place;
     ma_signal decided_by;           /* MA_SIGNAL_NONE while undecided */
+    /* The application an action turn would have to open: the place, when it was only named and is not in
+     * front (no evidence of it); else, when no place serves, the closest application of the need — the
+     * candidate that conforms by the abilities asked for, else by the discipline, ties by token. MaryOS: a
+     * skill's call opens its application; the Mac had no such thing. */
+    bool has_spawn;
+    ma_place spawn;
 } ma_realm;
 
 typedef struct ma_realm_inputs {
@@ -109,6 +115,8 @@ void ma_realm_need(const ma_realm_inputs *in, ma_need *out);
 int ma_realm_candidates(const ma_need *need, const ma_realm_inputs *in, ma_candidate *out, int max);
 bool ma_realm_place(const ma_candidate *candidates, int n, const ma_need *need, const ma_realm_inputs *in, ma_place *out);
 void ma_realm_resolve(const ma_realm_inputs *in, ma_realm *out);
+/* The spawn candidate for a need nobody open serves: the conforming candidate ranked by abilities, then discipline. */
+bool ma_realm_spawn(const ma_candidate *candidates, int n, const ma_need *need, ma_place *out);
 /* The candidate the realm settled on, when it is in the set. */
 const ma_candidate *ma_realm_chosen(const ma_realm *r);
 

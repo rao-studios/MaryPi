@@ -116,6 +116,27 @@ MARY_TEST(a_literally_named_place_outranks_the_frontmost_one) {
     MARY_ASSERT_STR(lanes[0], "personal");
 }
 
+MARY_TEST(an_action_shaped_request_with_nothing_open_composes_and_would_open_the_writing_app) {
+    ma_engine_inputs in = { .utterance = "can you write hello world in a new note", .classify_edit = true, .bare_decision = -2, .action_turn = true, .roster = &roster, .now = 1000 };
+    ma_engine_resolve(&in, &route);
+    MARY_ASSERT_EQ(route.intent, MA_INTENT_COMPOSE);              /* the words ask for writing */
+    MARY_ASSERT_EQ(route.decided_by, MA_SIGNAL_WRITING_REGISTER);
+    ma_place lead, spawn;
+    MARY_ASSERT(!ma_route_lead_place(&route, &lead));
+    MARY_ASSERT(ma_route_spawn_place(&route, &spawn));
+    MARY_ASSERT_STR(spawn.application, "textedit");
+    struct json_object *o = ma_route_json(&route, &roster);
+    const char *text = json_object_to_json_string_ext(o, JSON_C_TO_STRING_PLAIN);
+    MARY_ASSERT(strstr(text, "\"spawn\":{") != NULL && strstr(text, "\"isActionTurn\":true") != NULL);
+    json_object_put(o);
+    /* not action-shaped, nothing named: a conversation, and nothing to open */
+    in.action_turn = false;
+    in.utterance = "how was your day";
+    ma_engine_resolve(&in, &route);
+    MARY_ASSERT_EQ(route.intent, MA_INTENT_CONVERSE);
+    MARY_ASSERT(!ma_route_spawn_place(&route, &spawn));
+}
+
 MARY_TEST(question_forms_shape_the_plan) {
     resolve("how do I save in TextEdit?", "textedit", NULL);
     MARY_ASSERT_EQ(route.gate.questions, MA_Q_HOW);
@@ -171,6 +192,7 @@ int main(void) {
     MARY_RUN(the_ladder_in_order);
     MARY_RUN(decisions_and_stops_come_first);
     MARY_RUN(a_literally_named_place_outranks_the_frontmost_one);
+    MARY_RUN(an_action_shaped_request_with_nothing_open_composes_and_would_open_the_writing_app);
     MARY_RUN(question_forms_shape_the_plan);
     MARY_RUN(a_fresh_selection_defines_a_deictic_turn_unless_another_app_is_named);
     MARY_RUN(the_route_serialises_with_the_report_vocabulary);

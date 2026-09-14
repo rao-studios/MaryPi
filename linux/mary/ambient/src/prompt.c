@@ -107,6 +107,18 @@ int ma_prompt_live_work(const ma_rendering *rendering, const ma_live_work_world 
     return rc ? -1 : 0;
 }
 
+void ma_spawn_line(const ma_place *spawn, const ma_roster *r, char *out, size_t n) {
+    out[0] = 0;
+    if (!spawn || !ma_place_is_application(spawn)) return;
+    const char *name = ma_place_display_name(spawn, r), *focus = ma_place_focus(spawn, r);
+    if (focus && strcmp(focus, "writing") == 0)
+        snprintf(out, n, "%s is not in front right now. It is the place for this: calling one of its skills brings it up, with a fresh document if it has none, "
+                         "and your hands can write there directly \xE2\x80\x94 this voice pass is not writing as it speaks.", name);
+    else
+        snprintf(out, n, "%s is not in front right now. It is the place for this: calling one of its skills brings it up, and your hands can act "
+                         "there directly \xE2\x80\x94 this voice pass is not acting as it speaks.", name);
+}
+
 void ma_capability_line(const ma_place *lead, const ma_roster *r, char *out, size_t n) {
     out[0] = 0;
     if (!lead || !ma_place_is_application(lead)) return;

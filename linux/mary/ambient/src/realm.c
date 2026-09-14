@@ -125,12 +125,32 @@ bool ma_realm_place(const ma_candidate *candidates, int n, const ma_need *need, 
     return false;
 }
 
+bool ma_realm_spawn(const ma_candidate *candidates, int n, const ma_need *need, ma_place *out) {
+    if (ma_need_is_empty(need)) return false;
+    int best = -1, best_rank = 0;
+    for (int i = 0; i < n; i++) {
+        const ma_candidate *c = &candidates[i];
+        if (!ma_candidate_conforms(c)) continue;
+        int rank = (c->conforms_count > 0 ? 2 : 0) + (c->conforms_by_discipline ? 1 : 0);
+        if (rank > best_rank) { best = i; best_rank = rank; }     /* the candidates are sorted by token: the first of a rank wins */
+    }
+    if (best < 0) return false;
+    *out = candidates[best].place;
+    return true;
+}
+
+const ma_candidate *ma_realm_chosen(const ma_realm *r);
+
 void ma_realm_resolve(const ma_realm_inputs *in, ma_realm *out) {
     memset(out, 0, sizeof *out);
     ma_realm_need(in, &out->need);
     out->candidate_count = ma_realm_candidates(&out->need, in, out->candidates, MA_CANDIDATES_MAX);
     out->has_place = ma_realm_place(out->candidates, out->candidate_count, &out->need, in, &out->place);
     out->decided_by = out->has_place ? in->decided_by : MA_SIGNAL_NONE;
+    /* nothing serves, or the place is only named and not in front (no evidence of it): a call would have to open it */
+    const ma_candidate *chosen = out->has_place ? ma_realm_chosen(out) : NULL;
+    if (!out->has_place) out->has_spawn = ma_realm_spawn(out->candidates, out->candidate_count, &out->need, &out->spawn);
+    else if (chosen && !chosen->has_evidence && !ma_need_is_empty(&out->need)) { out->has_spawn = true; out->spawn = out->place; }
 }
 
 const ma_candidate *ma_realm_chosen(const ma_realm *r) {

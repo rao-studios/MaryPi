@@ -659,6 +659,7 @@ static void *triage_worker(void *arg) {
             json_object_array_add(list, a);
         }
         json_object_object_add(ev, "affinities", list);
+        json_object_object_add(ev, "actionShaped", json_object_new_boolean(mb_action_shaped(affinities, n, job->text, &d->skills)));
         const mb_skill_vector *winner = mb_unique_winner(affinities, n, &d->skills, MB_ROUTING_FLOOR, MB_ROUTING_MARGIN);
         const sk_skill *skill = winner ? sk_registry_skill(&d->skills, winner->app, winner->skill) : NULL;
         const sk_app *app = winner ? sk_registry_app(&d->skills, winner->app) : NULL;
@@ -1293,12 +1294,50 @@ static void continue_turn(mr_daemon *d, struct json_object *triage) {
 }
 
 /* The turn proper: the route, the prompt, the trace, and sewnd. */
+static void resolve_turn(mr_daemon *d, struct json_object *triage);
+
+/* A turn opens, and triage runs first (TurnTriage), so the route sees its verdict — actionTurn = an edit intent
+ * or an action-shaped request, and a unique skill winner as the embedding intent (MaryBrain+Turn). Without an
+ * index the route resolves at once. */
 static void begin_turn(mr_daemon *d, const char *question, bool voice) {
     d->turn.question = strdup(question);
     d->turn.voice = voice;
     d->turn.started_wall = mc_wall_ms();
-    double now = wall_seconds();
     thread_turn_document_id(d->turn.started_wall, d->turn.request_id, sizeof d->turn.request_id);
+    d->turn.open = true;
+    d->turn.runs = json_object_new_array();
+    snprintf(d->turn.lane, sizeof d->turn.lane, "voice");
+    set_state(d, MV_STATE_THINKING);
+    pthread_mutex_lock(&d->index_lock);
+    bool indexed = d->index_ready;
+    pthread_mutex_unlock(&d->index_lock);
+    if (indexed) {
+        d->turn.triaging = true;
+        triage_job(d, d->turn.gen, 0, question);
+    } else {
+        resolve_turn(d, NULL);
+        continue_turn(d, NULL);
+    }
+}
+
+/* The turn proper, once triage has spoken (or there was none): the route, the prompt, the trace, and sewnd's
+ * request. An action turn nobody open serves leads to the realm's spawn: the application a call will open. */
+static void resolve_turn(mr_daemon *d, struct json_object *triage) {
+    const char *question = d->turn.question;
+    double now = wall_seconds();
+    struct json_object *winner = triage ? mc_json_object(triage, "winner") : NULL;
+    bool action_shaped = false;
+    if (triage) mc_json_bool(triage, "actionShaped", &action_shaped);
+    /* a unique winner promotes the turn (operate, or compose when its app writes) — unless it only reads: a
+     * question with a skill behind it stays a question, and the lane runs it without a nudge to act further */
+    ma_intent embedding_intent = MA_INTENT_OPERATE;
+    bool promotes = false;
+    if (winner) {
+        const sk_skill *skill = sk_registry_skill(&d->skills, mc_json_string(winner, "app"), mc_json_string(winner, "skill"));
+        promotes = skill && skill->effect != SK_EFFECT_READ;
+        const ma_registration *reg = ma_roster_registration(&d->roster, mc_json_string(winner, "app"));
+        for (int i = 0; reg && i < reg->ability_count; i++) if (strcmp(reg->abilities[i], "writing") == 0) embedding_intent = MA_INTENT_COMPOSE;
+    }
 
     /* Resolve the turn once, before the prompt is assembled (AmbientEngine.resolve). */
     ma_focus_signal signal;
@@ -1317,20 +1356,23 @@ static void begin_turn(mr_daemon *d, const char *question, bool voice) {
         broadcast(d, error_message("turn", "out of memory"));
         return;
     }
-    d->turn.open = true;
-    d->turn.runs = json_object_new_array();
-    snprintf(d->turn.lane, sizeof d->turn.lane, "voice");
     ma_engine_inputs inputs = {
         .utterance = question, .classify_edit = true, .bare_decision = -2, .world = has_world ? &world : NULL,
+        .action_turn = action_shaped, .has_embedding_intent = promotes, .embedding_intent = embedding_intent,
         .lead_application_id = signal.has_lead && ma_place_is_application(&signal.lead) ? signal.lead.application : NULL,
         .focus = &signal, .evidence = evidence, .evidence_count = evidence_count, .roster = &d->roster, .now = now,
     };
     ma_engine_resolve(&inputs, route);
     ma_store_note_utterance(d->ambient, question);
     ma_store_note_route(d->ambient, route);
-    ma_place lead;
+    ma_place lead, spawn;
     bool has_lead = ma_route_lead_place(route, &lead);
     if (has_lead) ma_store_note_lead(d->ambient, &lead, now);
+    /* nothing open serves an action: the closest application of the need is the one a call opens */
+    bool acts = ma_route_is_action_turn(route) || action_shaped || promotes;
+    bool has_spawn = !has_lead && acts && ma_route_spawn_place(route, &spawn);
+    char spawn_line[512] = "";
+    if (has_spawn) ma_spawn_line(&spawn, &d->roster, spawn_line, sizeof spawn_line);
 
     /* Rank what she holds against the words, render it under the voice budget, and land it last in the instructions. */
     const ma_surface *surfaces[MA_RENDER_SURFACES];
@@ -1348,6 +1390,7 @@ static void begin_turn(mr_daemon *d, const char *question, bool voice) {
     ma_prompt_live_work(rendering, &live_world, route->selection_defines_turn, &live);
     char capability[512] = "";
     if (has_lead && route->intent != MA_INTENT_CONVERSE) ma_capability_line(&lead, &d->roster, capability, sizeof capability);
+    else if (has_spawn) snprintf(capability, sizeof capability, "%s", spawn_line);
 
     mb_clock clock;
     mb_clock_now(&clock);
@@ -1367,11 +1410,13 @@ static void begin_turn(mr_daemon *d, const char *question, bool voice) {
     d->turn.start = start;
 
     /* Lane B's prompt and scope, should the turn act (MaryBrain+Turn.swift runOrchestratorLane's inputs). */
-    const ma_registration *lead_reg = has_lead && ma_place_is_application(&lead) ? ma_roster_registration(&d->roster, lead.application) : NULL;
+    const ma_registration *lead_reg = has_lead && ma_place_is_application(&lead) ? ma_roster_registration(&d->roster, lead.application)
+                                    : has_spawn ? ma_roster_registration(&d->roster, spawn.application) : NULL;
     snprintf(d->turn.lead_name, sizeof d->turn.lead_name, "%s", lead_reg ? lead_reg->name : "");
-    const char *lead_context[1] = { live.len ? (const char *)live.data : "" };
+    const char *lead_context[2] = { has_spawn ? spawn_line : live.len ? (const char *)live.data : "", live.len ? (const char *)live.data : "" };
+    int lead_context_count = has_spawn ? (live.len ? 2 : 1) : (live.len ? 1 : 0);
     mb_system_inputs system_in = { .registry = &d->skills, .lead_place_name = lead_reg ? lead_reg->name : NULL,
-                                   .lead_context = lead_context, .lead_context_count = live.len ? 1 : 0 };
+                                   .lead_context = lead_context, .lead_context_count = lead_context_count };
     d->turn.system_prompt = mb_system_prompt(&clock, &system_in);
     struct json_object *scope = json_object_new_object();
     json_object_object_add(scope, "owner_id", json_object_new_string(d->owner));
@@ -1413,26 +1458,13 @@ static void begin_turn(mr_daemon *d, const char *question, bool voice) {
         ma_trace_push(d->trace, record);
         free(record);
     }
-    mc_log(MC_LOG_DEBUG, "turn %s: %s via %s%s%s", d->turn.request_id, ma_intent_name(route->intent), ma_signal_name(route->decided_by),
-           has_lead ? ", lead " : "", has_lead ? route->lead_application_id : "");
+    mc_log(MC_LOG_DEBUG, "turn %s: %s via %s%s%s%s%s", d->turn.request_id, ma_intent_name(route->intent), ma_signal_name(route->decided_by),
+           has_lead ? ", lead " : "", has_lead ? route->lead_application_id : "", has_spawn ? ", would open " : "", has_spawn ? spawn.application : "");
     free(instructions);
     mc_buf_free(&live);
     free(route);
     free(rendering);
     free(facts);
-    set_state(d, MV_STATE_THINKING);
-
-    /* Triage (TurnTriage): one embedding of the words against the skill index, on a worker; the answer, or its
-     * absence, decides which lane runs. Without an index the turn goes straight on. */
-    pthread_mutex_lock(&d->index_lock);
-    bool indexed = d->index_ready;
-    pthread_mutex_unlock(&d->index_lock);
-    if (indexed) {
-        d->turn.triaging = true;
-        triage_job(d, d->turn.gen, 0, question);
-    } else {
-        continue_turn(d, NULL);
-    }
 }
 
 static void cancel_pending(mr_daemon *d) {
@@ -1688,7 +1720,7 @@ static void on_triage_done(mr_daemon *d, struct json_object *ev) {
         mr_client *c = mr_desktop_client(&d->desktop, (unsigned)client);
         if (!c) return;
         struct json_object *o = typed("triage.result");
-        const char *keys[] = { "ok", "message", "text", "winner", "affinities" };
+        const char *keys[] = { "ok", "message", "text", "winner", "affinities", "actionShaped" };
         for (size_t i = 0; i < sizeof keys / sizeof *keys; i++) {
             struct json_object *v;
             if (json_object_object_get_ex(ev, keys[i], &v)) json_object_object_add(o, keys[i], json_object_get(v));
@@ -1700,6 +1732,8 @@ static void on_triage_done(mr_daemon *d, struct json_object *ev) {
     bool ok = false;
     mc_json_bool(ev, "ok", &ok);
     if (!ok) mc_log(MC_LOG_DEBUG, "turn %s: triage abstained: %s", d->turn.request_id, mc_json_string(ev, "message") ? mc_json_string(ev, "message") : "");
+    resolve_turn(d, ok ? ev : NULL);
+    if (!d->turn.open) return;
     continue_turn(d, ok ? ev : NULL);
 }
 

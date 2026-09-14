@@ -181,6 +181,7 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `MaryBrain/Brain/TurnTriage.swift`, `Abilities/Roster/EmbeddingRouting.swift` (floor 0.62, margin 0.04, `uniqueWinner`, `confidenceShape`, `isSingleClause`), `SemanticSkillIndex`, `MaryPlugin/Shared/SpokenArgumentExtractor.swift`, `SpokenEnumExtractor.swift`, `Brain/DeterministicTier.swift` | `brain/include/brain/triage.h`, `src/triage.c` (`mb_skill_index`, `mb_affinities`, `mb_unique_winner`, `mb_confidence_shape_of`, `mb_spoken_span`, `mb_spoken_enum`, `mb_deterministic_decision`) | working — deviation 14: the skill index embeds titles, summaries and triggers through sewnd; no intent corpus |
 | `MaryBrain/Brain/MaryBrain+Turn.swift` (`runOrchestratorLane`), `MaryBrain+RepeatGuard.swift`, `Prompt/MaryPrompts+SewnModeOne.swift` (`orchestratorAddendum`, `continuationNudge`) | `brain/include/brain/lane.h`, `src/lane.c` (`mb_lane_run`: ten rounds, the repeat guard, the confirmation park, the nudge once) | working — deviation 14 |
 | `MaryBrain/Prompt/PromptCatalog+System.swift`, `PromptPlan.full` | `mb_system_prompt` in `brain/src/prompt.c` | working — worded for MaryOS |
+| `MaryBrain/Brain/TurnTriage.swift` (`isActionShaped`), `MaryAmbient/Ambient/Engine/AmbientRealmResolver.swift` (the place ladder) | `mb_action_shaped` (`brain/src/triage.c`), `ma_realm_spawn` (`ambient/src/realm.c`: the closest application of a need nobody open serves) | working — deviation 14 |
 | `MaryAmbient/Ambient/Engine/AmbientIntentGate.swift` (`ThreadMemoryPlan`), `MaryBrain/Behavior/ThreadMemoryTopology.swift` (`sewnPersonalScope`, `maryAbilityScope`) | `brain/include/brain/scope.h`, `src/scope.c` (`mb_memory_plan_for`: lanes per purpose, groups, cues, the Recall toggles) | working |
 | `MaryBrain/Behavior/BehavioralAssembler.swift` | maryd's episode (`runtime/src/daemon.c`: opened with the turn, actions from the lane or the dispatch, sealed and deposited as `behavior`; `routing` habits on every no-model dispatch; no interaction stub — deviation 15) | working — deviations 14, 15 |
 | `MaryBrain/Brain/MaryBrain+Turn.swift` (routing, Lane B, dispatch), `Abilities/*`, `Engine/*` | — | not ported |
@@ -280,8 +281,12 @@ What Swift gets from Foundation, URLSession and swift-nio.
     (embed once at registry load, cosine per turn, floor 0.62, margin 0.04, the three safe argument shapes,
     a single clause) but the index is built from the skills' own titles, summaries and triggers through
     sewnd's `embed`; there is no intent corpus, so the lexical ladder decides the intent and a unique skill
-    winner promotes a would-be conversation to `operate`, as the Mac does when its converse class does not
-    recognise the words. One lane runs per turn, chosen by the route: a no-model dispatch when triage is
+    winner promotes a would-be conversation to `operate` (`compose` when its app writes), as the Mac does when
+    its converse class does not recognise the words; `isActionShaped`, which the Mac reads off the intent
+    corpus, is read off the skill index instead (`mb_action_shaped`: the best affinity above 0.50, or the
+    first content word a skill's trigger), and the route is resolved after triage so it sees both. When no
+    open place serves the need, the realm names a spawn — the closest application of the need — and an
+    action turn leads there; a skill's call opens the application, which the Mac had no way to do. One lane runs per turn, chosen by the route: a no-model dispatch when triage is
     confident, Lane B (the silent skills loop over sewnd's `complete`, its calls through the desktop's pipes,
     a protected skill parked on the desktop's confirmation card and answered by a bare yes or no or the
     card) on action turns, and Lane A (the voice with retrieval) otherwise; Lane B's answer is spoken through

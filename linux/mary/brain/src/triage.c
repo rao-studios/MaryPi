@@ -319,6 +319,15 @@ static int tokenize(const char *text, struct token *out, int max) {
     return n;
 }
 
+/* One of the skill's own single-word triggers. */
+static bool skill_word(const sk_skill *skill, const char *word) {
+    for (size_t t = 0; skill && t < skill->trigger_count; t++) {
+        char words[16][32];
+        if (ma_words(skill->triggers[t], words, 16, false) == 1 && strcmp(words[0], word) == 0) return true;
+    }
+    return false;
+}
+
 static bool alias_word(const sk_app *app, const char *word) {
     if (!app) return false;
     char words[8][32];
@@ -413,6 +422,20 @@ void mb_spoken_span(const char *utterance, const sk_skill *skill, const sk_app *
             if (next[0]) { note(stages, stages_cap, "trailing app", base, next); snprintf(base, sizeof base, "%s", next); }
         }
     }
+    /* 5. a trailing "in/into/as a <the skill's own words>": "hello world in a new note" → "hello world" */
+    if (count >= 2) {
+        int i = count - 1, skill_words = 0;
+        while (i > 0 && skill_word(skill, tokens[i].lower)) { i--; skill_words++; }
+        if (skill_words) {
+            if (i > 0 && (strcmp(tokens[i].lower, "a") == 0 || strcmp(tokens[i].lower, "an") == 0 || strcmp(tokens[i].lower, "the") == 0)) i--;
+            if (i > 0 && (strcmp(tokens[i].lower, "in") == 0 || strcmp(tokens[i].lower, "into") == 0 || strcmp(tokens[i].lower, "as") == 0 || strcmp(tokens[i].lower, "to") == 0)) {
+                char next[2048];
+                snprintf(next, sizeof next, "%.*s", (int)tokens[i].start, base);
+                trim_copy(next, next, sizeof next);
+                if (next[0]) { note(stages, stages_cap, "trailing words", base, next); snprintf(base, sizeof base, "%s", next); }
+            }
+        }
+    }
     snprintf(out, n, "%s", base);
 }
 
@@ -451,6 +474,37 @@ struct json_object *mb_confidence_arguments(const sk_skill *skill, const sk_app 
 }
 
 /* ---- the deterministic tier ---- */
+
+/* A read never makes an action turn on its own: "what is on my calendar" is a question with a skill behind it,
+ * and the lane runs it when it wins without a nudge to act further. */
+static bool acts(const sk_registry *registry, const char *app, const char *skill_id) {
+    const sk_skill *skill = registry ? sk_registry_skill(registry, app, skill_id) : NULL;
+    return skill && skill->effect != SK_EFFECT_READ;
+}
+
+bool mb_action_shaped(const mb_affinity *affinities, int n, const char *utterance, const sk_registry *registry) {
+    if (n > 0 && affinities[0].skill && affinities[0].score >= MB_ACTION_FLOOR && acts(registry, affinities[0].skill->app, affinities[0].skill->skill)) return true;
+    if (!utterance || !registry) return false;
+    char stripped[2048], base[2048];
+    ma_edit_strip_preamble(utterance, NULL, 0, stripped, sizeof stripped);
+    trim_copy(stripped, base, sizeof base);
+    struct token tokens[128];
+    int count = tokenize(base[0] ? base : utterance, tokens, 128);
+    if (count < 1) return false;
+    for (size_t a = 0; a < registry->app_count; a++) {
+        const sk_app *app = &registry->apps[a];
+        if (!app->enabled) continue;
+        for (size_t k = 0; k < app->skill_count; k++) {
+            const sk_skill *skill = &app->skills[k];
+            if (skill->effect == SK_EFFECT_READ) continue;
+            for (size_t t = 0; t < skill->trigger_count; t++) {
+                char words[16][32];
+                if (ma_words(skill->triggers[t], words, 16, false) == 1 && strcmp(tokens[0].lower, words[0]) == 0) return true;
+            }
+        }
+    }
+    return false;
+}
 
 int mb_deterministic_decision(const char *utterance) {
     static const char *const YES[] = { "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "confirm", "proceed", "do it", "go ahead", "go for it", "please do",

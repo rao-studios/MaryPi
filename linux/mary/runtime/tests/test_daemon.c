@@ -157,12 +157,14 @@ static void *sewn_connection(void *arg) {
             }
             const char *tool = tools && json_object_array_length(tools) ? mc_json_string(mc_json_object(json_object_array_get_idx(tools, 0), "function"), "name") : NULL;
             const char *asked = messages && json_object_array_length(messages) ? mc_json_string(json_object_array_get_idx(messages, json_object_array_length(messages) - 1), "content") : NULL;
+            const char *arguments = "{}";
             for (size_t i = 0; tools && i < json_object_array_length(tools); i++) {
                 const char *name = mc_json_string(mc_json_object(json_object_array_get_idx(tools, i), "function"), "name");
                 if (name && asked && strstr(name, "calendar") && strstr(asked, "calendar")) tool = name;
+                if (name && asked && strstr(name, "new_document") && strstr(asked, "note")) { tool = name; arguments = "{\\\"text\\\":\\\"hello world\\\"}"; }
             }
             char line[400];
-            if (!acted && tool) snprintf(line, sizeof line, "{\"type\":\"complete.result\",\"text\":\"\",\"tool_calls\":[{\"id\":\"c1\",\"name\":\"%s\",\"arguments\":\"{}\"}],\"provider\":\"mistral\"}", tool);
+            if (!acted && tool) snprintf(line, sizeof line, "{\"type\":\"complete.result\",\"text\":\"\",\"tool_calls\":[{\"id\":\"c1\",\"name\":\"%s\",\"arguments\":\"%s\"}],\"provider\":\"mistral\"}", tool, arguments);
             else snprintf(line, sizeof line, "{\"type\":\"complete.result\",\"text\":\"You have two events today.\",\"tool_calls\":[],\"provider\":\"mistral\"}");
             pthread_mutex_unlock(&lock);
             send_json(fd, line);
@@ -661,7 +663,11 @@ static const char *ABILITY_SKILLS =
     "[{\"id\":\"open_pane\",\"title\":\"Open a pane\",\"summary\":\"Opens a settings pane.\",\"params\":{\"type\":\"object\",\"properties\":{\"pane\":{\"type\":\"string\"}},\"required\":[\"pane\"]},\"effect\":\"act\",\"enabled\":true}]},"
     "{\"id\":\"calendar\",\"name\":\"Calendar\",\"enabled\":true,\"ask\":\"always\",\"skills\":"
     "[{\"id\":\"events_today\",\"title\":\"Today's events\",\"summary\":\"Reads what is on the calendar today.\",\"params\":null,\"effect\":\"read\",\"enabled\":true,"
-    "\"triggers\":{\"tokens\":[\"calendar\"],\"phrases\":[\"what is on my calendar\"]}}]}]}";
+    "\"triggers\":{\"tokens\":[\"calendar\"],\"phrases\":[\"what is on my calendar\"]}}]},"
+    "{\"id\":\"textedit\",\"name\":\"TextEdit\",\"enabled\":true,\"ask\":\"never\",\"summary\":\"Writes plain text.\",\"discipline\":\"writing\",\"skills\":"
+    "[{\"id\":\"new_document\",\"title\":\"Write a new note\",\"summary\":\"Opens a fresh note and types the text into it.\","
+    "\"params\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"]},\"effect\":\"act\",\"enabled\":true,"
+    "\"triggers\":{\"tokens\":[\"write\",\"note\",\"new\",\"document\"],\"phrases\":[\"write a new note\",\"new note\"]}}]}]}";
 
 static struct json_object *publish_skills_and_wait_for_triage(client *desktop, client *ctl, const char *rehearse) {
     client_send(desktop, ABILITY_SKILLS);
@@ -854,6 +860,59 @@ MARY_TEST(an_action_turn_runs_the_skills_lane_and_parks_a_protected_skill) {
     struct json_object *err = client_wait(&ctl, "error", NULL, NULL, 0);
     MARY_ASSERT(err && strcmp(mc_json_string(err, "stage"), "skill.confirm") == 0);
     if (err) json_object_put(err);
+    client_close(&desktop);
+    client_close(&ctl);
+    teardown();
+}
+
+MARY_TEST(a_request_with_no_app_open_spawns_the_writing_app) {
+    setup();
+    client desktop, ctl;
+    client_open(&desktop);
+    client_open(&ctl);
+    json_object_put(client_wait(&desktop, "hello", NULL, NULL, 0));
+    json_object_put(client_wait(&ctl, "hello", NULL, NULL, 0));
+    struct json_object *rehearsal = publish_skills_and_wait_for_triage(&desktop, &ctl, "can you write hello world in a new note");
+    MARY_ASSERT(rehearsal != NULL);
+    if (rehearsal) {
+        bool shaped = false;
+        MARY_ASSERT(mc_json_bool(rehearsal, "actionShaped", &shaped) && shaped);
+        json_object_put(rehearsal);
+    }
+    /* nothing is open: the dispatch or the lane calls TextEdit's note, whose perform opens the app */
+    client_send(&ctl, "{\"type\":\"ask\",\"text\":\"can you write hello world in a new note\"}");
+    struct json_object *request = client_wait(&desktop, "world.request", NULL, NULL, 0);
+    if (request) json_object_put(request);
+    struct json_object *invoke = client_wait(&desktop, "skill.invoke", NULL, NULL, 0);
+    MARY_ASSERT(invoke != NULL);
+    if (invoke) {
+        MARY_ASSERT_STR(mc_json_string(invoke, "app"), "textedit");
+        MARY_ASSERT_STR(mc_json_string(invoke, "skill"), "new_document");
+        const char *text = mc_json_string(mc_json_object(invoke, "args"), "text");
+        MARY_ASSERT(text && strstr(text, "hello world") != NULL);
+        char line[256];
+        snprintf(line, sizeof line, "{\"type\":\"skill.result\",\"call_id\":\"%s\",\"ok\":true,\"result\":{\"landed\":true,\"name\":\"Note\",\"summary\":\"Wrote it in a new note.\"}}", mc_json_string(invoke, "call_id"));
+        client_send(&desktop, line);
+        json_object_put(invoke);
+    }
+    struct json_object *end = client_wait(&ctl, "reply.end", NULL, NULL, 0);
+    MARY_ASSERT(end != NULL);
+    if (end) {
+        struct json_object *runs = mc_json_array(end, "runs");
+        MARY_ASSERT(runs && json_object_array_length(runs) == 1);
+        json_object_put(end);
+    }
+    /* the trace: an action turn in the writing register, nothing leading, TextEdit the one it would open */
+    client_send(&ctl, "{\"type\":\"trace.list\"}");
+    struct json_object *trace = client_wait(&ctl, "trace", NULL, NULL, 0);
+    MARY_ASSERT(trace != NULL);
+    if (trace) {
+        struct json_object *row = json_object_array_get_idx(mc_json_array(trace, "records"), 0), *route = mc_json_object(row, "route");
+        MARY_ASSERT_STR(mc_json_string(route, "intent"), "compose");
+        MARY_ASSERT(mc_json_string(route, "leadApplicationID") == NULL || !*mc_json_string(route, "leadApplicationID"));
+        MARY_ASSERT_STR(mc_json_string(mc_json_object(mc_json_object(route, "realm"), "spawn"), "application"), "textedit");
+        json_object_put(trace);
+    }
     client_close(&desktop);
     client_close(&ctl);
     teardown();
@@ -1079,6 +1138,7 @@ int main(void) {
     MARY_RUN(the_world_the_desktop_publishes_shapes_the_turn_and_its_trace);
     MARY_RUN(a_confident_skill_dispatches_without_a_model_round);
     MARY_RUN(an_action_turn_runs_the_skills_lane_and_parks_a_protected_skill);
+    MARY_RUN(a_request_with_no_app_open_spawns_the_writing_app);
     MARY_RUN(a_spoken_question_is_heard_answered_and_followed_up);
     MARY_RUN(speech_that_fails_is_reported_and_mary_goes_quiet);
     MARY_RUN(a_speaker_that_never_plays_does_not_keep_mary_speaking);

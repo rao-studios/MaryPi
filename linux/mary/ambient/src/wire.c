@@ -333,6 +333,7 @@ struct json_object *ma_route_json(const ma_route *route, const ma_roster *r) {
     }
     json_object_object_add(realm, "candidates", a);
     if (route->realm.has_place) json_object_object_add(realm, "place", ma_place_json(&route->realm.place, r));
+    if (route->realm.has_spawn) json_object_object_add(realm, "spawn", ma_place_json(&route->realm.spawn, r));
     json_object_object_add(realm, "decidedBy", str(ma_signal_name(route->realm.decided_by)));
     json_object_object_add(o, "realm", realm);
     a = json_object_new_array();

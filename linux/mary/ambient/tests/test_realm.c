@@ -38,6 +38,39 @@ MARY_TEST(an_empty_need_admits_everyone_with_eyes) {
     MARY_ASSERT(!realm.has_place && realm.decided_by == MA_SIGNAL_NONE);
 }
 
+MARY_TEST(with_nothing_open_the_closest_application_of_the_need_is_the_spawn) {
+    /* a writing need, nobody in focus: TextEdit is the one an action turn would open */
+    ma_realm_inputs in = { .utterance = "can you write hello world in a new note", .roster = &roster, .now = 100 };
+    ma_realm realm;
+    ma_realm_resolve(&in, &realm);
+    MARY_ASSERT(!ma_need_is_empty(&realm.need));
+    MARY_ASSERT(!realm.has_place);
+    MARY_ASSERT(realm.has_spawn);
+    MARY_ASSERT_STR(realm.spawn.application, "textedit");
+    /* the discipline alone names it too */
+    ma_realm_inputs cue = { .utterance = "tighten it", .discipline = "writing", .roster = &roster, .now = 100 };
+    ma_realm_resolve(&cue, &realm);
+    MARY_ASSERT(realm.has_spawn && strcmp(realm.spawn.application, "textedit") == 0);
+    /* a named place that is not in front is the spawn too */
+    ma_place named[1] = { ma_place_application("textedit") };
+    ma_realm_inputs addressed = { .utterance = "write hello in textedit", .named = named, .named_count = 1, .roster = &roster, .now = 100 };
+    ma_realm_resolve(&addressed, &realm);
+    MARY_ASSERT(realm.has_place && realm.has_spawn && strcmp(realm.spawn.application, "textedit") == 0);
+    /* an open, conforming place still wins and no spawn is named */
+    ma_focus_signal focus = { .has_lead = true, .lead = ma_place_application("textedit") };
+    ma_focus_evidence evidence[] = { { ma_place_application("textedit"), MA_EVIDENCE_ACTIVATION, 90 } };
+    in.focus = &focus;
+    in.evidence = evidence;
+    in.evidence_count = 1;
+    in.decided_by = MA_SIGNAL_ACTION_COMMAND;
+    ma_realm_resolve(&in, &realm);
+    MARY_ASSERT(realm.has_place && !realm.has_spawn);
+    /* nothing asked for: nothing to open */
+    ma_realm_inputs chat = { .utterance = "how was your day", .roster = &roster, .now = 100 };
+    ma_realm_resolve(&chat, &realm);
+    MARY_ASSERT(!realm.has_spawn);
+}
+
 MARY_TEST(a_need_narrows_the_realm_and_focus_decides_the_place) {
     ma_focus_signal focus = { .has_lead = true, .lead = ma_place_application("textedit") };
     ma_focus_evidence evidence[] = { { ma_place_application("textedit"), MA_EVIDENCE_ACTIVATION, 90 } };
@@ -90,6 +123,7 @@ int main(void) {
     ma_roster_maryos(&roster);
     MARY_RUN(the_focus_ledger_keeps_one_stamp_per_place_and_projects_a_signal);
     MARY_RUN(an_empty_need_admits_everyone_with_eyes);
+    MARY_RUN(with_nothing_open_the_closest_application_of_the_need_is_the_spawn);
     MARY_RUN(a_need_narrows_the_realm_and_focus_decides_the_place);
     MARY_RUN(a_named_place_outranks_focus_and_conformance);
     MARY_TEST_MAIN_END();
