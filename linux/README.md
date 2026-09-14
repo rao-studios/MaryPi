@@ -150,10 +150,11 @@ MaryVNC shows a MaryOS desktop on this Mac and sends it this Mac's pointer and k
 
 - **Finding Pis.** The sidebar lists every Pi announcing `_maryvnc._tcp`: those on the USB cable first (MaryOS
   chapter 13), then those on the network. macOS asks once for Local Network access.
-- **Pairing.** A new Pi pairs over the cable: select it and choose Pair over USB. The sheet shows the key the Pi
-  announced, and `maryvncctl status` on the Pi shows its own. After that the Pi connects over the cable or the
-  network, and a paired Pi in view connects on its own, the one used last first. Without a cable, open a window
-  on the Pi (`maryvncctl pair-window`) and pair by address: `./vnc.sh --connect HOST --pair`.
+- **Pairing.** Over the network, open a window on the Pi (`maryvncctl pair-window 300`), then choose Connect to
+  Address… with Pair ticked, or run `./vnc.sh --connect HOST --pair`. A Pi on the USB cable appears under On the
+  cable, and Pair over USB needs no window, but the cable must carry power and data: over USB-C-to-USB-C the Mac
+  powers a Pi 5 without connecting its data, and a USB-A port cannot power it. Either way, a paired Pi in view
+  then connects on its own, the one used last first.
 - **Keys.** This Mac's private key is in the login Keychain (service `com.maryos.MaryVNC`, this device only);
   after a rebuild macOS asks whether the new binary may read it: choose Always Allow. The paired Pis are in
   `~/Library/Application Support/MaryVNC/pairs.json` (public keys only), with the settings beside it.

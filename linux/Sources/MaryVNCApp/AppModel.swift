@@ -217,7 +217,7 @@ final class AppModel {
             sheet = .pair(pi)
         } else {
             sheet = .message(title: "Pair over the USB cable first",
-                             text: "\(pi.name) does not know this Mac yet. Connect the Pi to this Mac with the USB cable and choose Pair over USB; after that it connects over the network too.")
+                             text: "\(pi.name) does not know this Mac yet. Open a pairing window on the Pi (maryvncctl pair-window 300), then choose Connect to Address… with Pair ticked. A Pi on a USB cable that carries data pairs with Pair over USB instead.")
         }
     }
 
