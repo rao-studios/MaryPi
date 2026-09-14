@@ -1333,6 +1333,7 @@ static void resolve_turn(mr_daemon *d, struct json_object *triage) {
     struct json_object *winner = triage ? mc_json_object(triage, "winner") : NULL;
     bool action_shaped = false;
     if (triage) mc_json_bool(triage, "actionShaped", &action_shaped);
+    else action_shaped = mb_action_shaped(NULL, 0, question, &d->skills);   /* no index yet (the key just arrived): the verb still counts */
     /* a unique winner promotes the turn (operate, or compose when its app writes) — unless it only reads: a
      * question with a skill behind it stays a question, and the lane runs it without a nudge to act further */
     ma_intent embedding_intent = MA_INTENT_OPERATE;

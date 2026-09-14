@@ -23,7 +23,7 @@ built and inspected but has not yet been booted on a board.
 | Desktop | `./ui.sh` boots the same image to the Liquid Platinum desktop in about a second after `graphical.target`: the molten wallpaper, the ambient clock (View › Show Clock hides it), Finder and Gallery, lit metal object icons, 42px title bars with glass-bead traffic lights, window drag with the jelly and the liquid corners, eight-handle resize, shade, zoom with the flight, close, `foot` as a decorated Wayland client with keyboard focus; an idle desktop handles no frames (chapter 9) |
 | Spotlight and TextEdit | `Ctrl+Space` opens the search bar that is also the dock, with the frontmost app's File / Edit / View / Window / Help as pills under it (there is no menu bar); typing filters apps and open windows, `Enter` launches. TextEdit, the first application, is reached from it alone and saves to `~/Documents/<name>.txt`; with it the compositor gained key repeat for its own controls and an I-beam cursor |
 | System apps | Calculator (Spotlight only): a keypad with precedence, percent, memory, repeated equals and the keyboard. Preview (pinned, and the Finder's viewer for pictures and PDFs): fit, zoom steps, quarter turns, pages and the folder's other pictures; Terminal (pinned, replacing foot): a login shell on a pty with libvterm's screen, scrollback, titles and paste, owning its Ctrl chords; Activity Monitor: CPU and memory views of /proc with Quit and Force Quit behind the first sheet; Disk Utility: drives and volumes from sysfs, udev and mounts, with Mount, Unmount and Eject through udisksctl; Media Player (pinned): audio and video through GStreamer and PipeWire, playing on through the folder; Calendar (pinned): Month, Week and Day views of .ics events, with repeats kept at their wall-clock time; System Settings (pinned): the desktop's preferences, the dock's apps, keyboard repeat and layout, pointer speed, and the system's sound, network and Wi-Fi, time zone and computer name through wpctl, iwctl, timedatectl and hostnamectl; the desktop gained event sources and routing by file kind for the apps to come, and the builder and image carry their libraries (chapter 9) |
-| Mary | sewnd (the key, every network call, retrieval and citation), threadd (the drive's memory: one SQLite file, the graph, the lanes), indexd (every file recorded, parity proved), maryd (the wake word, the turn, the ambient world, triage, the skills lane, the behaviour record); Spotlight's conversation on paper with brush-stroke highlights and "From the thread"; the Threads, Ambient and Abilities apps; Settings › Mary with the key, the voice, the engines, recall, the skills' policy and network activity (chapters 10 and 11). Verified in the builder's tests on the Mac and in Noble; the VM walkthrough with a live Mistral key is the next step |
+| Mary | sewnd (the key, every network call, retrieval and citation), threadd (the drive's memory: one SQLite file, the graph, the lanes), indexd (every file recorded, parity proved), maryd (the wake word, the turn, the ambient world, triage, the skills lane, the behaviour record); Spotlight's conversation on paper with brush-stroke highlights and "From the thread"; the Threads, Ambient and Abilities apps; Settings › Mary with the key, the voice, the engines, recall, the skills' policy and network activity (chapters 10 and 11). Verified in the builder's tests on the Mac and in Noble, and walked through in the VM with a live Mistral key on 2026-09-14 (below) |
 | Dev loop | `make ui` rebuilds and tests the desktop in about 20 s incrementally (`MARYUI_DIR=…` to build a sibling checkout instead of the submodule); `./ui.sh` compiles on every run and boots that build, and a VM it booted restarts the desktop within three seconds of each rebuild |
 
 ## What is still plain Ubuntu
@@ -54,13 +54,33 @@ updates unchanged.
 - **Ubuntu tools that check `ID=ubuntu`.** A few (e.g. some third-party
   install scripts) refuse `ID=maryos` even with `ID_LIKE`. Nothing in the
   base list does.
+- **The VM has no media.** "Play the song" with the Media Player closed answers honestly ("There's no song
+  open in the Media Player to play"); the player opens nothing on its own, and the image ships no music or
+  video to play. The no-model dispatch of `play_pause` has therefore only been seen in the daemon's tests.
+- **A parked card waits a minute.** The skills lane holds a confirmation for 60 s; a second card in the same
+  turn (the model choosing another act after a failed one) waits the same way, and a headless `maryctl ask`
+  has nobody to answer it — in Spotlight, Return allows and Esc declines each card as it comes.
+- **A behaviour record can file under the wrong ability.** "Write the tide times in a new note" was recorded
+  under "Behaviour — arithmetic" (the episode's first target), not writing. The episode's targets, not the
+  route's abilities, name the group.
+- **TextEdit saves an unnamed note as `Untitled.txt`** even when its name field says otherwise.
 
 ## Next milestones
 
-0. **Mary in the VM with a key**: a note saved in TextEdit reaching the graph within a second, a typed turn
-   answered with a highlight that opens "From the thread", "play the music" dispatched with no model call,
-   "close this window" parked on the confirmation card, `sewnctl calls` naming only sewnd's calls, and
-   Thinking Machines refused with the engine error.
+0. **Mary in the VM with a key** — walked through on 2026-09-14 with a live Mistral key set through `sewnctl set`
+   (never through the repository). Done: "can you write hello world in a new note" with nothing open spawns
+   TextEdit, parks "Write a new note" on the card, and lands the text after Return (typed in Spotlight with
+   Shift+Enter, or `maryctl ask` plus a bare "yes"); "add goodbye at the end" and "read the document" work on
+   the open note, the read answering with the text and no model call; "close the front window" is parked as
+   destructive, Return closes it and Esc leaves it; "save the document" writes `~/Documents/Untitled.txt` and
+   indexd has it in the Thread's Files group within seconds; "what did I write in the note" stays a question
+   (converse, both threads) and is answered from the note; `sewnctl calls` lists only `index`, `route`, `skills`
+   and `speech` calls to api.mistral.ai, all 200 after the fixes, and the key appears nowhere in the journal.
+   Found and fixed on the way: the desktop refused every allowed card (the invoke now carries `confirmed`),
+   sewnd dropped the tool round from the history (HTTP 400 on the lane's second round), a question was promoted
+   to an action, a dispatched read replied "Done.". Still to see: a highlight opening "From the thread" (the
+   note saved in this walkthrough was empty), Recall › Behavioral off narrowing Retrieval (Settings only), and
+   Thinking Machines refused (the daemon's test covers it).
 1. **Boot the Pi 5 image on hardware**, watch the UART, confirm the root
    grows to the card and ssh works over Ethernet; then Wi-Fi.
 2. **The desktop on the Pi**: boot `./ui.sh`'s counterpart on hardware —
