@@ -2,7 +2,8 @@
 import PackageDescription
 
 // The MaryOS kit's Mac side: MaryOSKit (Virtualization.framework runner,
-// disks, flashing, build orchestration), the maryos CLI and the SwiftUI app.
+// disks, flashing, build orchestration), the maryos CLI and the SwiftUI app;
+// and MaryVNCKit, the viewer side of MaryVNC (MaryOS docs/14-maryvnc.md).
 // The image itself is built from source by builder/ (Docker on a Mac).
 //
 // Virtualization.framework refuses processes without the
@@ -15,6 +16,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .library(name: "MaryOSKit", targets: ["MaryOSKit"]),
+        .library(name: "MaryVNCKit", targets: ["MaryVNCKit"]),
         .executable(name: "maryos", targets: ["maryos"]),
         // Named MaryOSApp so its binary cannot collide with the maryos CLI on
         // a case-insensitive filesystem; scripts/bundle.sh renames it.
@@ -29,6 +31,14 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("Virtualization"),
                 .linkedFramework("DiskArbitration"),
+            ]
+        ),
+        // Noise over CryptoKit, the wire, Bonjour discovery and the session that talk to maryvncd.
+        .target(
+            name: "MaryVNCKit",
+            linkerSettings: [
+                .linkedFramework("Network"),
+                .linkedFramework("Security"),
             ]
         ),
         .executableTarget(
@@ -54,6 +64,11 @@ let package = Package(
         .testTarget(
             name: "MaryOSKitTests",
             dependencies: ["MaryOSKit"],
+            resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "MaryVNCKitTests",
+            dependencies: ["MaryVNCKit"],
             resources: [.copy("Fixtures")]
         ),
     ]
