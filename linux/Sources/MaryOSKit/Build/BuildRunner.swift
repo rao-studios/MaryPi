@@ -7,6 +7,8 @@ public enum BuildStage: Sendable, Equatable {
     case ui
     /// Mary's packages (linux/mary) compiled into `out/mary`.
     case mary
+    /// MaryVNC's server (maryvnc/) compiled into `out/maryvnc`.
+    case maryvnc
     case target(ImageTarget)
     case image(ImageTarget)
 }
@@ -28,6 +30,7 @@ public enum BuildLog {
         case "rootfs_build": return .rootfs
         case "ui_build": return .ui
         case "mary_build": return .mary
+        case "maryvnc_build": return .maryvnc
         case "target_build": return target.map(BuildStage.target)
         case "image_build": return target.map(BuildStage.image)
         default: return nil
@@ -67,7 +70,7 @@ public struct BuildRunner: Sendable {
     }
 
     /// Stages that take no target: they run once for every image.
-    public static let targetlessStages = ["rootfs", "ui", "mary"]
+    public static let targetlessStages = ["rootfs", "ui", "mary", "maryvnc"]
 
     /// `build.sh all <target>` (or a single stage); throws when the builder fails.
     public func build(target: ImageTarget, stage: String = "all", fresh: Bool = false, keep: Bool = false, dryRun: Bool = false, log: @escaping Logger) async throws {

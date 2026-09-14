@@ -10,6 +10,7 @@ import PackageDescription
 // com.apple.security.virtualization entitlement, so binaries are ad-hoc
 // signed after building (scripts/sign.sh, run by the Makefile).
 let infoPlist = "\(Context.packageDirectory)/Sources/MaryOSApp/Info.plist"
+let vncInfoPlist = "\(Context.packageDirectory)/Sources/MaryVNCApp/Info.plist"
 
 let package = Package(
     name: "MaryOS",
@@ -21,6 +22,8 @@ let package = Package(
         // Named MaryOSApp so its binary cannot collide with the maryos CLI on
         // a case-insensitive filesystem; scripts/bundle.sh renames it.
         .executable(name: "MaryOSApp", targets: ["MaryOSApp"]),
+        // The MaryVNC viewer (vnc.sh, scripts/bundle.sh MaryVNC).
+        .executable(name: "MaryVNCApp", targets: ["MaryVNCApp"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
@@ -61,6 +64,20 @@ let package = Package(
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
                     "-Xlinker", infoPlist,
+                ]),
+            ]
+        ),
+        .executableTarget(
+            name: "MaryVNCApp",
+            dependencies: ["MaryVNCKit", "LiquidPlatinum"],
+            exclude: ["Info.plist", "AppIcon.svg"],
+            resources: [.copy("AppIcon.iconset")],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", vncInfoPlist,
                 ]),
             ]
         ),

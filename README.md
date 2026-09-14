@@ -19,7 +19,8 @@ tooling says plainly what a card will do.
 MaryOS itself (the distro, the image pipeline, the desktop and Mary) lives in
 [rao-studios/MaryOS](https://github.com/rao-studios/MaryOS). This repository keeps the
 Mac side of it: the `maryos` CLI and MaryOS.app, which drive the image build, run the VM
-window and flash cards.
+window and flash cards, and MaryVNC.app, which shows a MaryOS desktop on the Mac over the USB
+cable or the network.
 
 ## Quick start
 
@@ -37,13 +38,15 @@ maryos/terminal.sh                      # boot the same image to a login prompt
 make image TARGET=vm                    # just the image: rootfs from Ubuntu's archive + MaryOS -> maryos/out/maryos-0.0-vm.img
 make image TARGET=pi5                   # the Raspberry Pi 5 image
 make flash DISK=disk4                   # erase disk4 and write it (asks first)
+./vnc.sh                                # MaryVNC: a MaryOS desktop on this Mac (pairs over the USB cable)
 ```
 
 ## Layout
 
 ```
 ravynos/   Swift package MaryPi (MaryPiKit, marypi CLI, MaryPi.app), vm/ QEMU profiles, docs/
-linux/     Swift package MaryOS (MaryOSKit, maryos CLI, MaryOS.app with the VZ window and the flasher);
+linux/     Swift package MaryOS (MaryOSKit, maryos CLI, MaryOS.app with the VZ window and the flasher;
+           MaryVNCKit, LiquidPlatinum and MaryVNC.app, the remote-desktop viewer);
            maryos/ is the MaryOS submodule: distro/, builder/, maryui/ (the desktop in C), mary/, docs/
 Makefile   make ravynos-<target> / make linux-<target> delegate to the kits
 ```

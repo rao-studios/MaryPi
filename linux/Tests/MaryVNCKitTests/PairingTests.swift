@@ -24,6 +24,18 @@ import Testing
         #expect(try Identity.loadOrCreate(from: store).publicKey != first.publicKey)
     }
 
+    @Test func aFileStoreKeepsOneKeyReadableOnlyByItsOwner() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "maryvnc-identity-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FileIdentityStore(url: directory.appending(path: "identity.key"))
+        let first = try Identity.loadOrCreate(from: store)
+        #expect(try Identity.loadOrCreate(from: FileIdentityStore(url: store.url)).publicKey == first.publicKey)
+        let mode = try FileManager.default.attributesOfItem(atPath: store.url.path)[.posixPermissions] as? Int
+        #expect(mode == 0o600)
+        try Data([1, 2, 3]).write(to: store.url)
+        #expect(throws: MaryVNCError.self) { try store.load() }
+    }
+
     @Test func theWireNameDropsControlsAndFitsSixtyFourBytes() throws {
         #expect(Identity.wireName("Rao's MacBook Pro") == "Rao's MacBook Pro")
         #expect(Identity.wireName("tab\there\u{85}") == "tabhere")

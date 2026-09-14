@@ -7,7 +7,8 @@ repository, checked out here as the submodule [maryos/](maryos/README.md). This 
 Swift package that works on it: it drives the image build (in Docker), boots the VM image in an
 Apple Virtualization.framework window, and writes the Raspberry Pi 5 image to an SD card with one
 admin prompt. It is the Linux sibling of the [ravynOS kit](../ravynos/README.md) and follows the
-same rule: say plainly what a card or a VM will do.
+same rule: say plainly what a card or a VM will do. It also holds [MaryVNC](#maryvnc)'s viewer, which shows a
+MaryOS desktop on this Mac over the USB cable or the network.
 
 The full story, from `distro.conf` to a login prompt and a desktop on the Pi and in the VM, is in
 [maryos/docs/](maryos/docs/README.md).
@@ -50,7 +51,11 @@ make cli ARGS=list              # removable disks the flasher is willing to eras
 make flash DISK=disk4           # erase disk4 and write the pi5 image (asks first, one admin prompt)
 make run-app                    # the GUI
 make app                        # dist/MaryOS.app (release, kit bundled, signed)
-make test                       # swift test + the builder's tests
+make test                       # the token check, swift test and the builder's tests
+./vnc.sh                        # MaryVNC: the viewer for a MaryOS desktop, finding Pis on the USB cable and the network
+./vnc.sh --connect maryos.local # by address, with the key of the Pi used last (add --pair to pair)
+make app-vnc                    # dist/MaryVNC.app
+make lp-tokens                  # regenerate Liquid Platinum's tokens from maryos/maryui's lp_tokens.h
 ```
 
 `vm.sh` and `terminal.sh` belong to MaryOS. They build this package's `maryos` CLI, finding it
@@ -137,11 +142,40 @@ console.
   **Build Pi 5 Image** builds without writing. **Prepare Raspberry Pi 5**
   confirms the disk (type its identifier), builds if needed, then flashes.
 
+## MaryVNC
+
+MaryVNC shows a MaryOS desktop on this Mac and sends it this Mac's pointer and keys. The server is MaryOS's
+`maryvncd` ([maryos/docs/14-maryvnc.md](maryos/docs/14-maryvnc.md)); the viewer is here. `./vnc.sh` (or
+`make vnc`) builds and opens it; `make app-vnc` makes `dist/MaryVNC.app`.
+
+- **Finding Pis.** The sidebar lists every Pi announcing `_maryvnc._tcp`: those on the USB cable first (MaryOS
+  chapter 13), then those on the network. macOS asks once for Local Network access.
+- **Pairing.** A new Pi pairs over the cable: select it and choose Pair over USB. The sheet shows the key the Pi
+  announced, and `maryvncctl status` on the Pi shows its own. After that the Pi connects over the cable or the
+  network, and a paired Pi in view connects on its own, the one used last first. Without a cable, open a window
+  on the Pi (`maryvncctl pair-window`) and pair by address: `./vnc.sh --connect HOST --pair`.
+- **Keys.** This Mac's private key is in the login Keychain (service `com.maryos.MaryVNC`, this device only);
+  after a rebuild macOS asks whether the new binary may read it: choose Always Allow. The paired Pis are in
+  `~/Library/Application Support/MaryVNC/pairs.json` (public keys only), with the settings beside it.
+- **The keyboard.** ⌘ is Super on the Pi by default, so MaryOS's own chords work (⌘Space opens Spotlight, ⌘W
+  closes a window); Settings switches it to Control for terminal programs. ⌘Q, ⌘H, ⌘⌥H, ⌘M and ⌘, stay with
+  the Mac.
+- **Liquid Platinum.** The window is drawn with `Sources/LiquidPlatinum`. Its tokens are generated from the
+  submodule's `lp_tokens.h` (`make lp-tokens`; `make test` fails when they drift), and the brushed grain is
+  maryui's tile byte for byte. `LP_GALLERY_OUT=/tmp/lp swift test --filter GalleryRenderTests` renders every
+  piece to PNGs.
+- **Without a Pi.** `MARYVNCD=/path/to/maryvncd swift test --filter MaryvncdInteropTests` runs MaryVNCKit
+  against a real `maryvncd` built on this Mac from MaryOS's `maryvnc/` (`make -C maryvnc all`, with Homebrew's
+  openssl@3, jpeg-turbo and json-c). For the app, run `maryvncd --test-pattern 1280x800 --bind 127.0.0.1
+  --pair-window 300`, then `./vnc.sh --test-profile /tmp/vnc --connect 127.0.0.1 --pair`: the test profile keeps
+  this Mac's key, the pairs and the settings in that directory instead of the Keychain, and browses for nothing,
+  so macOS asks for nothing.
+
 ## Development
 
 ```sh
 swift build && sh scripts/sign.sh .build/debug/maryos .build/debug/MaryOSApp   # what make build does
-swift test                                                                       # MaryOSKit unit tests
+swift test                                                                       # MaryOSKit, MaryVNCKit and LiquidPlatinum tests
 make -C maryos test                                                              # the builder's tests
 maryos/builder/build.sh all vm --dry-run                                         # the stages, in Docker
 ```
@@ -155,8 +189,13 @@ Sources/MaryOSKit      Distro (config, paths), Build (runner, artifacts), VM (sp
                        controller, window), Disks, Flash, Shell, Model, Orchestration (doctor, coordinator)
 Sources/maryos         the CLI (swift-argument-parser); synchronous commands that pump the main run loop
 Sources/MaryOSApp      the SwiftUI app (product MaryOSApp; bundled as MaryOS.app)
+Sources/MaryVNCKit     MaryVNC's viewer side: Noise XX and IK, the wire, discovery, the session, pairing, the key map
+Sources/LiquidPlatinum Liquid Platinum for SwiftUI: generated tokens, the brushed grain, surfaces and controls
+Sources/MaryVNCApp     the MaryVNC viewer (product MaryVNCApp; bundled as MaryVNC.app; vnc.sh runs it)
 Tests/MaryOSKitTests   unit tests and diskutil fixtures
-scripts/               sign.sh, bundle.sh
+Tests/MaryVNCKitTests  the Noise vectors (the same fixture as MaryOS's maryvnc/), the wire, pairing, the session
+Tests/LiquidPlatinumTests  the tokens, the brush tile against maryui's, the gallery render
+scripts/               sign.sh, bundle.sh (MaryOS or MaryVNC), gen-lp-tokens.py
 ```
 
 ## Relationship to the ravynOS kit

@@ -11,6 +11,8 @@
 #                            run again while the VM is up to rebuild into it; ARGS=--image for the embedded desktop
 #   make terminal            maryos/terminal.sh: boot the VM to a login prompt; ARGS=--console for the serial console
 #   make flash DISK=disk4    erase disk4 and write the pi5 image (asks first)
+#   make vnc                 build and open the MaryVNC viewer (vnc.sh; ARGS="--connect HOST --pair", --release)
+#   make app-vnc             dist/MaryVNC.app (scripts/bundle.sh MaryVNC)
 #   make lp-tokens           regenerate Sources/LiquidPlatinum/LPTokens.swift from maryos/maryui's lp_tokens.h
 #   make lp-tokens-check     fail when LPTokens.swift is out of date (make test runs it)
 SWIFT ?= swift
@@ -37,6 +39,12 @@ run-app: build
 
 app:
 	sh scripts/bundle.sh
+
+vnc:
+	sh vnc.sh $(ARGS)
+
+app-vnc:
+	sh scripts/bundle.sh MaryVNC
 
 lp-tokens:
 	python3 scripts/gen-lp-tokens.py
@@ -68,4 +76,4 @@ flash: build
 clean:
 	rm -rf .build dist
 
-.PHONY: build test cli run-app app lp-tokens lp-tokens-check rootfs ui mary image vm terminal flash clean
+.PHONY: build test cli run-app app vnc app-vnc lp-tokens lp-tokens-check rootfs ui mary image vm terminal flash clean

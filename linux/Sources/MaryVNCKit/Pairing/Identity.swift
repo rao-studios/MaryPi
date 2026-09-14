@@ -80,6 +80,35 @@ public struct KeychainIdentityStore: IdentityStore {
     }
 }
 
+/// A key in a file of its own (mode 0600), for tests and scripted runs that must not touch the Keychain.
+public struct FileIdentityStore: IdentityStore {
+    public let url: URL
+
+    public init(url: URL) {
+        self.url = url
+    }
+
+    public func load() throws -> [UInt8]? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let data = try Data(contentsOf: url)
+        guard data.count == 32 else { throw MaryVNCError("\(url.path) is not a 32-byte key") }
+        return Array(data)
+    }
+
+    public func save(_ privateKey: [UInt8]) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try delete()
+        // Made 0600 from the start, never readable by others even for a moment.
+        guard FileManager.default.createFile(atPath: url.path, contents: Data(privateKey), attributes: [.posixPermissions: 0o600]) else {
+            throw MaryVNCError("could not write \(url.path)")
+        }
+    }
+
+    public func delete() throws {
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+    }
+}
+
 /// For tests and previews.
 public final class InMemoryIdentityStore: IdentityStore {
     private let key = Mutex<[UInt8]?>(nil)

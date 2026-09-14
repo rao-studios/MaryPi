@@ -7,6 +7,7 @@ import Testing
         #expect(BuildLog.stage(in: "==> stage: rootfs_build") == .rootfs)
         #expect(BuildLog.stage(in: "==> stage: ui_build") == .ui)
         #expect(BuildLog.stage(in: "==> stage: mary_build") == .mary)
+        #expect(BuildLog.stage(in: "==> stage: maryvnc_build") == .maryvnc)
         #expect(BuildLog.stage(in: "==> stage: target_build vm") == .target(.vm))
         #expect(BuildLog.stage(in: "\u{1B}[1;36m==> stage: image_build pi5\u{1B}[0m") == .image(.pi5))
         #expect(BuildLog.stage(in: "==> stage: target_build moon") == nil)

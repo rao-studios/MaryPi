@@ -68,6 +68,11 @@ public struct PairingStore: Sendable {
     public let url: URL
     public private(set) var pis: [PairedPi] = []
 
+    /// A store with nothing in it that saves to `url`, for when the file there cannot be read.
+    public init(emptyAt url: URL) {
+        self.url = url
+    }
+
     /// Reads the file if there is one; a file from a later version, or one that does not parse, throws.
     public init(url: URL = PairingStore.defaultURL) throws {
         self.url = url

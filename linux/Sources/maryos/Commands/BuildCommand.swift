@@ -32,12 +32,13 @@ struct BuildCommand: ParsableCommand {
             guard let one = ImageTarget(rawValue: target) else { throw ValidationError("--target must be pi5, vm or both") }
             targets = [one]
         }
-        guard ["rootfs", "ui", "mary", "target", "image", "all"].contains(stage) else { throw ValidationError("--stage must be rootfs, ui, mary, target, image or all") }
+        guard ["rootfs", "ui", "mary", "maryvnc", "target", "image", "all"].contains(stage) else { throw ValidationError("--stage must be rootfs, ui, mary, maryvnc, target, image or all") }
         let builder = BuildRunner(paths: paths)
         for one in targets {
             switch stage {
             case "ui": Output.line("maryos: compiling the desktop from \(paths.maryUISource.path) with \(paths.buildScript.path)")
             case "mary": Output.line("maryos: compiling Mary's packages from \(paths.marySource.path) with \(paths.buildScript.path)")
+            case "maryvnc": Output.line("maryos: compiling MaryVNC's server (maryvnc/) with \(paths.buildScript.path)")
             default: Output.line("maryos: building \(config.imageName(for: one)) (\(stage)) with \(paths.buildScript.path)")
             }
             do {
