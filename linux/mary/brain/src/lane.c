@@ -83,7 +83,7 @@ static void read_result_flags(struct json_object *result, mb_lane_outcome *o) {
     if (!result) return;
     bool b;
     const char *summary = mc_json_string(result, "summary");
-    if (summary && *summary) set_summary(o, summary);
+    if (summary && *summary && !o->is_read) set_summary(o, summary);   /* a read keeps its JSON: the model answers from it */
     if (mc_json_bool(result, "landed", &b)) o->landed = b;
     if (mc_json_bool(result, "found_nothing", &b)) o->found_nothing = b;
     const char *ask = mc_json_string(result, "ask");

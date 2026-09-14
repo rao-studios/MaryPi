@@ -83,6 +83,11 @@ bool mb_spoken_enum(const sk_skill *skill, const char *parameter, const char *ut
  * request's first content word (after the preamble — "hey mary", "can you", "please") is a trigger token
  * of some skill. The route treats an action-shaped turn as an action turn (MaryBrain+Turn: actionTurn). */
 bool mb_action_shaped(const mb_affinity *affinities, int n, const char *utterance, const sk_registry *registry);
+/* A question: after the preamble ("hey mary", "can you", "please"), the first word asks (what, who, where, when,
+ * why, how, which, whose, is, are, was, were, do, does, did, have, has, had, am). A question is never
+ * action-shaped, and a unique winner behind it does not promote the turn — "what did I write in the note"
+ * lands near "Write a new note" and must stay a question for the voice and the Thread. */
+bool mb_question_shaped(const char *utterance);
 /* DeterministicTier.decision: a bare, exact yes or no. 1, 0, or -1. */
 int mb_deterministic_decision(const char *utterance);
 

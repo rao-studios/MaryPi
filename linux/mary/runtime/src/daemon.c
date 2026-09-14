@@ -1216,17 +1216,21 @@ static void on_dispatch_done(const mcu_result *r, void *user) {
             if (!said) said = mc_json_string(r->result, "message");
         }
         const sk_skill *s = sk_registry_skill(&d->skills, call->app, call->skill);
+        bool is_read = s && s->effect == SK_EFFECT_READ;
         json_object_object_add(outcome, "found_nothing", json_object_new_boolean(found_nothing));
-        json_object_object_add(outcome, "is_read", json_object_new_boolean(s && s->effect == SK_EFFECT_READ));
+        json_object_object_add(outcome, "is_read", json_object_new_boolean(is_read));
+        /* a read dispatched without a model answers with what it read (the text itself), not "Done." */
+        const char *text = is_read && r->ok && r->result && json_object_is_type(r->result, json_type_object) ? mc_json_string(r->result, "text") : NULL;
+        if ((!said || !*said) && text && *text) said = text;
         char summary[240];
         if (r->ok) snprintf(summary, sizeof summary, "%s", said && *said ? said : found_nothing ? "Nothing there." : "Done.");
-        else snprintf(summary, sizeof summary, "That did not work: %s.", r->error ? r->error : "the app did not answer");
+        else snprintf(summary, sizeof summary, "That did not work: %s.", r->message ? r->message : r->error ? r->error : "the app did not answer");
         json_object_object_add(outcome, "summary", json_object_new_string(summary));
         json_object_object_add(outcome, "started", json_object_new_double(call->started));
         json_object_object_add(outcome, "finished", json_object_new_double(wall_seconds()));
         note_run(d, outcome, false);
         json_object_put(outcome);
-        finish_with_text(d, summary);
+        finish_with_text(d, said && *said && text == said ? text : summary);
     }
     free(call->args);
     free(call);
@@ -1335,7 +1339,7 @@ static void resolve_turn(mr_daemon *d, struct json_object *triage) {
     bool promotes = false;
     if (winner) {
         const sk_skill *skill = sk_registry_skill(&d->skills, mc_json_string(winner, "app"), mc_json_string(winner, "skill"));
-        promotes = skill && skill->effect != SK_EFFECT_READ;
+        promotes = skill && skill->effect != SK_EFFECT_READ && !mb_question_shaped(question);   /* a question stays one */
         const ma_registration *reg = ma_roster_registration(&d->roster, mc_json_string(winner, "app"));
         for (int i = 0; reg && i < reg->ability_count; i++) if (strcmp(reg->abilities[i], "writing") == 0) embedding_intent = MA_INTENT_COMPOSE;
     }

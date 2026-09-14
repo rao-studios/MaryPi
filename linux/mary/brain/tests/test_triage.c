@@ -140,8 +140,19 @@ MARY_TEST(the_span_drops_the_trailing_place_words_and_a_request_is_action_shaped
     MARY_ASSERT(!mb_action_shaped(NULL, 0, "how was your day", &r));
     mb_skill_vector v = { .app = "media", .skill = "play_pause" };
     mb_affinity near[1] = { { &v, 0.55f } }, far[1] = { { &v, 0.2f } };
-    MARY_ASSERT(mb_action_shaped(near, 1, "how was your day", &r));
-    MARY_ASSERT(!mb_action_shaped(far, 1, "how was your day", &r));
+    MARY_ASSERT(mb_action_shaped(near, 1, "something for the evening", &r));
+    MARY_ASSERT(!mb_action_shaped(far, 1, "something for the evening", &r));
+    /* a question is never action-shaped, however near a skill its words land: "what did I write in the note"
+     * sits beside "Write a new note" and must stay a question */
+    mb_skill_vector nv = { .app = "textedit", .skill = "new_document" };
+    mb_affinity note_near[1] = { { &nv, 0.71f } };
+    MARY_ASSERT(mb_question_shaped("what did I write in the note"));
+    MARY_ASSERT(mb_question_shaped("Hey Mary, did I write anything today"));
+    MARY_ASSERT(mb_question_shaped("is the note saved"));
+    MARY_ASSERT(!mb_question_shaped("can you write hello world in a new note"));   /* "can you" is preamble; "write" asks nothing */
+    MARY_ASSERT(!mb_question_shaped("play the song"));
+    MARY_ASSERT(!mb_action_shaped(note_near, 1, "what did I write in the note", &r));
+    MARY_ASSERT(!mb_action_shaped(near, 1, "how was your day", &r));
     sk_registry_free(&r);
 }
 

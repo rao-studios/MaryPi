@@ -482,7 +482,21 @@ static bool acts(const sk_registry *registry, const char *app, const char *skill
     return skill && skill->effect != SK_EFFECT_READ;
 }
 
+bool mb_question_shaped(const char *utterance) {
+    static const char *const ASKS[] = { "what", "who", "whom", "where", "when", "why", "how", "which", "whose",
+                                        "is", "are", "was", "were", "do", "does", "did", "have", "has", "had", "am", NULL };
+    if (!utterance) return false;
+    char stripped[2048], base[2048];
+    ma_edit_strip_preamble(utterance, NULL, 0, stripped, sizeof stripped);
+    trim_copy(stripped, base, sizeof base);
+    struct token tokens[2];
+    if (tokenize(base[0] ? base : utterance, tokens, 2) < 1) return false;
+    for (int i = 0; ASKS[i]; i++) if (strcmp(tokens[0].lower, ASKS[i]) == 0) return true;
+    return false;
+}
+
 bool mb_action_shaped(const mb_affinity *affinities, int n, const char *utterance, const sk_registry *registry) {
+    if (mb_question_shaped(utterance)) return false;
     if (n > 0 && affinities[0].skill && affinities[0].score >= MB_ACTION_FLOOR && acts(registry, affinities[0].skill->app, affinities[0].skill->skill)) return true;
     if (!utterance || !registry) return false;
     char stripped[2048], base[2048];
