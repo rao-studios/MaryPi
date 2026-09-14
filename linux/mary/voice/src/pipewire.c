@@ -28,6 +28,8 @@ struct mv_audio {
     void *user;
     atomic_bool reset_framer;       /* set when capture pauses; the capture callback clears the partial frame */
     atomic_llong last_played_ms;
+    atomic_llong last_write_ms;     /* when maryd last queued reply audio */
+    mv_player player;               /* PipeWire's thread's: when the ring starts and stops reaching the speaker */
     atomic_bool broken;             /* a stream failed or was disconnected */
     atomic_bool closing;            /* mv_audio_close is taking the streams down, which is no failure */
 };
@@ -58,9 +60,14 @@ static void on_playback(void *data) {
     uint32_t frames = d->maxsize / sizeof(float);
     if (b->requested && b->requested < frames) frames = (uint32_t)b->requested;
     float *out = d->data;
-    size_t got = mv_ring_read(&a->ring, out, frames);
-    if (got) atomic_store(&a->last_played_ms, mc_now_ms());
-    memset(out + got, 0, (frames - got) * sizeof(float));   /* silence past the end of the reply */
+    int64_t now = mc_now_ms();
+    bool writer_idle = now - atomic_load(&a->last_write_ms) >= MV_PLAYER_WRITER_IDLE_MS;
+    bool ended = false;
+    size_t got = mv_player_fill(&a->player, &a->ring, out, frames, writer_idle, &ended);   /* silence for the rest */
+    if (got) atomic_store(&a->last_played_ms, now);
+    if (ended && a->player.last_underruns)   /* once a reply, not once a quantum */
+        mc_log(MC_LOG_WARNING, "the reply ran dry %zu times in %zu quanta: the network fell behind the voice",
+               a->player.last_underruns, a->player.last_quanta);
     d->chunk->offset = 0;
     d->chunk->stride = sizeof(float);
     d->chunk->size = frames * sizeof(float);
@@ -99,6 +106,8 @@ static struct pw_stream *open_stream(struct mv_audio *a, bool input, int rate, e
         PW_KEY_APP_NAME, app,
         PW_KEY_NODE_NAME, name,
         NULL);
+    /* a 40 ms quantum for the voice: small ones on a loaded machine (or a VM's software audio) underrun */
+    if (!input) pw_properties_setf(props, PW_KEY_NODE_LATENCY, "%d/%d", rate / 25, rate);
     struct pw_stream *stream = pw_stream_new_simple(pw_thread_loop_get_loop(a->loop), name, props, events, a);
     if (!stream) return NULL;
     uint8_t buffer[1024];
@@ -127,6 +136,7 @@ mv_audio *mv_audio_open(const mv_audio_config *config, mv_capture_fn on_frame, v
     int rc = a ? 0 : -ENOMEM;
     if (rc == 0) rc = mv_framer_init(&a->framer, c.capture_frame);
     if (rc == 0) rc = mv_ring_init(&a->ring, (size_t)c.playback_rate * c.playback_seconds);
+    if (rc == 0) mv_player_init(&a->player, (size_t)c.playback_rate * MV_PLAYER_PREBUFFER_MS / 1000);
     if (rc == 0 && !(a->loop = pw_thread_loop_new("mary-audio", NULL))) rc = -ENOMEM;
     if (rc) {
         if (a) {
@@ -172,7 +182,11 @@ int mv_audio_capture(mv_audio *a, bool on) {
     return rc < 0 ? rc : 0;
 }
 
-size_t mv_audio_play(mv_audio *a, const float *samples, size_t count) { return mv_ring_write(&a->ring, samples, count); }
+size_t mv_audio_play(mv_audio *a, const float *samples, size_t count) {
+    size_t n = mv_ring_write(&a->ring, samples, count);
+    if (n) atomic_store(&a->last_write_ms, mc_now_ms());
+    return n;
+}
 void mv_audio_stop_playback(mv_audio *a) { mv_ring_request_flush(&a->ring); }
 size_t mv_audio_queued(const mv_audio *a) { return mv_ring_available(&a->ring); }
 int64_t mv_audio_last_played_ms(const mv_audio *a) { return atomic_load(&((struct mv_audio *)a)->last_played_ms); }

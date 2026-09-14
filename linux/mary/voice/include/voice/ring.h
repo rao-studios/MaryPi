@@ -49,4 +49,30 @@ void mv_framer_free(mv_framer *framer);
 void mv_framer_push(mv_framer *framer, const int16_t *samples, size_t count, mv_frame_fn fn, void *user);
 void mv_framer_reset(mv_framer *framer);
 
+#include <stdbool.h>
+
+/* When the speaker starts and stops taking from the ring. A reply streams in from Mistral no faster than — and
+ * sometimes slower than — it plays, so a ring read straight into every PipeWire quantum ran dry again and again
+ * mid-sentence and each gap was a slice of silence cut into the voice: static. The player waits until
+ * MV_PLAYER_PREBUFFER_MS is queued (or the writer has gone quiet: the reply's tail), fades in, and when the ring
+ * does run dry mid-reply fades out and waits for the buffer again, so a slow network is a pause, not crackle.
+ * Samples are clamped to [-1, 1]. PipeWire's thread owns it. */
+#define MV_PLAYER_PREBUFFER_MS 250
+#define MV_PLAYER_WRITER_IDLE_MS 150
+#define MV_PLAYER_FADE 120                /* samples: 5 ms at 24 kHz */
+
+typedef struct mv_player {
+    size_t prebuffer;                     /* samples to have queued before playing */
+    bool primed;
+    size_t fade_in;                       /* samples of the fade-in still to apply */
+    size_t underruns, quanta;             /* this reply's, so far */
+    size_t last_underruns, last_quanta;   /* the reply that last ended */
+} mv_player;
+
+void mv_player_init(mv_player *p, size_t prebuffer);
+/* Fills `out` with `frames` samples: what the ring can give once primed, silence for the rest. `writer_idle` is
+ * whether the producer has written nothing for MV_PLAYER_WRITER_IDLE_MS. Returns the samples taken from the ring;
+ * *ended (may be NULL) is set when a reply finished playing — the ring empty with the writer quiet. */
+size_t mv_player_fill(mv_player *p, mv_ring *r, float *out, size_t frames, bool writer_idle, bool *ended);
+
 #endif

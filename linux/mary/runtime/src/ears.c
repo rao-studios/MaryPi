@@ -69,13 +69,31 @@ static void post_state(struct mr_ears *e, const char *state) {
     post(e, o);
 }
 
+/* Voxtral sends the words as they come, a piece at a time ("what", " time", " is it"): what has been heard so far
+ * is their concatenation, and that — not the latest piece — is what the desktop shows as the sentence grows.
+ * Past the buffer the oldest words go, never half a character. */
 static void on_delta(const char *text, void *user) {
     struct session *s = user;
+    char heard[sizeof s->partial];
     pthread_mutex_lock(&s->lock);
-    snprintf(s->partial, sizeof s->partial, "%s", text);
+    size_t have = strlen(s->partial), add = strlen(text), cap = sizeof s->partial;
+    if (add >= cap) {
+        text += add - (cap - 1);
+        add = cap - 1;
+        while (add && ((unsigned char)*text & 0xC0) == 0x80) { text++; add--; }
+        have = 0;
+    } else if (have + add >= cap) {
+        size_t drop = have + add + 1 - cap;
+        while (drop < have && ((unsigned char)s->partial[drop] & 0xC0) == 0x80) drop++;
+        memmove(s->partial, s->partial + drop, have - drop + 1);
+        have -= drop;
+    }
+    memcpy(s->partial + have, text, add);
+    s->partial[have + add] = 0;
+    snprintf(heard, sizeof heard, "%s", s->partial);
     pthread_mutex_unlock(&s->lock);
     struct json_object *o = event("ears.partial", s->id);
-    json_object_object_add(o, "text", json_object_new_string(text));
+    json_object_object_add(o, "text", json_object_new_string(heard));
     post(s->ears, o);
 }
 

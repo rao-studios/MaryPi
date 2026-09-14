@@ -79,3 +79,50 @@ void mv_framer_push(mv_framer *f, const int16_t *samples, size_t count, mv_frame
 }
 
 void mv_framer_reset(mv_framer *f) { f->filled = 0; }
+
+void mv_player_init(mv_player *p, size_t prebuffer) {
+    memset(p, 0, sizeof *p);
+    p->prebuffer = prebuffer ? prebuffer : 1;
+}
+
+size_t mv_player_fill(mv_player *p, mv_ring *r, float *out, size_t frames, bool writer_idle, bool *ended) {
+    if (ended) *ended = false;
+    size_t available = mv_ring_available(r);
+    if (!p->primed && available && (available >= p->prebuffer || writer_idle)) {
+        p->primed = true;
+        p->fade_in = MV_PLAYER_FADE;
+    }
+    size_t got = 0;
+    if (p->primed) {
+        p->quanta++;
+        got = mv_ring_read(r, out, frames);
+        for (size_t i = 0; i < got; i++) {
+            float v = out[i];
+            if (v > 1) v = 1;
+            else if (v < -1) v = -1;
+            if (p->fade_in) {
+                v *= (float)(MV_PLAYER_FADE - p->fade_in) / MV_PLAYER_FADE;
+                p->fade_in--;
+            }
+            out[i] = v;
+        }
+        if (got < frames) {
+            if (!writer_idle && got) {
+                /* dry mid-reply: fade what there is down to the silence that follows, then wait for the buffer */
+                size_t fade = got < MV_PLAYER_FADE ? got : MV_PLAYER_FADE;
+                for (size_t i = 0; i < fade; i++) out[got - fade + i] *= (float)(fade - i) / (float)fade;
+            }
+            if (writer_idle) {
+                if (ended) *ended = true;
+                p->last_underruns = p->underruns;
+                p->last_quanta = p->quanta;
+                p->underruns = p->quanta = 0;
+            } else {
+                p->underruns++;
+            }
+            p->primed = false;
+        }
+    }
+    for (size_t i = got; i < frames; i++) out[i] = 0;
+    return got;
+}

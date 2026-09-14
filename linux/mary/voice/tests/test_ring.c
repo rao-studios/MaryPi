@@ -140,6 +140,75 @@ MARY_TEST(audio_defaults_are_what_voxtral_wants) {
 #endif
 }
 
+static void queue(mv_ring *r, size_t n, float v) {
+    float chunk[64];
+    for (size_t i = 0; i < 64; i++) chunk[i] = v;
+    while (n) {
+        size_t k = n < 64 ? n : 64;
+        MARY_ASSERT_EQ(mv_ring_write(r, chunk, k), k);
+        n -= k;
+    }
+}
+
+MARY_TEST(the_player_waits_for_a_buffer_then_fades_in) {
+    mv_ring r;
+    MARY_ASSERT_EQ(mv_ring_init(&r, 4096), 0);
+    mv_player p;
+    mv_player_init(&p, 480);
+    float out[64];
+    queue(&r, 100, 0.5f);
+    MARY_ASSERT_EQ(mv_player_fill(&p, &r, out, 64, false, NULL), 0);          /* a trickle: silence, not a slice */
+    MARY_ASSERT(out[0] == 0 && out[63] == 0);
+    queue(&r, 400, 0.5f);
+    MARY_ASSERT_EQ(mv_player_fill(&p, &r, out, 64, false, NULL), 64);         /* the buffer is there: it plays */
+    MARY_ASSERT(out[0] < 0.01f);                                              /* from nothing … */
+    MARY_ASSERT(out[63] > out[0] && out[63] < 0.5f);
+    float prev = out[63];
+    MARY_ASSERT_EQ(mv_player_fill(&p, &r, out, 64, false, NULL), 64);
+    MARY_ASSERT(out[0] >= prev);                                              /* … rising across quanta, no step */
+    MARY_ASSERT(out[63] > 0.49f);                                             /* full once MV_PLAYER_FADE has passed */
+    mv_ring_free(&r);
+}
+
+MARY_TEST(running_dry_mid_reply_fades_out_and_waits_while_the_tail_simply_plays) {
+    mv_ring r;
+    MARY_ASSERT_EQ(mv_ring_init(&r, 4096), 0);
+    mv_player p;
+    mv_player_init(&p, 480);
+    float out[256];
+    queue(&r, 600, 0.5f);
+    MARY_ASSERT_EQ(mv_player_fill(&p, &r, out, 256, false, NULL), 256);
+    MARY_ASSERT_EQ(mv_player_fill(&p, &r, out, 256, false, NULL), 256);
+    bool ended = true;
+    MARY_ASSERT_EQ(mv_player_fill(&p, &r, out, 256, false, &ended), 88);    /* the network fell behind */
+    MARY_ASSERT(!ended);
+    MARY_ASSERT(out[87] < 0.01f && out[0] > 0.3f);                           /* faded to the silence after it */
+    MARY_ASSERT_EQ(p.underruns, 1);
+    queue(&r, 100, 0.5f);
+    MARY_ASSERT_EQ(mv_player_fill(&p, &r, out, 256, false, NULL), 0);         /* waits for the buffer again */
+    /* the reply's tail: fewer than the buffer, and maryd has stopped writing — it plays, and the reply ends */
+    MARY_ASSERT_EQ(mv_player_fill(&p, &r, out, 256, true, &ended), 100);
+    MARY_ASSERT(ended);
+    MARY_ASSERT_EQ(p.last_underruns, 1);
+    MARY_ASSERT_EQ(p.underruns, 0);
+    MARY_ASSERT_EQ(mv_player_fill(&p, &r, out, 256, true, &ended), 0);
+    MARY_ASSERT(!ended && out[0] == 0);
+    mv_ring_free(&r);
+}
+
+MARY_TEST(the_player_clamps_what_would_clip) {
+    mv_ring r;
+    MARY_ASSERT_EQ(mv_ring_init(&r, 4096), 0);
+    mv_player p;
+    mv_player_init(&p, 1);
+    queue(&r, 400, 3.0f);
+    float out[400];
+    mv_player_fill(&p, &r, out, 400, false, NULL);
+    for (int i = 0; i < 400; i++) MARY_ASSERT(out[i] <= 1.0f && out[i] >= -1.0f);
+    MARY_ASSERT(out[399] == 1.0f);
+    mv_ring_free(&r);
+}
+
 int main(void) {
     MARY_RUN(the_ring_keeps_order_and_refuses_what_does_not_fit);
     MARY_RUN(a_flush_empties_the_ring_at_the_next_read);
@@ -148,5 +217,8 @@ int main(void) {
     MARY_RUN(one_writer_and_one_reader_share_it_without_locks);
     MARY_RUN(the_framer_cuts_whatever_arrives_into_20_ms_frames);
     MARY_RUN(audio_defaults_are_what_voxtral_wants);
+    MARY_RUN(the_player_waits_for_a_buffer_then_fades_in);
+    MARY_RUN(running_dry_mid_reply_fades_out_and_waits_while_the_tail_simply_plays);
+    MARY_RUN(the_player_clamps_what_would_clip);
     MARY_TEST_MAIN_END();
 }

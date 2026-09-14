@@ -94,7 +94,8 @@ static void *sewn_connection(void *arg) {
             }
             mc_frame_reader_free(&reader);
             if (rc == MC_IO_STOPPED) {
-                send_json(fd, "{\"type\":\"transcript.delta\",\"text\":\"what time\"}");
+                send_json(fd, "{\"type\":\"transcript.delta\",\"text\":\"what\"}");           /* Voxtral's pieces, as they come */
+                send_json(fd, "{\"type\":\"transcript.delta\",\"text\":\" time\"}");
                 send_json(fd, "{\"type\":\"transcript.done\",\"text\":\"what time is it\"}");
             }
         } else if (strcmp(type, "voices.list") == 0) {
@@ -938,14 +939,17 @@ MARY_TEST(a_spoken_question_is_heard_answered_and_followed_up) {
     memset(frame, 0, sizeof frame);
     for (int f = 0; f < 75; f++) mr_daemon_hear(maryd, frame, 320);    /* 1.5 s of quiet */
 
-    char seen[2048] = "";
+    char seen[2048] = "", partials[256] = "";
     struct json_object *said = NULL;
     for (;;) {
         said = client_wait(&c, "transcript", NULL, seen, sizeof seen);
         bool final = false;
         if (!said || (mc_json_bool(said, "final", &final) && final)) break;
+        const char *heard = mc_json_string(said, "text");
+        if (heard && strlen(partials) + strlen(heard) + 2 < sizeof partials) { strcat(partials, heard); strcat(partials, "|"); }
         json_object_put(said);
     }
+    MARY_ASSERT_STR(partials, "what|what time|");     /* the sentence grows as it is heard: never each piece on its own */
     MARY_ASSERT(said != NULL);
     if (said) {
         MARY_ASSERT_STR(mc_json_string(said, "text"), "what time is it");

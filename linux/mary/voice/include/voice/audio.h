@@ -1,7 +1,8 @@
 /* Mary's ears and voice through PipeWire (MaryVoice's MicCapture and the speaker's
  * AVAudioEngine on macOS). One capture stream — 16 kHz mono s16, cut into 20 ms
  * frames and handed to a callback on PipeWire's thread — and one playback stream
- * that plays 24 kHz mono float from a ring maryd fills. maryd runs as the desktop's
+ * that plays 24 kHz mono float from a ring maryd fills — once a quarter second is queued, or maryd has stopped
+ * writing, so a reply that streams in no faster than it plays pauses instead of crackling (mv_player). maryd runs as the desktop's
  * user, so both reach the session's PipeWire and WirePlumber's default devices.
  * Without PipeWire (a Mac build) every call answers -ENOSYS. */
 #ifndef MARY_VOICE_AUDIO_H
