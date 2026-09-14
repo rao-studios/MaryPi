@@ -25,6 +25,7 @@ typedef struct mcu_result {
     const char *call_id;
     bool ok;
     const char *error;              /* when !ok: the desktop's, or "timeout" / "disconnected" */
+    const char *message;            /* when !ok: the desktop's sentence about it, when it gave one (perform's result) */
     struct json_object *result;     /* when ok; borrowed for the callback */
 } mcu_result;
 

@@ -77,10 +77,13 @@ static void set_summary(mb_lane_outcome *o, const char *text) {
     for (char *c = o->summary; *c; c++) if (*c == '\n') *c = ' ';
 }
 
-/* Whether a JSON result says it landed / found nothing / asks the person. */
+/* Whether a JSON result says it landed / found nothing / asks the person; a `summary` sentence in it is the
+ * run's word (the receipt maryd speaks when the lane ends without prose), over the raw JSON. */
 static void read_result_flags(struct json_object *result, mb_lane_outcome *o) {
     if (!result) return;
     bool b;
+    const char *summary = mc_json_string(result, "summary");
+    if (summary && *summary) set_summary(o, summary);
     if (mc_json_bool(result, "landed", &b)) o->landed = b;
     if (mc_json_bool(result, "found_nothing", &b)) o->found_nothing = b;
     const char *ask = mc_json_string(result, "ask");
@@ -151,7 +154,8 @@ int mb_lane_run(const mb_lane_request *req, const mb_lane_hooks *hooks, mb_lane_
             struct json_object *call = json_object_array_get_idx(calls, i);
             const char *id = mc_json_string(call, "id"), *name = mc_json_string(call, "name"), *arguments = mc_json_string(call, "arguments");
             char call_id[64];
-            snprintf(call_id, sizeof call_id, "%s", id && *id ? id : "call");
+            if (id && *id) snprintf(call_id, sizeof call_id, "%s", id);
+            else snprintf(call_id, sizeof call_id, "call%02d%03d", round % 100, (int)(i % 1000));   /* Mistral wants 9 alphanumerics */
             if (hooks->cancelled && hooks->cancelled(hooks->user)) {
                 json_object_array_add(history, mb_lane_tool_message(call_id, name, "(cancelled before running)"));
                 out->cancelled = true;

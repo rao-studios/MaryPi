@@ -147,9 +147,9 @@ int mcu_pipes_on_message(mcu_pipes *p, struct json_object *message) {
     if (!matched) return -ENOENT;
     bool ok = false;
     mc_json_bool(message, "ok", &ok);
-    const char *error = mc_json_string(message, "error");
+    const char *error = mc_json_string(message, "error"), *sentence = mc_json_string(message, "message");
     struct json_object *result;
-    mcu_result r = { .call_id = found.id, .ok = ok, .error = ok ? NULL : (error ? error : "failed") };
+    mcu_result r = { .call_id = found.id, .ok = ok, .error = ok ? NULL : (error ? error : "failed"), .message = ok || !sentence || !*sentence ? NULL : sentence };
     r.result = ok && json_object_object_get_ex(message, state ? "surface" : "result", &result) ? result : NULL;
     if (found.done) found.done(&r, found.user);
     return 1;

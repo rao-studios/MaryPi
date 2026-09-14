@@ -1,5 +1,6 @@
 /* Lane B over scripted hooks: tool calls dispatched and paired, the repeat guard, a confirmation that
  * parks and resumes, a denied skill, the continuation nudge once, and the ten-round cap. */
+#include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,7 +23,8 @@ static const char REGISTRY[] =
 /* The scripted model: one reply per round, and what it saw. */
 static const char *script[8];
 static int script_len, round_seen, last_messages;
-static char last_system[16384], last_tool_result[600], invoked[8][128];
+static char last_system[16384], last_tool_result[600], last_tool_call_id[64], invoked[8][128];
+static const char *invoke_result_json = "{\"ok\":true}";
 static int invoke_count, confirm_calls, confirm_answer, last_confirmed;
 static bool invoke_fails;
 
@@ -34,7 +36,7 @@ static int fake_complete(struct json_object *request, struct json_object **reply
     for (int i = last_messages - 1; i >= 0; i--) {
         struct json_object *m = json_object_array_get_idx(messages, i);
         const char *role = mc_json_string(m, "role");
-        if (role && strcmp(role, "tool") == 0) { snprintf(last_tool_result, sizeof last_tool_result, "%s", mc_json_string(m, "content")); break; }
+        if (role && strcmp(role, "tool") == 0) { snprintf(last_tool_result, sizeof last_tool_result, "%s", mc_json_string(m, "content")); snprintf(last_tool_call_id, sizeof last_tool_call_id, "%s", mc_json_string(m, "tool_call_id") ? mc_json_string(m, "tool_call_id") : ""); break; }
     }
     if (round_seen >= script_len) { snprintf(message, cap, "the script ran out"); return -EIO; }
     *reply = mc_json_parse(script[round_seen], strlen(script[round_seen]));
@@ -47,7 +49,7 @@ static int fake_invoke(const char *app, const char *skill, struct json_object *a
     if (invoke_count < 8) snprintf(invoked[invoke_count], 128, "%s.%s %s", app, skill, args ? mc_json_compact(args, NULL) : "");
     invoke_count++;
     if (invoke_fails) { snprintf(error, cap, "failed"); return -EIO; }
-    *result = mc_json_parse("{\"ok\":true}", 11);
+    *result = mc_json_parse(invoke_result_json, strlen(invoke_result_json));
     return 0;
 }
 
@@ -58,7 +60,7 @@ static int fake_confirm(const char *call_id, const sk_app *app, const sk_skill *
 
 static const mb_lane_hooks HOOKS = { .complete = fake_complete, .invoke = fake_invoke, .confirm = fake_confirm };
 
-static void reset(void) { round_seen = invoke_count = confirm_calls = last_confirmed = 0; invoke_fails = false; confirm_answer = 1; }
+static void reset(void) { round_seen = invoke_count = confirm_calls = last_confirmed = 0; invoke_fails = false; confirm_answer = 1; invoke_result_json = "{\"ok\":true}"; last_tool_call_id[0] = 0; }
 
 static struct json_object *messages_with(const char *user) {
     struct json_object *a = json_object_new_array(), *m = json_object_new_object();
@@ -122,8 +124,29 @@ MARY_TEST(a_failed_call_is_not_tried_again_with_the_same_words) {
     json_object_put(messages);
 }
 
+MARY_TEST(a_call_without_an_id_gets_a_nine_character_one) {
+    /* Mistral rejects a follow-up whose tool_call_id is not nine alphanumerics; a call recovered from prose has no id */
+    reset();
+    script[0] = "{\"type\":\"complete.result\",\"text\":\"\",\"tool_calls\":[{\"id\":\"\",\"name\":\"media__play_pause\",\"arguments\":\"{}\"}]}";
+    script[1] = "{\"type\":\"complete.result\",\"text\":\"Playing.\",\"tool_calls\":[]}";
+    script_len = 2;
+    struct json_object *messages = messages_with("play the music");
+    mb_lane_request req = { .system = "S", .messages = messages, .registry = &registry };
+    mb_lane_result out;
+    MARY_ASSERT_EQ(mb_lane_run(&req, &HOOKS, &out), 0);
+    MARY_ASSERT_EQ(invoke_count, 1);
+    MARY_ASSERT_EQ((int)strlen(last_tool_call_id), 9);
+    bool alnum = true;
+    for (const char *c = last_tool_call_id; *c; c++) alnum = alnum && isalnum((unsigned char)*c);
+    MARY_ASSERT(alnum);
+    MARY_ASSERT_STR(out.text, "Playing.");
+    mb_lane_result_free(&out);
+    json_object_put(messages);
+}
+
 MARY_TEST(a_protected_skill_parks_for_the_person_and_a_denied_one_says_so) {
     reset();
+    invoke_result_json = "{\"landed\":true,\"summary\":\"Trashed old.txt.\"}";
     script[0] = "{\"type\":\"complete.result\",\"text\":\"\",\"tool_calls\":[{\"id\":\"c1\",\"name\":\"finder__trash\",\"arguments\":\"{\\\"path\\\":\\\"/home/mary/old.txt\\\"}\"}]}";
     script[1] = "{\"type\":\"complete.result\",\"text\":\"Trashed it.\",\"tool_calls\":[]}";
     script_len = 2;
@@ -135,6 +158,9 @@ MARY_TEST(a_protected_skill_parks_for_the_person_and_a_denied_one_says_so) {
     MARY_ASSERT_EQ(invoke_count, 1);        /* allowed: it ran */
     MARY_ASSERT_EQ(last_confirmed, 1);      /* marked as the person's answer, so the desktop's gate lets it through */
     MARY_ASSERT(out.outcomes[0].ok);
+    MARY_ASSERT(out.outcomes[0].landed);
+    MARY_ASSERT_STR(out.outcomes[0].summary, "Trashed old.txt.");     /* the result's sentence is the run's word, not the raw JSON */
+    MARY_ASSERT_STR(last_tool_call_id, "c1");
     MARY_ASSERT_STR(invoked[0], "finder.trash {\"path\":\"/home/mary/old.txt\"}");
     mb_lane_result_free(&out);
     json_object_put(messages);
@@ -233,6 +259,7 @@ int main(void) {
     MARY_RUN(tool_calls_are_dispatched_paired_and_the_prose_kept);
     MARY_RUN(a_failed_call_is_not_tried_again_with_the_same_words);
     MARY_RUN(a_protected_skill_parks_for_the_person_and_a_denied_one_says_so);
+    MARY_RUN(a_call_without_an_id_gets_a_nine_character_one);
     MARY_RUN(the_lane_nudges_once_when_only_reads_ran_on_an_acting_turn_and_stops_at_ten_rounds);
     MARY_RUN(the_skills_prompt_names_the_roster_and_what_is_in_hand);
     sk_registry_free(&registry);

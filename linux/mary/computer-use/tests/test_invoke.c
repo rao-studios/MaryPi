@@ -23,6 +23,7 @@ struct outcome {
     int calls;
     bool ok;
     char error[32];
+    char message[96];
     char result[256];
 };
 
@@ -31,6 +32,7 @@ static void record(const mcu_result *r, void *user) {
     o->calls++;
     o->ok = r->ok;
     snprintf(o->error, sizeof o->error, "%s", r->error ? r->error : "");
+    snprintf(o->message, sizeof o->message, "%s", r->message ? r->message : "");
     snprintf(o->result, sizeof o->result, "%s", r->result ? mc_json_compact(r->result, NULL) : "");
 }
 
@@ -78,13 +80,14 @@ MARY_TEST(results_match_their_calls_in_any_order) {
     MARY_ASSERT(strcmp(id1, id2) != 0);
     MARY_ASSERT(strstr(w.sent[0], "\"confirmed\":true") != NULL);       /* the person's answer rides the call */
     MARY_ASSERT(strstr(w.sent[1], "confirmed") == NULL);                 /* and only that call */
-    snprintf(line, sizeof line, "{\"type\":\"skill.result\",\"call_id\":\"%s\",\"ok\":false,\"error\":\"denied\"}", id2);
+    snprintf(line, sizeof line, "{\"type\":\"skill.result\",\"call_id\":\"%s\",\"ok\":false,\"error\":\"failed\",\"message\":\"Nothing is open in the Media Player.\"}", id2);
     struct json_object *reply = result_line(line);
     mcu_pipes_on_message(p, reply);
     json_object_put(reply);
     MARY_ASSERT_EQ(second.calls, 1);
     MARY_ASSERT(!second.ok);
-    MARY_ASSERT_STR(second.error, "denied");
+    MARY_ASSERT_STR(second.error, "failed");
+    MARY_ASSERT_STR(second.message, "Nothing is open in the Media Player.");   /* the desktop's sentence travels with the word */
     MARY_ASSERT_EQ(first.calls, 0);
     snprintf(line, sizeof line, "{\"type\":\"skill.result\",\"call_id\":\"%s\",\"ok\":false}", id1);
     reply = result_line(line);

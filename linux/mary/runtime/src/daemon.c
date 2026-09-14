@@ -1635,7 +1635,8 @@ static void on_lane_invoked(const mcu_result *r, void *user) {
         b->invoke_rc = r->ok ? 0 : -EIO;
         if (b->invoke_result) json_object_put(b->invoke_result);
         b->invoke_result = r->result ? json_object_get(r->result) : NULL;
-        snprintf(b->invoke_error, sizeof b->invoke_error, "%s", r->error ? r->error : "");
+        /* the desktop's sentence ("Nothing is open in the Media Player.") over its word ("failed"): the lane and the reply repeat it */
+        snprintf(b->invoke_error, sizeof b->invoke_error, "%s", r->message ? r->message : r->error ? r->error : "");
         b->invoke_done = true;
         pthread_cond_broadcast(&b->cond);
         pthread_mutex_unlock(&b->lock);

@@ -37,11 +37,14 @@ struct json_object *sewn_complete_body(const sewn_complete_request *req) {
     for (size_t i = 0; i < n; i++) {
         struct json_object *m = json_object_array_get_idx(req->messages, i);
         const char *role = mc_json_string(m, "role"), *content = mc_json_string(m, "content");
-        if (!role || !content) continue;
-        /* skillsCompleteMessages: empty contents drop, roles stay intact. */
-        const char *p = content;
+        if (!role) continue;
+        /* skillsCompleteMessages: empty prose drops, roles stay intact — but a tool round keeps its shape: the
+         * assistant message that carries tool_calls (its content is "") and every tool result stay, or Mistral
+         * answers "Unexpected role 'tool' after role 'user'" (HTTP 400) and the lane never gets its prose. */
+        bool tool_round = mc_json_array(m, "tool_calls") != NULL || strcmp(role, "tool") == 0;
+        const char *p = content ? content : "";
         while (*p && isspace((unsigned char)*p)) p++;
-        if (!*p) continue;
+        if (!*p && !tool_round) continue;
         json_object_array_add(messages, json_object_get(m));
     }
     json_object_object_add(body, "messages", messages);

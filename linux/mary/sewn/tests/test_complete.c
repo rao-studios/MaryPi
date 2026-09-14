@@ -10,16 +10,21 @@
 static struct json_object *parse(const char *text) { return mc_json_parse(text, strlen(text)); }
 
 MARY_TEST(the_skills_body_keeps_roles_drops_empties_and_offers_tools) {
-    struct json_object *messages = parse("[{\"role\":\"user\",\"content\":\"  \"},{\"role\":\"assistant\",\"content\":\"ok\"},{\"role\":\"user\",\"content\":\"bring Finder forward\"}]");
+    struct json_object *messages = parse("[{\"role\":\"user\",\"content\":\"  \"},{\"role\":\"assistant\",\"content\":\"ok\"},"
+                                         "{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"abc123def\",\"type\":\"function\",\"function\":{\"name\":\"look\",\"arguments\":\"{}\"}}]},"
+                                         "{\"role\":\"tool\",\"tool_call_id\":\"abc123def\",\"name\":\"look\",\"content\":\"DONE: ahead\"},"
+                                         "{\"role\":\"user\",\"content\":\"bring Finder forward\"}]");
     struct json_object *tools = parse("[{\"type\":\"function\",\"function\":{\"name\":\"bring_window_forward\",\"parameters\":{\"type\":\"object\"}}}]");
     sewn_complete_request req = { .provider = SEWN_PROVIDER_MISTRAL, .system = "Call tools by name.", .messages = messages, .tools = tools,
                                   .max_tokens = 800, .temperature = 0 };
     struct json_object *body = sewn_complete_body(&req);
     MARY_ASSERT_STR(mc_json_string(body, "model"), "mistral-medium-latest");
     struct json_object *m = mc_json_array(body, "messages");
-    MARY_ASSERT_EQ(json_object_array_length(m), 3);          /* system, assistant, user */
+    MARY_ASSERT_EQ(json_object_array_length(m), 5);          /* system, assistant, the tool round (both halves), user: only the blank user dropped */
     MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(m, 0), "role"), "system");
-    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(m, 2), "content"), "bring Finder forward");
+    MARY_ASSERT(mc_json_array(json_object_array_get_idx(m, 2), "tool_calls") != NULL);   /* content "" but it carries the calls */
+    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(m, 3), "role"), "tool");
+    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(m, 4), "content"), "bring Finder forward");
     double top_p = 0;
     MARY_ASSERT(mc_json_double(body, "top_p", &top_p) && top_p == 1.0);   /* greedy needs top_p 1 */
     MARY_ASSERT_EQ(json_object_array_length(mc_json_array(body, "tools")), 1);
