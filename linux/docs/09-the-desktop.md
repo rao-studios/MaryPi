@@ -424,7 +424,7 @@ Five scene layers: wallpaper, windows, the clock, menus, Spotlight. The wallpape
 a lighter variant of the molten shader that moves on its own like a blurry wavy lava lamp. It is computed on the
 CPU at a quarter of the screen each way, fifteen times a second, and the scene stretches each frame to the output
 with bilinear filtering, which is the blur (`lp_lava.h`, PARITY D33). The timer skips a screen that windows cover
-entirely, and Reduce Motion holds a still frame. The clock sits top right with its letters cut from brushed platinum: the desktop's one sheet of metal shows through the glyphs, over a dark keyline and a soft shadow so it reads on any wallpaper, with no plate behind (`lp_clock.h`, shared with `lp-render --clock`). Everything the library
+entirely, and Reduce Motion holds a still frame. The clock sits top right — the weekday, month and day, then the time: "Mon Sep 14 6:21 AM" — with its letters cut from brushed platinum: the desktop's one sheet of metal shows through the glyphs, over a dark keyline and a soft shadow so it reads on any wallpaper, with no plate behind (`lp_clock.h`, shared with `lp-render --clock`). Everything the library
 paints is a *chrome*: a Cairo buffer wrapped as a `wlr_buffer` and shown as a
 `wlr_scene_buffer`; three rotate so the renderer never reads a buffer being
 painted. A chrome's paint function runs an EVENT pass on input (no Cairo; hit
@@ -480,9 +480,12 @@ defaults, which mirror the web's `settings.ts`. `clock` is the one key the web
 does not have: View › Show Clock writes `clock=off` and the time leaves the
 corner; it is on by default, and a file without the key keeps it on. System
 Settings adds `key_repeat_rate`, `key_repeat_delay`, `keyboard_layout`,
-`pointer_speed`, `natural_scroll`, `clock_24h` and `dock`; an old file without
+`pointer_speed`, `natural_scroll`, `clock_24h`, `restore_windows` and `dock`; an old file without
 them keeps the compiled defaults (25 a second after 600 ms, the system layout,
-each app's own dock flag), and values out of range are pulled back in on load. The wallpaper is looked up in three places before it is rendered:
+each app's own dock flag), and values out of range are pulled back in on load. The desktop starts empty:
+`restore_windows=on` (System Settings › General › Reopen at login) opens the windows of last time instead, from
+`session.conf` beside it, which the desktop rewrites a second after its windows change and when it stops — each
+app window's place, size, zoom or shade and the folder or document it showed (PARITY D34). The wallpaper is looked up in three places before it is rendered:
 `$MARYUI_DATA_DIR` (dev mode points this at `out/ui/usr/share/maryui` over
 virtiofs), then `/usr/share/maryui/`, then `$XDG_CACHE_HOME/maryui/`; a render
 that had to happen is written to the last of those. That is why the `ui` stage
