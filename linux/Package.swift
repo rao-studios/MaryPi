@@ -33,6 +33,9 @@ let package = Package(
                 .linkedFramework("DiskArbitration"),
             ]
         ),
+        // Liquid Platinum for the Mac: tokens generated from the maryos submodule's lp_tokens.h
+        // (make lp-tokens), maryui's brushed grain ported line for line, and the SwiftUI pieces.
+        .target(name: "LiquidPlatinum"),
         // Noise over CryptoKit, the wire, Bonjour discovery and the session that talk to maryvncd.
         .target(
             name: "MaryVNCKit",
@@ -65,6 +68,10 @@ let package = Package(
             name: "MaryOSKitTests",
             dependencies: ["MaryOSKit"],
             resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "LiquidPlatinumTests",
+            dependencies: ["LiquidPlatinum"]
         ),
         .testTarget(
             name: "MaryVNCKitTests",

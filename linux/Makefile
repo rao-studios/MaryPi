@@ -11,6 +11,8 @@
 #                            run again while the VM is up to rebuild into it; ARGS=--image for the embedded desktop
 #   make terminal            maryos/terminal.sh: boot the VM to a login prompt; ARGS=--console for the serial console
 #   make flash DISK=disk4    erase disk4 and write the pi5 image (asks first)
+#   make lp-tokens           regenerate Sources/LiquidPlatinum/LPTokens.swift from maryos/maryui's lp_tokens.h
+#   make lp-tokens-check     fail when LPTokens.swift is out of date (make test runs it)
 SWIFT ?= swift
 TARGET ?= vm
 DISK ?=
@@ -23,7 +25,7 @@ build:
 	$(SWIFT) build
 	sh scripts/sign.sh $(BIN_CLI) $(BIN_APP)
 
-test:
+test: lp-tokens-check
 	$(SWIFT) test
 	$(MAKE) -C $(KIT) test
 
@@ -35,6 +37,12 @@ run-app: build
 
 app:
 	sh scripts/bundle.sh
+
+lp-tokens:
+	python3 scripts/gen-lp-tokens.py
+
+lp-tokens-check:
+	python3 scripts/gen-lp-tokens.py --check
 
 rootfs:
 	$(KIT)/builder/build.sh rootfs
@@ -60,4 +68,4 @@ flash: build
 clean:
 	rm -rf .build dist
 
-.PHONY: build test cli run-app app rootfs ui mary image vm terminal flash clean
+.PHONY: build test cli run-app app lp-tokens lp-tokens-check rootfs ui mary image vm terminal flash clean
