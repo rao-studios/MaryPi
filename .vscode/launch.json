@@ -43,7 +43,9 @@
         {
             "type": "swift",
             "request": "launch",
-            "args": ["doctor"],
+            "args": [
+                "doctor"
+            ],
             "cwd": "${workspaceFolder}/linux",
             "name": "Debug maryos (VM commands need a signed binary: make -C linux cli)",
             "target": "maryos",
@@ -59,6 +61,46 @@
             "target": "MaryOSApp",
             "configuration": "debug",
             "preLaunchTask": "swift: Build Debug MaryOSApp (linux)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MaryPi}/linux",
+            "name": "Debug maryos (linux)",
+            "target": "maryos",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug maryos (linux)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MaryPi}/linux",
+            "name": "Release maryos (linux)",
+            "target": "maryos",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release maryos (linux)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MaryPi}/linux",
+            "name": "Debug MaryOSApp (linux)",
+            "target": "MaryOSApp",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MaryOSApp (linux)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MaryPi}/linux",
+            "name": "Release MaryOSApp (linux)",
+            "target": "MaryOSApp",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MaryOSApp (linux)"
         }
     ]
 }
