@@ -138,40 +138,40 @@ MARY_TEST(the_memory_plan_maps_the_gates_threads_onto_the_lanes_and_recall_gates
     ma_engine_resolve(&in, route);
     mb_memory_plan plan;
     mb_memory_plan_for(route, NULL, "mary", &plan);
-    MARY_ASSERT_EQ(plan.routing.lane_count, 2);
-    MARY_ASSERT_STR(plan.routing.lanes[0], "application");
+    MARY_ASSERT_EQ(plan.routing.lane_count, 1);           /* the routing habits; the skills themselves are the registry's */
+    MARY_ASSERT_STR(plan.routing.lanes[0], "behavioral");
+    MARY_ASSERT_EQ(plan.orchestration.lane_count, 1);
     MARY_ASSERT_STR(plan.orchestration.lanes[0], "behavioral");
-    MARY_ASSERT_EQ(plan.context.lane_count, 2);           /* the ability thread: application, behavioral */
-    MARY_ASSERT_STR(plan.context.lanes[0], "application");
-    MARY_ASSERT_STR(plan.context.lanes[1], "behavioral");
+    MARY_ASSERT_EQ(plan.context.lane_count, 1);           /* the ability thread: behavioral */
+    MARY_ASSERT_STR(plan.context.lanes[0], "behavioral");
     MARY_ASSERT_STR(plan.lane_priority[0], "ability");
-    MARY_ASSERT(plan.group_count >= 4);                   /* conversation, memory, files, the writing target's group */
-    MARY_ASSERT_STR(plan.groups[0], "conversation-mary");
+    MARY_ASSERT(plan.group_count >= 4);                   /* memory, files, style, the writing target's behaviour group */
+    MARY_ASSERT_STR(plan.groups[0], "memory-mary");
+    MARY_ASSERT_STR(plan.groups[2], "mary-style-mary");
     MARY_ASSERT(strncmp(plan.groups[3], "mary-ability-", 13) == 0);
     MARY_ASSERT(plan.entity_count >= 3);
-    /* recall off for application: the lane goes, the ability groups go */
+    /* recall off for behavioral: the lane goes, the behaviour groups go */
     mb_recall recall = mb_recall_default();
-    recall.application = false;
+    recall.behavioral = false;
     mb_memory_plan_for(route, &recall, "mary", &plan);
-    MARY_ASSERT_EQ(plan.context.lane_count, 1);
-    MARY_ASSERT_STR(plan.context.lanes[0], "behavioral");
+    MARY_ASSERT_EQ(plan.context.lane_count, 0);
+    MARY_ASSERT_EQ(plan.routing.lane_count, 0);
     MARY_ASSERT_EQ(plan.group_count, 3);
-    /* a chat: personal and conversation, plus application on a perceive turn */
+    /* a chat: personal alone; a perceive turn adds behavioral */
     in.utterance = "how was your day";
     in.lead_application_id = NULL;
     ma_engine_resolve(&in, route);
     mb_memory_plan_for(route, NULL, "mary", &plan);
-    MARY_ASSERT_EQ(plan.context.lane_count, 2);
+    MARY_ASSERT_EQ(plan.context.lane_count, 1);
     MARY_ASSERT_STR(plan.context.lanes[0], "personal");
-    MARY_ASSERT_STR(plan.context.lanes[1], "conversation");
     in.utterance = "what's on my screen";
     in.lead_application_id = "finder";
     ma_engine_resolve(&in, route);
     mb_memory_plan_for(route, NULL, "mary", &plan);
-    MARY_ASSERT_EQ(plan.context.lane_count, 3);
-    MARY_ASSERT_STR(plan.context.lanes[2], "application");
+    MARY_ASSERT_EQ(plan.context.lane_count, 2);
+    MARY_ASSERT_STR(plan.context.lanes[1], "behavioral");
     struct json_object *lanes = mb_purpose_json(&plan.context);
-    MARY_ASSERT_STR(mc_json_compact(lanes, NULL), "[\"personal\",\"conversation\",\"application\"]");
+    MARY_ASSERT_STR(mc_json_compact(lanes, NULL), "[\"personal\",\"behavioral\"]");
     json_object_put(lanes);
     free(route);
 }

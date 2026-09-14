@@ -59,8 +59,7 @@ typedef struct mr_audio_ops {
 typedef struct mr_config {
     const char *desktop_socket;     /* NULL: $XDG_RUNTIME_DIR/mary/mary.sock */
     const char *sewn_socket;        /* NULL: $SEWN_SOCKET or /run/sewn/sewn.sock */
-    const char *thread_socket;      /* NULL: $THREAD_SOCKET or /run/thread/thread.sock */
-    const char *thread_local_socket;/* NULL: $THREAD_LOCAL_SOCKET or /run/thread/local.sock (ability, behaviour and routing records) */
+    const char *thread_local_socket;/* NULL: $THREAD_LOCAL_SOCKET or /run/thread/local.sock (style, behaviour and routing records) */
     bool audio;                     /* open PipeWire */
     bool wake;                      /* listen for "Hey Mary" */
     const mv_kws_config *kws;       /* NULL: no spotter */

@@ -26,13 +26,12 @@ size_t sewn_partitions_chars(const sewn_partition *partitions, size_t n) {
     return total;
 }
 
-enum tier { TIER_MEMORY, TIER_DOCUMENT, TIER_CONVERSATION, TIER_BACKGROUND, TIER_SHARED, TIER_COUNT };
+enum tier { TIER_MEMORY, TIER_DOCUMENT, TIER_BACKGROUND, TIER_SHARED, TIER_COUNT };
 
 static enum tier tier_of(const sewn_partition *p, const char *owner) {
     if (!owner || strcasecmp(p->owner_id, owner) != 0) return TIER_SHARED;
     if (strcmp(p->family, "memory") == 0) return TIER_MEMORY;
-    if (strcmp(p->family, "conversation") == 0) return TIER_CONVERSATION;
-    if (strcmp(p->lane, "application") == 0 || strcmp(p->lane, "behavioral") == 0) return TIER_BACKGROUND;
+    if (strcmp(p->lane, "behavioral") == 0) return TIER_BACKGROUND;
     return TIER_DOCUMENT;
 }
 
@@ -65,10 +64,6 @@ char *sewn_compact_verbatim(const sewn_partition *partitions, size_t n, const ch
     mc_buf_append_str(&out, block(&tiers[TIER_MEMORY]));
     mc_buf_append_str(&out, "\n\n**Documents:**\n");
     mc_buf_append_str(&out, block(&tiers[TIER_DOCUMENT]));
-    if (tiers[TIER_CONVERSATION].len) {
-        mc_buf_append_str(&out, "\n\n**Conversation (what was said before, turn by turn):**\n");
-        mc_buf_append_str(&out, block(&tiers[TIER_CONVERSATION]));
-    }
     if (tiers[TIER_BACKGROUND].len) {
         mc_buf_append_str(&out, "\n\n**Mary's Past Actions (her own records of what the applications can do and what she did \xE2\x80\x94 background, not user prose):**\n");
         mc_buf_append_str(&out, block(&tiers[TIER_BACKGROUND]));
@@ -112,10 +107,6 @@ char *sewn_compact_briefing_input(struct json_object *messages, const sewn_parti
         mc_buf_append_str(&out, block(&tiers[TIER_MEMORY]));
         mc_buf_append_str(&out, "\n\n**THE USER'S DOCUMENTS (personal notes and files):**\n");
         mc_buf_append_str(&out, block(&tiers[TIER_DOCUMENT]));
-        if (tiers[TIER_CONVERSATION].len) {
-            mc_buf_append_str(&out, "\n\n**THE USER'S CONVERSATION (earlier exchanges with Mary, turn by turn):**\n");
-            mc_buf_append_str(&out, block(&tiers[TIER_CONVERSATION]));
-        }
         if (tiers[TIER_BACKGROUND].len) {
             mc_buf_append_str(&out, "\n\n**MARY'S PAST ACTIONS (her own records, not user prose):**\n");
             mc_buf_append_str(&out, block(&tiers[TIER_BACKGROUND]));

@@ -25,8 +25,9 @@ reached again next time.
 
 Skills: the desktop publishes `skills{apps}`; `maryctl skill APP SKILL [JSON]` is decided against that
 policy (unknown, denied, needs_confirmation) and otherwise sent to the desktop as `skill.invoke` through
-computer-use's pipes. When the skills arrive maryd writes them into the Thread as `ability` records (over
-threadd's local socket) and builds the skill index triage scores against (sewnd's `embed`).
+computer-use's pipes. When the skills arrive maryd builds the skill index triage scores against (sewnd's
+`embed`) and writes one `style` record per discipline into the Thread (over threadd's local socket);
+nothing per skill or app is recorded (PORTING.md 15).
 
 A turn (PORTING.md 14): the desktop is asked for the world, the ambient engine routes, and triage embeds the
 words. A unique skill winner with a safe argument shape and a single clause dispatches with no model round —
@@ -35,9 +36,9 @@ that cannot dispatch) runs the skills lane: `complete` rounds through sewnd, cal
 pipes, a protected skill parked on the desktop's confirmation card (`skill.confirm{call_id, app, skill, args,
 summary}` out; `skill.confirm.reply{call_id, yes}` back, or a bare yes or no said to Mary); its answer is
 spoken through sewnd's `speak`. Every other turn is the voice with retrieval (`turn.start`). `reply.end`
-carries the runs, and the episode is sealed and deposited as `behavior` + `interaction` records whenever a
-skill ran. `maryctl triage TEXT` shows who would answer without a model; `maryctl abilities` prints the
-ability records.
+carries the runs, and the episode is sealed and deposited as a `behavior` record whenever a skill ran; the
+turn itself is not deposited (Sewn's memory covers the conversation). `maryctl triage TEXT` shows who would
+answer without a model.
 
 Voice: turns are spoken in the voice the desktop sends (`config{voice}`, Marie until then). A sample speaks one
 text through the speaker with sewnd's `speak`, with the ears muted, and stays out of the conversation and Thread.

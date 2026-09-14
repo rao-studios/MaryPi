@@ -49,8 +49,8 @@ MARY_TEST(runs_and_retrieval_attach_to_their_turn) {
     MARY_ASSERT_STR(t1->runs[0].invocation, "media.next");
     MARY_ASSERT_NEAR(t1->runs[0].finished, 1000.9, 1e-9);
     ma_retrieval_purpose purpose = { .name = "context", .lane_count = 2, .returned_count = 1 };
-    snprintf(purpose.lanes[0], 16, "conversation");
-    snprintf(purpose.lanes[1], 16, "personal");
+    snprintf(purpose.lanes[0], 16, "personal");
+    snprintf(purpose.lanes[1], 16, "behavioral");
     snprintf(purpose.returned[0].document_id, 128, "file-abc");
     snprintf(purpose.returned[0].family, 24, "file");
     purpose.returned[0].score = 4.2;
@@ -72,7 +72,7 @@ MARY_TEST(runs_and_retrieval_attach_to_their_turn) {
     MARY_ASSERT(strstr(text, "intent.ask: 1\n") && strstr(text, "intent.converse: 1\n"));
     MARY_ASSERT(strstr(text, "--- ask via namedPart ---\nage: 1.0s\nutterance: read me the section about batteries\nlead: none\n") != NULL);
     MARY_ASSERT(strstr(text, "skill.media.next: completed | act\n") != NULL);
-    MARY_ASSERT(strstr(text, "retrieval.context.lanes: conversation, personal\nretrieval.context.returned: file-abc=4.20\n") != NULL);
+    MARY_ASSERT(strstr(text, "retrieval.context.lanes: personal, behavioral\nretrieval.context.returned: file-abc=4.20\n") != NULL);
     MARY_ASSERT(strstr(text, "verdict.named-part: batteries\n") != NULL);
     mc_buf_free(&out);
     ma_trace_log_free(log);

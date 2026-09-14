@@ -9,12 +9,12 @@
 
 #include "ambient/engine.h"
 
-#define MB_SCOPE_LANES 4
+#define MB_SCOPE_LANES 2
 #define MB_SCOPE_GROUPS 12
 #define MB_SCOPE_ENTITIES MA_HINTS_MAX
 
 typedef struct mb_recall {
-    bool personal, conversation, application, behavioral;   /* Settings › Mary › Recall; all on by default */
+    bool personal, behavioral;      /* Settings › Mary › Recall: the Thread's two storage lanes; both on by default */
 } mb_recall;
 
 mb_recall mb_recall_default(void);
@@ -25,8 +25,8 @@ typedef struct mb_purpose {
 } mb_purpose;
 
 typedef struct mb_memory_plan {
-    mb_purpose routing;             /* triage: application (+ behavioral for routing habits) */
-    mb_purpose orchestration;       /* Lane B's background tier: behavioral + application */
+    mb_purpose routing;             /* triage: behavioral (the routing habits; the skills themselves are the registry's) */
+    mb_purpose orchestration;       /* Lane B's background tier: behavioral */
     mb_purpose context;             /* the reply's context: the gate's threads over the storage lanes */
     char groups[MB_SCOPE_GROUPS][80];
     int group_count;
@@ -36,9 +36,10 @@ typedef struct mb_memory_plan {
     int priority_count;
 } mb_memory_plan;
 
-/* The plan for a route: the gate's lanes mapped to storage lanes, the Recall toggles removing
- * lanes, `application` added on perceive/operate/compose/revise, the owner's conversation and
- * memory groups, and the ability groups of the gate's targets (sk_ability_group). */
+/* The plan for a route: the gate's threads mapped to the storage lanes (personal ↔ personal, ability ↔
+ * behavioral), the Recall toggles removing lanes, `behavioral` added on perceive/operate/compose/revise,
+ * the owner's memory, files and style groups, and the behaviour groups of the gate's targets
+ * (sk_ability_group). */
 void mb_memory_plan_for(const ma_route *route, const mb_recall *recall, const char *owner, mb_memory_plan *out);
 /* A purpose's lanes as a JSON array. */
 struct json_object *mb_purpose_json(const mb_purpose *p);

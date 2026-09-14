@@ -508,8 +508,8 @@ static int scripted_retrieve(const sewn_scope *scope, const char *query, int top
     snprintf(result, sizeof result,
              "{\"results\":[{\"partition_id\":\"p1\",\"document_id\":\"file-1\",\"owner_id\":\"%s\",\"text\":\"Paris is the capital of France, a note I keep.\","
              "\"name\":\"notes.txt\",\"family\":\"file\",\"lane\":\"personal\",\"group_id\":\"files-%s\",\"score\":1.5},"
-             "{\"partition_id\":\"p2\",\"document_id\":\"mary-turn-9\",\"owner_id\":\"%s\",\"text\":\"It is lovely in spring, you said.\","
-             "\"name\":\"mary-turn-9\",\"family\":\"conversation\",\"lane\":\"conversation\",\"group_id\":\"conversation-%s\",\"score\":2.5}],\"ms\":3}",
+             "{\"partition_id\":\"p2\",\"document_id\":\"note-9\",\"owner_id\":\"%s\",\"text\":\"It is lovely in spring, you said.\","
+             "\"name\":\"Paris in spring\",\"family\":\"memory\",\"lane\":\"personal\",\"group_id\":\"memory-%s\",\"score\":2.5}],\"ms\":3}",
              retrieve_owner, retrieve_owner, retrieve_owner, retrieve_owner);
     struct json_object *o = parse(result);
     int rc = sewn_retrieval_parse(o, out);
@@ -564,7 +564,7 @@ MARY_TEST(a_turn_with_context_cites_its_sources_and_strips_the_markers) {
     struct seen seen = { 0 };
     run_turn(&seen, TURN);
     MARY_ASSERT_EQ(retrieve_calls, 1);
-    MARY_ASSERT_STR(retrieve_lanes, "conversation,personal");    /* the default lanes */
+    MARY_ASSERT_STR(retrieve_lanes, "personal");                 /* the default lane */
     MARY_ASSERT(strlen(retrieve_owner) > 0);                      /* the connection's user, not the request's */
     MARY_ASSERT_STR(seen.text, "Paris is the capital of France. It is **lovely**.");   /* markers gone, even split across deltas */
     MARY_ASSERT(index_of(&seen, "retrieval") > 0 && index_of(&seen, "retrieval") < index_of(&seen, "token"));
@@ -576,7 +576,7 @@ MARY_TEST(a_turn_with_context_cites_its_sources_and_strips_the_markers) {
     const char *system = mc_json_string(json_object_array_get_idx(messages, 1), "content");
     MARY_ASSERT(strstr(system, "--- CONTEXT ---") != NULL);
     MARY_ASSERT(strstr(system, "[1] \"notes.txt\"") != NULL);
-    MARY_ASSERT(strstr(system, "**Conversation (what was said before") != NULL);
+    MARY_ASSERT(strstr(system, "[2] \"Paris in spring\"") != NULL);        /* the memory, in its tier */
     MARY_ASSERT(strstr(system, "[[n]]") != NULL);                  /* the citation protocol */
     MARY_ASSERT(strstr(system, "no retrieved memories") == NULL);
     json_object_put(body);
@@ -589,9 +589,9 @@ MARY_TEST(a_turn_with_context_cites_its_sources_and_strips_the_markers) {
     MARY_ASSERT_EQ(json_object_array_length(mc_json_array(owner, "document_ids")), 2);
     MARY_ASSERT_EQ(json_object_array_length(mc_json_array(owner, "spans")), 1);   /* the two sentences touch: one span */
     struct json_object *doc_spans = mc_json_object(owner, "document_spans");
-    MARY_ASSERT(doc_spans && mc_json_array(doc_spans, "file-1") && mc_json_array(doc_spans, "mary-turn-9"));
+    MARY_ASSERT(doc_spans && mc_json_array(doc_spans, "file-1") && mc_json_array(doc_spans, "note-9"));
     MARY_ASSERT_EQ(json_object_array_length(mc_json_array(end, "retrieved")), 2);
-    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(mc_json_array(end, "retrieved"), 1), "lane"), "conversation");
+    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(mc_json_array(end, "retrieved"), 1), "lane"), "personal");
     json_object_put(end);
     MARY_ASSERT_EQ(script.completions, 0);                        /* small context: no briefing call */
     teardown();

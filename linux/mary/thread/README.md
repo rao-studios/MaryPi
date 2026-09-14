@@ -31,22 +31,24 @@ writes for, so auto-memory lands in the user's own groups. Everyone else is the 
 | `MistralEmbeddingProvider`, `MistralGraphExtractionProvider` | `embedder.c` — asks **sewnd** (`embed`, `graph.extract`); threadd itself never touches the network |
 | `ThreadRegistry` (plists on disk) | `thread.db` (WAL; `PRAGMA user_version`), `backup` = `VACUUM INTO` |
 
-Beyond Thread, for MaryOS: `families.c` declares the record families (file, conversation, memory,
-behavior, interaction, ability, ability-schema, style, routing, application) with their id and group
-patterns and the **lane** each belongs to — `personal`, `conversation`, `application`, `behavioral` —
-so a search can be constrained to the lanes a purpose is allowed to draw on; `parity.c` keeps the `files`
-rows indexd reports and answers what is missing, stale or orphaned; `ledger.c` keeps the last 10,000
-events.
+Beyond Thread, for MaryOS: `families.c` declares the record families (file, memory, behavior, style,
+routing) with their id and group patterns and the **lane** each belongs to — `personal` (file, memory,
+style) and `behavioral` (behavior, routing) — so a search can be constrained to the lanes a purpose is
+allowed to draw on; `parity.c` keeps the `files` rows indexd reports and answers what is missing, stale
+or orphaned; `ledger.c` keeps the last 10,000 events. The Thread keeps what Mary learns: the files on the
+drive, what Sewn remembered of the conversation, what Mary did and how the person asks. It does not keep
+what she already knows as the operating system — the applications' functions are the registry's, read
+from the desktop's `skills{apps}` — nor a record per turn: the `conversation`, `interaction`, `ability`,
+`ability-schema` and `application` families were retired (`user_version` 2), and a file from before is
+cleaned at open, through the same path Remove takes, with one ledger row saying how many went.
 
 Mary's own calls into it (`MaryThread/ThreadDirectClient.swift`) are `thread/client.h` in this same
-package — the Thread is MaryOS's hard drive, not a service Mary is a client of: `thread_client_deposit_turn`
-puts each spoken or typed turn in the `conversation-<owner>` group (id `mary-turn-<started ms>-<4 hex>`,
-texts `[question, reply]`, metadata `{family, source, model, started_ms, ended_ms, cancelled}`), and
-`thread_client_library` / `thread_client_documents` read back. Peering with other machines is Gita's
-(`gita/peer.h`).
+package — the Thread is MaryOS's hard drive, not a service Mary is a client of: `thread_turn_document_id`
+mints a turn's request id as the Mac did, and `thread_client_library` / `thread_client_documents` read
+back. Peering with other machines is Gita's (`gita/peer.h`).
 
-A store that was JSON files (the first MaryOS release) is imported on the first open — `mary-conversations`
-becomes `conversation-<owner>` — and the old directories are renamed to `legacy/`.
+A store that was JSON files (the first MaryOS release) is imported on the first open — its
+`mary-conversations` stay behind, retired — and the old directories are renamed to `legacy/`.
 
 Deviations (PORTING.md 7 and 11): SQLite instead of property lists; exact vector search instead of product
 quantization; embeddings and extraction through sewnd; `owner_id` from credentials, never the request, except

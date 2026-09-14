@@ -6,12 +6,10 @@
 #include "common/json.h"
 #include "skills/registry.h"
 
-mb_recall mb_recall_default(void) { return (mb_recall){ true, true, true, true }; }
+mb_recall mb_recall_default(void) { return (mb_recall){ true, true }; }
 
 static bool allowed(const mb_recall *recall, const char *lane) {
     if (strcmp(lane, "personal") == 0) return recall->personal;
-    if (strcmp(lane, "conversation") == 0) return recall->conversation;
-    if (strcmp(lane, "application") == 0) return recall->application;
     if (strcmp(lane, "behavioral") == 0) return recall->behavioral;
     return false;
 }
@@ -31,12 +29,10 @@ void mb_memory_plan_for(const ma_route *route, const mb_recall *recall, const ch
     memset(out, 0, sizeof *out);
     mb_recall all = mb_recall_default();
     if (!recall) recall = &all;
-    /* routing: what the applications offer, and how the person asks */
-    add_lane(&out->routing, recall, "application");
+    /* routing: how the person asks (what the applications offer is the registry's, never retrieved) */
     add_lane(&out->routing, recall, "behavioral");
-    /* orchestration: what Mary did before, and what the applications offer */
+    /* orchestration: what Mary did before */
     add_lane(&out->orchestration, recall, "behavioral");
-    add_lane(&out->orchestration, recall, "application");
     /* the reply's context: the gate's threads over the storage lanes, in its priority */
     const ma_memory_plan *gate = route ? &route->gate.memory : NULL;
     unsigned lanes = gate ? gate->lanes : MA_LANE_PERSONAL;
@@ -61,22 +57,22 @@ void mb_memory_plan_for(const ma_route *route, const mb_recall *recall, const ch
     if (route) {
         switch (route->intent) {
         case MA_INTENT_PERCEIVE: case MA_INTENT_OPERATE: case MA_INTENT_COMPOSE: case MA_INTENT_REVISE:
-            add_lane(&out->context, recall, "application");
+            add_lane(&out->context, recall, "behavioral");   /* a turn about the applications: what Mary did there before */
             break;
         default: break;
         }
     }
     out->priority_count = 0;
     for (int i = 0; i < order_count; i++) if (lanes & order[i]) out->lane_priority[out->priority_count++] = ma_lane_name(order[i]);
-    /* the groups: the owner's conversation and memory, the files, and the targets' ability groups */
+    /* the groups: the owner's memory, files and style, and the targets' behaviour groups */
     char group[80];
-    snprintf(group, sizeof group, "conversation-%s", owner ? owner : "");
-    if (allowed(recall, "conversation")) add_group(out, group);
     snprintf(group, sizeof group, "memory-%s", owner ? owner : "");
     if (allowed(recall, "personal")) add_group(out, group);
     snprintf(group, sizeof group, "files-%s", owner ? owner : "");
     if (allowed(recall, "personal")) add_group(out, group);
-    if (gate && allowed(recall, "application")) {
+    snprintf(group, sizeof group, "mary-style-%s", owner ? owner : "");
+    if (allowed(recall, "personal")) add_group(out, group);
+    if (gate && allowed(recall, "behavioral")) {
         for (int i = 0; i < gate->target_count; i++) {
             sk_ability_group(owner ? owner : "", gate->targets[i].ability_id, ma_paradigm_name(gate->targets[i].paradigm), group, sizeof group);
             add_group(out, group);

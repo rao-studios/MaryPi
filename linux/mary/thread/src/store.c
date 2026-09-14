@@ -189,16 +189,8 @@ static int migrate_legacy(thread_store *s) {
         const char *id = mc_json_string(g, "id"), *owner = mc_json_string(g, "owner_id"), *label = mc_json_string(g, "label");
         int64_t created = 0;
         mc_json_int64(g, "created_at", &created);
-        if (id && owner && thread_id_valid(id)) {
-            const char *family = thread_family_of("", id, NULL, 0);
+        if (id && owner && thread_id_valid(id) && strcmp(id, "mary-conversations") != 0) {   /* the conversations stay behind: retired */
             const char *target = id;
-            char renamed[THREAD_ID_MAX + 1];
-            if (strcmp(id, "mary-conversations") == 0) {
-                snprintf(renamed, sizeof renamed, "conversation-%s", owner);
-                target = renamed;
-                family = "conversation";
-            }
-            (void)family;
             sqlite3_stmt *stmt = NULL;
             if (prepare(s->db, "INSERT OR IGNORE INTO groups(id, owner, label, created_at) VALUES(?, ?, ?, ?)", &stmt) == 0) {
                 thread_db_bind_text(stmt, 1, target);
@@ -223,8 +215,9 @@ static int migrate_legacy(thread_store *s) {
             json_object_put(d);
             continue;
         }
+        if (group && strcmp(group, "mary-conversations") == 0) { json_object_put(d); continue; }   /* retired with its group */
         char group_target[THREAD_ID_MAX + 1] = "";
-        if (group && *group) snprintf(group_target, sizeof group_target, strcmp(group, "mary-conversations") == 0 ? "conversation-%s" : "%s", strcmp(group, "mary-conversations") == 0 ? owner : group);
+        if (group && *group) snprintf(group_target, sizeof group_target, "%s", group);
         size_t meta_len = 0;
         const char *meta_b64 = mc_json_string(d, "metadata");
         unsigned char *meta = meta_b64 && *meta_b64 ? mc_base64_decode_alloc(meta_b64, strlen(meta_b64), &meta_len) : NULL;
@@ -302,6 +295,36 @@ static int migrate_legacy(thread_store *s) {
     return 0;
 }
 
+/* A file from before user_version 2 may still hold the retired families: every such document goes
+ * through the same path Remove takes (its graph provenance detached, its chunks and vectors dropped),
+ * the groups left empty go with it, and one ledger row says how many. */
+static int retire_families(thread_store *s) {
+    thread_ids targets = { 0 };
+    sqlite3_stmt *stmt = NULL;
+    if (prepare(s->db, "SELECT id FROM documents WHERE family IN ('conversation', 'interaction', 'ability', 'ability-schema', 'application') "
+                       "OR group_id = 'mary-conversations' OR group_id LIKE 'conversation-%' OR group_id LIKE 'mary-behavior-interaction-%'", &stmt) == 0) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) thread_ids_add(&targets, (const char *)sqlite3_column_text(stmt, 0));
+        sqlite3_finalize(stmt);
+    }
+    int rc = thread_db_begin(s->db);
+    for (size_t i = 0; rc == 0 && i < targets.n; i++) rc = thread_store_remove_document(s, targets.v[i]);
+    if (rc == 0) rc = thread_db_exec(s->db, "DELETE FROM groups WHERE (id = 'mary-conversations' OR id LIKE 'conversation-%' OR id LIKE 'mary-behavior-interaction-%' "
+                                            "OR id LIKE 'mary-ability-%') AND NOT EXISTS (SELECT 1 FROM documents WHERE documents.group_id = groups.id)");
+    if (rc == 0 && targets.n) {
+        struct json_object *detail = json_object_new_object();
+        json_object_object_add(detail, "op", json_object_new_string("retire"));
+        json_object_object_add(detail, "families", json_object_new_string("conversation, interaction, ability, ability-schema, application"));
+        json_object_object_add(detail, "removed", json_object_new_int64((int64_t)targets.n));
+        thread_store_log(s, "mutation", "threadd", NULL, NULL, NULL, (int64_t)targets.n, 0, detail);
+        json_object_put(detail);
+        mc_log(MC_LOG_INFO, "retired families: %zu record%s removed", targets.n, targets.n == 1 ? "" : "s");
+    }
+    if (rc == 0) rc = thread_db_commit(s->db);
+    else thread_db_rollback(s->db);
+    thread_ids_free(&targets);
+    return rc;
+}
+
 thread_store *thread_store_open_with(const thread_store_options *o, int *error) {
     thread_store *s = calloc(1, sizeof *s);
     if (!s) {
@@ -319,7 +342,8 @@ thread_store *thread_store_open_with(const thread_store_options *o, int *error) 
     pthread_cond_init(&s->jobs_cond, NULL);
     int rc = 0;
     if (mkdir(s->dir, 0700) < 0 && errno != EEXIST) rc = -errno;
-    if (rc == 0) rc = thread_db_open(s->db_path, &s->db);
+    int found_version = 0;
+    if (rc == 0) rc = thread_db_open_versioned(s->db_path, &s->db, &found_version);
     if (rc == 0) {
         char *node = thread_db_meta_get(s->db, "node_id");
         if (node && strlen(node) == 36) snprintf(s->node_id, sizeof s->node_id, "%s", node);
@@ -357,6 +381,7 @@ thread_store *thread_store_open_with(const thread_store_options *o, int *error) 
         s->vectors = thread_vectors_new(s->dim);
         rc = s->vectors ? thread_vectors_load(s->vectors, s->db) : -ENOMEM;
     }
+    if (rc == 0 && found_version > 0 && found_version < 2) rc = retire_families(s);
     if (rc == 0 && s->worker_wanted) rc = thread_enrich_start(s);
 fail:
     if (rc) {

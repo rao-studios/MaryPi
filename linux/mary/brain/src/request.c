@@ -47,7 +47,6 @@ struct json_object *mb_turn_start(const mb_history *history, const mb_turn_reque
     if (r->lanes && r->lane_count > 0) {
         for (int i = 0; i < r->lane_count; i++) json_object_array_add(lanes, json_object_new_string(r->lanes[i]));
     } else {
-        json_object_array_add(lanes, json_object_new_string("conversation"));
         json_object_array_add(lanes, json_object_new_string("personal"));
     }
     json_object_object_add(sewn, "lanes", lanes);

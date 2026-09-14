@@ -446,7 +446,7 @@ static int refuse(int fd, const char *stage, const char *message) {
 
 /* MARK: Retrieval and the context */
 
-static const char *const DEFAULT_LANES[] = { "conversation", "personal" };
+static const char *const DEFAULT_LANES[] = { "personal" };
 
 struct grounding {
     sewn_retrieval retrieval;
@@ -455,8 +455,7 @@ struct grounding {
     bool searched;
 };
 
-/* Sewn's search → compact, in the lanes the request names (conversation + personal
- * when it names none). Never fails the turn: without the Thread, the turn runs as one
+/* Sewn's search → compact, in the lanes the request names (personal when it names none). Never fails the turn: without the Thread, the turn runs as one
  * with no context. */
 static void ground(sewn_service *svc, struct turn *t, const sewn_turn_request *req, const char *owner, struct grounding *g) {
     memset(g, 0, sizeof *g);

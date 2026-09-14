@@ -11,8 +11,7 @@
  *   maryctl ambient                     what is in front of the person, as the Ambient app's World tab shows it
  *   maryctl trace                       every turn's route, as the Mac's RouteReport (the Routes tab's Copy)
  *   maryctl state APP                   the app's surface, through the same pipes a turn reads it
- *   maryctl triage TEXT...              who would answer these words without a model (the Abilities app's Rehearse)
- *   maryctl abilities                   the ability records maryd writes into the Thread, one line each */
+ *   maryctl triage TEXT...              who would answer these words without a model (the Abilities app's Rehearse) */
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -203,12 +202,6 @@ static int on_line(const char *line, size_t len, void *user) {
             c->status = 1;
             c->done = true;
         }
-    } else if (strcmp(c->command, "abilities") == 0) {
-        if (strcmp(type, "abilities") == 0) {
-            struct json_object *records = mc_json_array(msg, "records");
-            for (size_t k = 0; records && k < json_object_array_length(records); k++) printf("%s\n", mc_json_compact(json_object_array_get_idx(records, k), NULL));
-            c->done = true;
-        }
     } else if (strcmp(c->command, "state") == 0) {
         if (strcmp(type, "app.state.result") == 0) {
             bool ok = false;
@@ -311,9 +304,6 @@ int main(int argc, char **argv) {
         request = json_object_new_object();
         json_object_object_add(request, "type", json_object_new_string("triage"));
         json_object_object_add(request, "text", json_object_new_string((const char *)question.data));
-    } else if (strcmp(cmd, "abilities") == 0 && i + 1 == argc) {
-        request = json_object_new_object();
-        json_object_object_add(request, "type", json_object_new_string("abilities.list"));
     } else if (strcmp(cmd, "sample") == 0 && i + 1 < argc) {
         for (int k = i + 2; k < argc; k++) {
             if (k > i + 2) mc_buf_append_str(&question, " ");

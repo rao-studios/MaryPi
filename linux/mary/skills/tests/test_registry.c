@@ -91,7 +91,7 @@ MARY_TEST(only_allowed_skills_become_mistral_tools) {
     sk_registry_free(&r);
 }
 
-MARY_TEST(the_richer_schema_defaults_from_the_effect_and_records_go_to_the_thread) {
+MARY_TEST(the_richer_schema_defaults_from_the_effect_and_a_style_record_goes_to_the_thread) {
     static const char TEXT[] =
         "{\"type\":\"skills\",\"apps\":[{\"id\":\"media\",\"name\":\"Media Player\",\"enabled\":true,\"ask\":\"never\",\"summary\":\"Plays music and video.\","
         "\"aliases\":[\"player\"],\"discipline\":\"multimedia\",\"perception\":[\"file\",\"playing\"],\"skills\":["
@@ -121,29 +121,30 @@ MARY_TEST(the_richer_schema_defaults_from_the_effect_and_records_go_to_the_threa
     struct json_object *tools = sk_tools_json(&r);
     MARY_ASSERT_EQ(json_object_array_length(tools), 2);
     json_object_put(tools);
-    char group[80], id[96];
+    char group[80];
     sk_ability_group("mary", "media", "applicationExpertise", group, sizeof group);
-    sk_ability_document_id("mary", "media", "applicationExpertise", "play_pause", id, sizeof id);
     MARY_ASSERT(strncmp(group, "mary-ability-", 13) == 0 && strlen(group) == 13 + 16);
-    MARY_ASSERT(strncmp(id, "mary-ability-schema-", 20) == 0 && strlen(id) == 20 + 16);
     char again[80];
     sk_ability_group("Mary ", "MEDIA", "applicationExpertise", again, sizeof again);
     MARY_ASSERT_STR(again, group);                              /* canonical: lowercase, whitespace folded */
-    struct json_object *records = sk_ability_records(&r, "mary");
-    MARY_ASSERT_EQ(json_object_array_length(records), 4);       /* two skills, the manifest, the discipline */
-    struct json_object *first = json_object_array_get_idx(records, 0);
-    MARY_ASSERT_STR(mc_json_string(first, "document_id"), id);
-    MARY_ASSERT_STR(mc_json_string(first, "group"), group);
-    MARY_ASSERT_STR(mc_json_string(first, "family"), "ability");
-    MARY_ASSERT_STR(mc_json_string(first, "label"), "Ability \xE2\x80\x94 Media Player");
-    const char *text = json_object_get_string(json_object_array_get_idx(mc_json_array(first, "texts"), 0));
-    MARY_ASSERT(strstr(text, "Skill: Play or pause\nApplication: Media Player\n") && strstr(text, "Invocation: media__play_pause\n") && strstr(text, "Listens for: play, pause\n"));
-    MARY_ASSERT_EQ(json_object_array_length(mc_json_array(first, "relationships")), 3);   /* offers, effects, practices */
-    struct json_object *manifest = json_object_array_get_idx(records, 2), *discipline = json_object_array_get_idx(records, 3);
-    MARY_ASSERT_STR(mc_json_string(manifest, "family"), "ability-schema");
-    MARY_ASSERT(strstr(json_object_get_string(json_object_array_get_idx(mc_json_array(manifest, "texts"), 0)), "Publishes: file, playing\n") != NULL);
-    MARY_ASSERT_STR(mc_json_string(discipline, "label"), "Ability \xE2\x80\x94 Multimedia");
-    MARY_ASSERT(strstr(json_object_get_string(json_object_array_get_idx(mc_json_array(discipline, "texts"), 0)), "- Media Player: Play or pause, Eject\n") != NULL);
+    /* the Thread gets one style record per discipline, and nothing per skill or app */
+    struct json_object *records = sk_style_records(&r, "mary");
+    MARY_ASSERT_EQ(json_object_array_length(records), 1);
+    struct json_object *style = json_object_array_get_idx(records, 0);
+    MARY_ASSERT(strncmp(mc_json_string(style, "document_id"), "mary-style-profile-", 19) == 0 && strlen(mc_json_string(style, "document_id")) == 19 + 16);
+    MARY_ASSERT_STR(mc_json_string(style, "group"), "mary-style-mary");
+    MARY_ASSERT_STR(mc_json_string(style, "label"), "Style");
+    MARY_ASSERT_STR(mc_json_string(style, "family"), "style");
+    MARY_ASSERT_STR(mc_json_string(style, "name"), "Multimedia");
+    const char *text = json_object_get_string(json_object_array_get_idx(mc_json_array(style, "texts"), 0));
+    MARY_ASSERT(strstr(text, "Discipline: Multimedia\nRealized by:\n- Media Player: Play or pause, Eject\n") != NULL);
+    MARY_ASSERT(strstr(text, "Listens for: play, pause\n") && strstr(text, "Phrases: play the music\n"));
+    MARY_ASSERT_EQ(json_object_array_length(mc_json_array(style, "relationships")), 1);   /* Media Player practices multimedia */
+    MARY_ASSERT_STR(mc_json_string(mc_json_object(style, "metadata"), "discipline"), "multimedia");
+    MARY_ASSERT_EQ(json_object_array_length(mc_json_array(mc_json_object(style, "metadata"), "apps")), 1);
+    struct json_object *same = sk_style_records(&r, "mary");
+    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(same, 0), "document_id"), mc_json_string(style, "document_id"));   /* idempotent */
+    json_object_put(same);
     json_object_put(records);
     sk_registry_free(&r);
 }
@@ -152,6 +153,6 @@ int main(void) {
     MARY_RUN(the_desktops_message_becomes_the_registry);
     MARY_RUN(decisions_follow_the_desktops_rule);
     MARY_RUN(only_allowed_skills_become_mistral_tools);
-    MARY_RUN(the_richer_schema_defaults_from_the_effect_and_records_go_to_the_thread);
+    MARY_RUN(the_richer_schema_defaults_from_the_effect_and_a_style_record_goes_to_the_thread);
     MARY_TEST_MAIN_END();
 }

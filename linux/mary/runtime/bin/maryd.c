@@ -19,7 +19,7 @@ static void on_signal(int sig) {
 }
 
 static void usage(FILE *to) {
-    fprintf(to, "usage: maryd [--socket PATH] [--sewn-socket PATH] [--thread-socket PATH] [--thread-local-socket PATH]\n"
+    fprintf(to, "usage: maryd [--socket PATH] [--sewn-socket PATH] [--thread-local-socket PATH]\n"
                 "             [--no-audio] [--no-wake] [--model-dir DIR] [--keywords FILE]\n");
 }
 
@@ -30,7 +30,6 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--socket") == 0 && i + 1 < argc) config.desktop_socket = argv[++i];
         else if (strcmp(argv[i], "--sewn-socket") == 0 && i + 1 < argc) config.sewn_socket = argv[++i];
-        else if (strcmp(argv[i], "--thread-socket") == 0 && i + 1 < argc) config.thread_socket = argv[++i];
         else if (strcmp(argv[i], "--thread-local-socket") == 0 && i + 1 < argc) config.thread_local_socket = argv[++i];
         else if (strcmp(argv[i], "--model-dir") == 0 && i + 1 < argc) kws.model_dir = argv[++i];
         else if (strcmp(argv[i], "--keywords") == 0 && i + 1 < argc) kws.keywords_file = argv[++i];

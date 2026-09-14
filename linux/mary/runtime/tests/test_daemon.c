@@ -310,7 +310,6 @@ static void setup_with(const mr_audio_ops *audio_ops, int stall_ms) {
     mr_config config = mr_config_default();
     config.desktop_socket = mary_sock;
     config.sewn_socket = sewn_sock;
-    config.thread_socket = thread_sock;
     config.thread_local_socket = local_sock;
     config.audio = audio_ops != NULL;          /* no PipeWire in a test: a fake speaker, or none */
     config.audio_ops = audio_ops;
@@ -414,7 +413,7 @@ static bool eventually(atomic_int *counter, int want) {
     return atomic_load(counter) >= want;
 }
 
-MARY_TEST(a_typed_question_streams_a_reply_and_is_deposited_in_thread) {
+MARY_TEST(a_typed_question_streams_a_reply_and_leaves_no_turn_record) {
     setup();
     client c;
     client_open(&c);
@@ -445,11 +444,9 @@ MARY_TEST(a_typed_question_streams_a_reply_and_is_deposited_in_thread) {
     MARY_ASSERT(idle != NULL);
     json_object_put(idle);
 
-    MARY_ASSERT(eventually(&index_calls, 1));
+    /* the turn leaves no conversation record (retired: Sewn's memory covers it) */
+    MARY_ASSERT_EQ(atomic_load(&index_calls), 0);
     pthread_mutex_lock(&lock);
-    MARY_ASSERT_STR(indexed_question, "Say hello");
-    MARY_ASSERT_STR(indexed_reply, "Hello there.");
-    MARY_ASSERT_STR(indexed_source, "typed");
     MARY_ASSERT_EQ(last_turn_messages, 1);
     MARY_ASSERT(last_turn_instructed);
     pthread_mutex_unlock(&lock);
@@ -591,7 +588,7 @@ MARY_TEST(the_world_the_desktop_publishes_shapes_the_turn_and_its_trace) {
     if (end) json_object_put(end);
     pthread_mutex_lock(&lock);
     MARY_ASSERT(last_turn_saw_screen);
-    MARY_ASSERT_STR(last_turn_lanes, "[\"personal\",\"conversation\"]");
+    MARY_ASSERT_STR(last_turn_lanes, "[\"personal\"]");
     pthread_mutex_unlock(&lock);
     /* the Routes tab: the turn's row, its route and what retrieval returned */
     client_send(&ctl, "{\"type\":\"trace.list\"}");
@@ -705,14 +702,12 @@ MARY_TEST(a_confident_skill_dispatches_without_a_model_round) {
         json_object_put(rehearsal);
     }
     MARY_ASSERT(atomic_load(&embed_calls) >= 2);      /* the index, and the rehearsal */
-    for (int i = 0; i < 100 && !strstr(deposited, "ability-schema"); i++) usleep(10000);
+    /* the Thread gets one style record per discipline (the fixture has one), and nothing per skill or app */
+    for (int i = 0; i < 100 && !strstr(deposited, "style "); i++) usleep(10000);
     pthread_mutex_lock(&lock);
-    MARY_ASSERT(strstr(deposited, "ability ") != NULL && strstr(deposited, "ability-schema") != NULL);
+    MARY_ASSERT(strstr(deposited, "style ") != NULL);
+    MARY_ASSERT(strstr(deposited, "ability") == NULL);
     pthread_mutex_unlock(&lock);
-    client_send(&ctl, "{\"type\":\"abilities.list\"}");
-    struct json_object *abilities = client_wait(&ctl, "abilities", NULL, NULL, 0);
-    MARY_ASSERT(abilities && json_object_array_length(mc_json_array(abilities, "records")) >= 6);   /* 3 skills, 3 manifests, a discipline */
-    if (abilities) json_object_put(abilities);
 
     /* the turn: one embedding, one skill, no model */
     int completes = atomic_load(&complete_calls);
@@ -748,12 +743,12 @@ MARY_TEST(a_confident_skill_dispatches_without_a_model_round) {
     pthread_mutex_lock(&lock);
     MARY_ASSERT_STR(last_user, "");                 /* sewnd's turn.start never ran */
     pthread_mutex_unlock(&lock);
-    for (int i = 0; i < 100 && !strstr(deposited, "interaction"); i++) usleep(10000);
+    for (int i = 0; i < 100 && !strstr(deposited, "behavior "); i++) usleep(10000);
     pthread_mutex_lock(&lock);
     MARY_ASSERT(strstr(deposited, "routing ") != NULL);
-    MARY_ASSERT(strstr(deposited, "behavior ") != NULL && strstr(deposited, "interaction ") != NULL);
+    MARY_ASSERT(strstr(deposited, "behavior ") != NULL);
+    MARY_ASSERT(strstr(deposited, "interaction") == NULL && strstr(deposited, "conversation") == NULL);   /* retired */
     pthread_mutex_unlock(&lock);
-    MARY_ASSERT(eventually(&index_calls, 1));      /* the conversation record too */
     client_send(&ctl, "{\"type\":\"trace.list\"}");
     struct json_object *trace = client_wait(&ctl, "trace", NULL, NULL, 0);
     MARY_ASSERT(trace != NULL);
@@ -844,10 +839,7 @@ MARY_TEST(an_action_turn_runs_the_skills_lane_and_parks_a_protected_skill) {
     MARY_ASSERT(calls && mc_json_bool(calls, "ok", &listed) && listed);
     MARY_ASSERT(calls && json_object_array_length(mc_json_array(calls, "calls")) == 1);
     if (calls) json_object_put(calls);
-    MARY_ASSERT(eventually(&index_calls, 1));
-    pthread_mutex_lock(&lock);
-    MARY_ASSERT_STR(indexed_reply, "You have two events today.");
-    pthread_mutex_unlock(&lock);
+    MARY_ASSERT_EQ(atomic_load(&index_calls), 0);      /* no conversation record for the lane's answer either */
     client_send(&ctl, "{\"type\":\"trace.list\"}");
     struct json_object *trace = client_wait(&ctl, "trace", NULL, NULL, 0);
     MARY_ASSERT(trace != NULL);
@@ -913,11 +905,7 @@ MARY_TEST(a_spoken_question_is_heard_answered_and_followed_up) {
     if (idle) json_object_put(idle);
     MARY_ASSERT_EQ(atomic_load(&transcribes), 2);
 
-    MARY_ASSERT(eventually(&index_calls, 1));
-    pthread_mutex_lock(&lock);
-    MARY_ASSERT_STR(indexed_question, "what time is it");
-    MARY_ASSERT_STR(indexed_source, "voice");
-    pthread_mutex_unlock(&lock);
+    MARY_ASSERT_EQ(atomic_load(&index_calls), 0);      /* spoken or typed, no turn record */
     client_close(&c);
     teardown();
 }
@@ -1086,7 +1074,7 @@ MARY_TEST(a_sample_plays_without_joining_the_conversation) {
 
 int main(void) {
     mc_ignore_sigpipe();
-    MARY_RUN(a_typed_question_streams_a_reply_and_is_deposited_in_thread);
+    MARY_RUN(a_typed_question_streams_a_reply_and_leaves_no_turn_record);
     MARY_RUN(skill_calls_go_through_the_desktops_pipes_and_its_policy);
     MARY_RUN(the_world_the_desktop_publishes_shapes_the_turn_and_its_trace);
     MARY_RUN(a_confident_skill_dispatches_without_a_model_round);

@@ -23,7 +23,7 @@
 
 typedef enum ma_lane { MA_LANE_ABILITY = 1, MA_LANE_PERSONAL = 2 } ma_lane;    /* ThreadLane, as bits */
 const char *ma_lane_name(ma_lane l);                 /* ability, personal */
-/* The storage lanes (thread/families.h) behind a Mac lane: ability → application, behavioral; personal → personal, conversation. */
+/* The storage lane (thread/families.h) behind a Mac lane: ability → behavioral; personal → personal. */
 int ma_lane_storage_lanes(ma_lane l, const char **out, int max);
 
 #define MA_TARGETS_MAX 8

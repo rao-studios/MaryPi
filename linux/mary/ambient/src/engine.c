@@ -10,11 +10,10 @@
 const char *ma_lane_name(ma_lane l) { return l == MA_LANE_ABILITY ? "ability" : l == MA_LANE_PERSONAL ? "personal" : NULL; }
 
 int ma_lane_storage_lanes(ma_lane l, const char **out, int max) {
-    static const char *const ABILITY[] = { "application", "behavioral" }, *const PERSONAL[] = { "personal", "conversation" };
-    const char *const *lanes = l == MA_LANE_ABILITY ? ABILITY : PERSONAL;
-    int n = 0;
-    for (int i = 0; i < 2 && n < max; i++) out[n++] = lanes[i];
-    return n;
+    const char *lane = l == MA_LANE_ABILITY ? "behavioral" : "personal";   /* one storage lane behind each thread now */
+    if (max < 1) return 0;
+    out[0] = lane;
+    return 1;
 }
 
 static const char *const WRITING_TARGETS[] = { NULL, "selection", "passage" };

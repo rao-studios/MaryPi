@@ -20,8 +20,9 @@ The abilities side (PORTING.md 14):
   by the repeat guard when it repeats a failed or unproven call, dispatched through the desktop's pipes with
   its result riding back as a tool message; ten rounds at most, the continuation nudge once. The hooks
   block, so maryd runs the lane on a thread and bridges to its loop.
-- `brain/scope.h` — the memory plan: which storage lanes each purpose (routing, orchestration, the reply's
-  context) may retrieve from, the Recall toggles applied, the owner's groups and the relationship cues.
+- `brain/scope.h` — the memory plan: which of the two storage lanes each purpose (routing, orchestration,
+  the reply's context) may retrieve from, the Recall toggles applied, the owner's groups (memory, files,
+  style, the targets' behaviour groups) and the relationship cues.
 - `mb_system_prompt` in `brain/prompt.h` — the orchestration prompt (`PromptCatalog+System`) worded for
   MaryOS, with the executor addendum and the continuation nudge.
 

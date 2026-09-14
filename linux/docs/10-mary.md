@@ -108,21 +108,19 @@ published them. Then one of three things happens:
 
 Only one lane runs per turn, where the Mac runs both and joins them (`mary/PORTING.md`, deviation 14).
 
-**Remembered.** Each turn, spoken or typed, finished or stopped, becomes a document in Thread's
-`conversation-<you>` group with the question, the answer and when it happened, and is embedded and folded
-into the knowledge graph as soon as sewnd has a key:
+**Remembered.** The conversation is not kept turn by turn: every seventh exchange, or on a change of
+topic, sewnd writes a **memory** note into the Thread's `memory-<you>` group, and that is what a later reply
+retrieves. Every turn that ran a skill seals a **behaviour** record — the request, the ambient capture,
+every action and what came of it, in the Mac's `mary.behavior` codec — and every request settled without a
+model leaves a **routing** habit; both live in the behavioral lane of the drive.
 
 ```sh
 threadctl library
-threadctl documents mary-turn-1789264000000-3fa2
-threadctl search --lane conversation what did I ask about Paris
+threadctl search --lane personal what did I ask about Paris
+threadctl search --lane behavioral play the music
 threadctl graph --entity Paris --documents
 threadctl stats
 ```
-
-Every turn that ran a skill also seals a **behaviour** record — the request, the ambient capture, every
-action and what came of it, in the Mac's `mary.behavior` codec — and an interaction stub that joins the turn
-to it; both live in the behavioral lane of the drive.
 
 ## The ambient world
 
@@ -172,9 +170,11 @@ undone, and the Mac's schema words: how it is classed, when it may run, the toke
 what it acts on, how an enum value is said — and performs one through the same code its menus run. TextEdit
 reads, inserts, replaces the selection and saves; the Finder opens and reveals; the Calculator calculates;
 Calendar reads the day; the Media Player plays and pauses; System Settings opens a pane; and the desktop
-itself lists, closes, shades and brings forward windows. maryd writes every skill into the Thread as an
-`ability` record (one per skill, a manifest per app, one per discipline) as soon as the desktop publishes
-them, so retrieval, the graph and the Abilities app see the same declaration.
+itself lists, closes, shades and brings forward windows. Mary is the operating system, so nothing of this
+is recorded in the Thread as knowledge: triage embeds the skills as the desktop publishes them, the skills
+lane offers them as tools, and the Abilities app reads the same declaration. What the Thread keeps is one
+**style** record per discipline — writing, multimedia, awareness, system control, window management — naming
+the apps that realize it and the words they answer to.
 
 System Settings › Mary › Skills has a group per app: whether Mary may use it, when she asks first (never,
 before changes, always) and a switch per skill, saved in `~/.config/maryui/skills.conf`. The desktop decides
@@ -194,7 +194,6 @@ maryctl skill settings open_pane '{"pane":"sound"}'
 maryctl skill textedit read
 maryctl skill media play_pause     # "needs_confirmation": it acts, and the default is to ask first
 maryctl triage play the music      # who would answer, the score, the argument shape, whether it dispatches
-maryctl abilities                  # the ability records, one line each
 ```
 
 ## Engines, recall and network activity
@@ -205,11 +204,10 @@ segment is disabled, a toggle kept for a later implementation so the lanes need 
 rides every wire as `provider` (`turn.start`, `complete`) and sewnd refuses anything but Mistral with an
 engine error before it opens a socket.
 
-**Recall** gates the Thread's four storage lanes globally — Personal (memory, file, style), Conversation,
-Application (ability, ability-schema, application) and Behavioral (behavior, interaction, routing). A turn's
-memory plan names the lanes each purpose may draw on (routing: application and behavioral; the skills lane:
-behavioral and application; the reply: conversation and personal, plus application when the route names an
-app), and a lane turned off here is removed from every plan. The Ambient app's Routes tab and the Threads
+**Recall** gates the Thread's two storage lanes globally — Personal (memory, file, style) and Behavioral
+(behavior, routing). A turn's memory plan names the lanes each purpose may draw on (routing: behavioral, for
+the habits; the skills lane: behavioral; the reply: personal, plus behavioral when the route names an app),
+and a lane turned off here is removed from every plan. The Ambient app's Routes tab and the Threads
 app's Retrieval tab show, per turn, what each purpose asked and what came back.
 
 **Network activity** is sewnd's calls ledger, through maryd: every request that left the machine — time,

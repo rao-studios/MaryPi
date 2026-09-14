@@ -56,18 +56,18 @@ MARY_TEST(a_turn_is_deposited_listed_read_back_and_kept_in_the_one_file) {
     thread_store *s = fresh();
     char id[THREAD_ID_MAX + 1];
     size_t parts = 0;
-    MARY_ASSERT_EQ(put(s, "mary", "conversation-mary", "Conversation", "mary-turn-1", "What is the capital of France?", id, &parts), 0);
+    MARY_ASSERT_EQ(put(s, "mary", "memory-mary", "Memory", "mary-turn-1", "What is the capital of France?", id, &parts), 0);
     MARY_ASSERT_STR(id, "mary-turn-1");
     MARY_ASSERT_EQ(parts, 1);
-    MARY_ASSERT_EQ(put(s, "mary", "conversation-mary", NULL, "mary-turn-2", "And of Portugal?", id, NULL), 0);
+    MARY_ASSERT_EQ(put(s, "mary", "memory-mary", NULL, "mary-turn-2", "And of Portugal?", id, NULL), 0);
     struct json_object *lib = thread_store_library_json(s, "mary", 0, NULL, NULL, 0);
     struct json_object *groups = mc_json_array(lib, "groups");
     MARY_ASSERT_EQ(json_object_array_length(groups), 1);
     struct json_object *g = json_object_array_get_idx(groups, 0);
-    MARY_ASSERT_STR(mc_json_string(g, "label"), "Conversation");           /* a later deposit without a label keeps it */
-    MARY_ASSERT_STR(mc_json_string(g, "family"), "conversation");
+    MARY_ASSERT_STR(mc_json_string(g, "label"), "Memory");                 /* a later deposit without a label keeps it */
+    MARY_ASSERT_STR(mc_json_string(g, "family"), "memory");
     MARY_ASSERT_EQ(json_object_array_length(mc_json_array(g, "documents")), 2);
-    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(mc_json_array(g, "documents"), 1), "family"), "conversation");
+    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(mc_json_array(g, "documents"), 1), "family"), "memory");
     json_object_put(lib);
     const char *ids[] = { "mary-turn-2", "../etc/passwd", "no-such-turn", "mary-turn-1" };
     struct json_object *docs = thread_store_documents_json(s, "mary", ids, 4);
@@ -76,7 +76,7 @@ MARY_TEST(a_turn_is_deposited_listed_read_back_and_kept_in_the_one_file) {
     MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(arr, 0), "id"), "mary-turn-2");
     struct json_object *first = json_object_array_get_idx(arr, 1);
     MARY_ASSERT_STR(json_object_get_string(json_object_array_get_idx(mc_json_array(first, "texts"), 0)), "What is the capital of France?");
-    MARY_ASSERT_STR(mc_json_string(first, "group_label"), "Conversation");
+    MARY_ASSERT_STR(mc_json_string(first, "group_label"), "Memory");
     MARY_ASSERT_STR(mc_json_string(first, "enrich_state"), "pending");
     json_object_put(docs);
     /* one file, private */
@@ -95,7 +95,7 @@ MARY_TEST(a_turn_is_deposited_listed_read_back_and_kept_in_the_one_file) {
     struct json_object *schemas = thread_store_schemas_json(s);
     for (size_t i = 0; i < json_object_array_length(schemas); i++) {
         struct json_object *f = json_object_array_get_idx(schemas, i);
-        if (strcmp(mc_json_string(f, "name"), "conversation") == 0) {
+        if (strcmp(mc_json_string(f, "name"), "memory") == 0) {
             MARY_ASSERT(mc_json_int64(f, "count", &n) && n == 2);
             MARY_ASSERT(mc_json_int64(f, "last_written_ms", &n) && n > 0);
         }
@@ -119,8 +119,8 @@ MARY_TEST(the_node_id_is_made_once_and_survives_reopening) {
 
 MARY_TEST(one_owner_cannot_touch_anothers) {
     thread_store *s = fresh();
-    MARY_ASSERT_EQ(put(s, "mary", "conversation-mary", "Conversation", "mary-turn-1", "private", NULL, NULL), 0);
-    MARY_ASSERT_EQ(put(s, "guest", "conversation-mary", NULL, "guest-turn-1", "hello", NULL, NULL), -EPERM);
+    MARY_ASSERT_EQ(put(s, "mary", "memory-mary", "Memory", "mary-turn-1", "private", NULL, NULL), 0);
+    MARY_ASSERT_EQ(put(s, "guest", "memory-mary", NULL, "guest-turn-1", "hello", NULL, NULL), -EPERM);
     MARY_ASSERT_EQ(put(s, "guest", "guest-notes", NULL, "mary-turn-1", "overwrite", NULL, NULL), -EPERM);
     struct json_object *lib = thread_store_library_json(s, "guest", 0, NULL, NULL, 0);
     MARY_ASSERT_EQ(json_object_array_length(mc_json_array(lib, "groups")), 0);
@@ -252,12 +252,12 @@ MARY_TEST(a_chunked_text_a_computed_id_and_a_file_row) {
 
 MARY_TEST(the_json_deposit_removal_and_updates) {
     thread_store *s = fresh();
-    const char *json = "{\"document_id\":\"mary-turn-9\",\"group\":\"conversation-mary\",\"label\":\"Conversation\",\"texts\":[\"hello\",\"hi\"],"
+    const char *json = "{\"document_id\":\"mary-turn-9\",\"group\":\"memory-mary\",\"label\":\"Memory\",\"texts\":[\"hello\",\"hi\"],"
                        "\"entities\":[{\"name\":\"Mary\",\"kind\":\"person\"}],\"metadata\":{\"source\":\"typed\"},\"source\":\"maryd\",\"request_id\":\"mary-turn-9\"}";
     struct json_object *req = mc_json_parse(json, strlen(json)), *reply = NULL;
     MARY_ASSERT_EQ(thread_store_deposit_json(s, "mary", req, &reply), 0);
     MARY_ASSERT_STR(mc_json_string(reply, "document_id"), "mary-turn-9");
-    MARY_ASSERT_STR(mc_json_string(reply, "family"), "conversation");
+    MARY_ASSERT_STR(mc_json_string(reply, "family"), "memory");
     int64_t parts = 0;
     MARY_ASSERT(mc_json_int64(reply, "partitions", &parts) && parts == 2);
     json_object_put(reply);
@@ -268,9 +268,9 @@ MARY_TEST(the_json_deposit_removal_and_updates) {
     /* updates */
     bool updated = false;
     const char *tags[] = { "chat" };
-    MARY_ASSERT_EQ(thread_store_update_group(s, "mary", "conversation-mary", "available", "Talks", "what was said", tags, 1, true, &updated), 0);
+    MARY_ASSERT_EQ(thread_store_update_group(s, "mary", "memory-mary", "available", "Talks", "what was said", tags, 1, true, &updated), 0);
     MARY_ASSERT(updated);
-    MARY_ASSERT_EQ(thread_store_update_group(s, "guest", "conversation-mary", NULL, "Mine", NULL, NULL, 0, false, &updated), -EPERM);
+    MARY_ASSERT_EQ(thread_store_update_group(s, "guest", "memory-mary", NULL, "Mine", NULL, NULL, 0, false, &updated), -EPERM);
     struct json_object *lib = thread_store_library_json(s, "mary", 0, NULL, NULL, 0);
     struct json_object *g = json_object_array_get_idx(mc_json_array(lib, "groups"), 0);
     MARY_ASSERT_STR(mc_json_string(g, "label"), "Talks");

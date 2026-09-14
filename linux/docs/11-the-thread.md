@@ -2,8 +2,10 @@
 
 On the Mac, Thread is a service beside Mary that keeps what she has read and said. On MaryOS the Thread is
 the drive's own record of itself: one SQLite file, `/var/lib/thread/thread.db`, holding every file in the
-home, every turn with Mary, every memory Sewn wrote, every ability an app declared and every action Mary
-took — chunked, embedded, and folded into one knowledge graph. Back the file up and the whole memory moves
+home, every memory Sewn wrote, every action Mary took and how you ask for things — chunked, embedded, and
+folded into one knowledge graph. It keeps what Mary learns, not what she already knows: the applications'
+functions are declared in code and read from the desktop, so they are not recorded, and the conversation
+itself is not kept turn by turn — Sewn's memory notes cover it. Back the file up and the whole memory moves
 with it; there is one drive per install, and Finder and Disk Utility show it as "MaryOS". This chapter is
 what is in the file, how it stays in step with the disk, and how to look at it.
 
@@ -18,7 +20,8 @@ what is in the file, how it stays in step with the disk, and how to look at it.
   every six hours, and inotify in between, so a save, a rename or a deletion reaches the graph within a
   second.
 - **sewnd** retrieves from the Thread for every reply, compacts what it found into the prompt, and writes a
-  memory note every seventh exchange; **maryd** deposits every turn, every ability and every behaviour.
+  memory note every seventh exchange; **maryd** deposits a style record per discipline, every behaviour and
+  every routing habit.
 
 The owner of a record is the unix user that wrote it, read from the socket's peer credentials. One caller
 is trusted the way Sewn is the Mac's mothership: the `sewn` user may name the owner it writes for, so
@@ -33,24 +36,25 @@ search can be constrained to what a purpose is allowed to draw on.
 | family | lane | id | group | written by | what it is |
 |---|---|---|---|---|---|
 | `file` | personal | `file-<fnv(owner\|path)>` | `files-<owner>` | indexd | one record per file: text chunked and embedded, media by name; the graph holds the file `in` its folder |
-| `conversation` | conversation | `mary-turn-<ms>-<hex>` | `conversation-<owner>` | maryd | one record per turn: the question, the answer, what it drew on, the route and the skills it ran |
 | `memory` | personal | Thread's content hash | `memory-<owner>` | sewnd | auto-memory: a note every seven user messages, or on a change of topic |
+| `style` | personal | `mary-style-profile-<fnv(owner\|discipline)>` | `mary-style-<owner>` | maryd | one profile per discipline: the craft, the apps that realize it, their skills' words; the graph holds each app `practices` the discipline |
 | `behavior` | behavioral | `mary-behavior-<uuid>` | `mary-ability-<fnv(owner\|ability\|paradigm)>` | maryd | a sealed BehavioralEpisode (`mary.behavior`): the request, the ambient capture, every action and its outcome |
-| `interaction` | behavioral | `mary-behavior-interaction-<uuid>` | `mary-behavior-interaction-<owner>` | maryd | the stub that joins a turn to its behaviour record |
-| `ability` | application | `mary-ability-schema-<fnv(owner\|app\|paradigm\|skill)>` | `mary-ability-<fnv(…)>` | maryd | one callable function of an app: title, summary, invocation, parameters, effect, triggers |
-| `ability-schema` | application | `mary-ability-schema-manifest-<fnv>` | the app's ability group | maryd | what an app perceives and hands over |
 | `routing` | behavioral | `mary-routing-<intent>\|<skill>\|<epoch>` | `mary-routing-<owner>` | maryd | a request Mary settled without a model, so the router learns how you ask |
-| `style`, `application` | personal, application | as on the Mac | as on the Mac | — | declared; not written yet |
 
-The ids and groups are minted exactly as the Mac's `ThreadMemoryTopology` mints them (FNV-1a over the
-lowercase, whitespace-folded key), so a record written here reads like one written there.
+Two lanes: **personal** (file, memory, style) and **behavioral** (behavior, routing). The ids and groups
+are minted exactly as the Mac's `ThreadMemoryTopology` mints them (FNV-1a over the lowercase,
+whitespace-folded key), so a record written here reads like one written there. Five families of the first
+pass were retired — `conversation`, `interaction`, `ability`, `ability-schema` and `application` — because
+Mary is the operating system and already knows what its applications can do, and because Sewn's memory
+covers the conversation; a file from before (`user_version` 1) is cleaned at open through the same path
+Remove takes, with one ledger row saying how many records went.
 
 ## The graph
 
 Entities are Thread's ontology — person, organization, place, event, work, concept, other — plus Mary's
-own kinds: file, folder, app, skill, ability, episode, turn, memory. Predicates are a closed vocabulary:
-`in`, `opened with`, `about`, `mentions`, `retrieved`, `invoked`, `records`, `practices`, `offers`,
-`effects`, `perceives`, and the automatic `appears with` between things mentioned together. Ids are
+own kinds: file, folder, app, ability (a discipline), episode, memory. Predicates are a closed vocabulary:
+`in`, `opened with`, `about`, `records`, `practices`, and the automatic `appears with` between things
+mentioned together. Ids are
 Thread's own (`numericHash("<kind>|<name>")`), a mention counts once per document, and removing a document
 detaches its provenance and deletes what nothing else mentions.
 
@@ -71,7 +75,7 @@ file's node with what the record holds.
 threadctl stats                              # documents, chunks, entities, the file's size, the vector footprint
 threadctl schemas                            # the families, with counts
 threadctl file ~/Documents/Tides.txt         # the record, its chunks, its entities, its ledger rows
-threadctl search --lane conversation --lane personal what did I write about the tide
+threadctl search --lane personal what did I write about the tide
 threadctl graph --entity Tides.txt --hops 2 --documents
 threadctl ledger --kind search --limit 20
 threadctl parity

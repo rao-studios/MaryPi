@@ -157,7 +157,7 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | Swift | C | Status |
 |---|---|---|
 | `MaryFoundation/Ability/SkillSchemas.swift` (`SkillSchema`, `ModelParameterSchema.spokenValues`), `AbilitySchema.swift` (title, summary, aliases, paradigm, triggers), `MaryPlugin/MaryAdapter.swift` (`skillBindings`) | `skills/include/skills/registry.h`, `src/registry.c` (kind, access, triggers, target classes, spoken values; the app's title, summary, aliases, paradigm, discipline, perception) | working — deviation 10 |
-| `MaryBrain/Behavior/ThreadMemoryTopology.swift` (`abilityGroup`, `abilitySchemaDocumentID`), `AbilitySchema.knowledgeDocument` | `sk_ability_group`, `sk_ability_document_id`, `sk_ability_records` (one `ability` record per skill, an `ability-schema` manifest per app, one record per discipline) | working — deviation 14 |
+| `MaryBrain/Behavior/ThreadMemoryTopology.swift` (`abilityGroup`), `AbilitySchema.knowledgeDocument` | `sk_ability_group` (the behaviour records' group), `sk_style_records` (one `style` record per discipline; no record per skill or app — deviation 15) | working — deviations 14, 15 |
 | `MaryFoundation/Ability/SkillSchemas.swift` (`ModelExposureSchema`) | `sk_tools_json`, `sk_tool_lookup` | working — sent in the next milestone |
 | `Mary/Abilities/*.mary`, `MaryFoundation/Package/*`, `MaryPlugin/Adapters/*` | — | not ported — deviation 10 |
 
@@ -182,7 +182,7 @@ What Swift gets from Foundation, URLSession and swift-nio.
 | `MaryBrain/Brain/MaryBrain+Turn.swift` (`runOrchestratorLane`), `MaryBrain+RepeatGuard.swift`, `Prompt/MaryPrompts+SewnModeOne.swift` (`orchestratorAddendum`, `continuationNudge`) | `brain/include/brain/lane.h`, `src/lane.c` (`mb_lane_run`: ten rounds, the repeat guard, the confirmation park, the nudge once) | working — deviation 14 |
 | `MaryBrain/Prompt/PromptCatalog+System.swift`, `PromptPlan.full` | `mb_system_prompt` in `brain/src/prompt.c` | working — worded for MaryOS |
 | `MaryAmbient/Ambient/Engine/AmbientIntentGate.swift` (`ThreadMemoryPlan`), `MaryBrain/Behavior/ThreadMemoryTopology.swift` (`sewnPersonalScope`, `maryAbilityScope`) | `brain/include/brain/scope.h`, `src/scope.c` (`mb_memory_plan_for`: lanes per purpose, groups, cues, the Recall toggles) | working |
-| `MaryBrain/Behavior/BehavioralAssembler.swift` | maryd's episode (`runtime/src/daemon.c`: opened with the turn, actions from the lane or the dispatch, sealed and deposited as `behavior` + `interaction`; `routing` habits on every no-model dispatch) | working — deviation 14 |
+| `MaryBrain/Behavior/BehavioralAssembler.swift` | maryd's episode (`runtime/src/daemon.c`: opened with the turn, actions from the lane or the dispatch, sealed and deposited as `behavior`; `routing` habits on every no-model dispatch; no interaction stub — deviation 15) | working — deviations 14, 15 |
 | `MaryBrain/Brain/MaryBrain+Turn.swift` (routing, Lane B, dispatch), `Abilities/*`, `Engine/*` | — | not ported |
 | — (skills as Mistral tools) | `brain/include/brain/tools.h` | skeleton |
 
@@ -251,9 +251,9 @@ What Swift gets from Foundation, URLSession and swift-nio.
     is faster and strictly better). Every document carries a record `family`, and the families group into
     four **lanes** — `personal`, `conversation`, `application`, `behavioral` — so any search can be
     constrained to the lanes a purpose may draw on (`lanes[]` beside `group_ids[]`, applied to the graph
-    expansion too). indexd keeps a record for every file in the home and threadd proves parity with the
-    disk; a ledger records every deposit, search, enrichment and repair. `top_k` is honoured (Thread ignores
-    it). Sinatra is scrapped.
+    expansion too); since deviation 15 the lanes are two, `personal` and `behavioral`. indexd keeps a record
+    for every file in the home and threadd proves parity with the disk; a ledger records every deposit,
+    search, enrichment and repair. `top_k` is honoured (Thread ignores it). Sinatra is scrapped.
 12. **The engine toggle.** `provider` is on every wire (`turn.start`, `complete`, the utility ops) and the
     desktop offers Mistral and Thinking Machines per lane, as the Mac does, but only Mistral's row is
     filled: a request naming `tinker` is answered with `error{stage: "engine"}` before any socket is
@@ -275,8 +275,8 @@ What Swift gets from Foundation, URLSession and swift-nio.
 14. **Abilities and dispatch.** The Mac's ability packages are authored `.mary` files with recorded recipes;
     on MaryOS the desktop's applications declare their skills in code, with the same schema fields (kind,
     access, triggers, target classes, spoken values, the app's paradigm and discipline) published in
-    `skills{apps}`, and maryd writes them into the Thread as `ability` records (one per skill, a manifest per
-    app, one per discipline) so the Abilities app, retrieval and the graph see them. Triage is the Mac's
+    `skills{apps}`; the Abilities app, triage and the skills lane read that registry directly (deviation 15
+    says why nothing of it is written into the Thread). Triage is the Mac's
     (embed once at registry load, cosine per turn, floor 0.62, margin 0.04, the three safe argument shapes,
     a single clause) but the index is built from the skills' own titles, summaries and triggers through
     sewnd's `embed`; there is no intent corpus, so the lexical ladder decides the intent and a unique skill
@@ -286,3 +286,16 @@ What Swift gets from Foundation, URLSession and swift-nio.
     a protected skill parked on the desktop's confirmation card and answered by a bare yes or no or the
     card) on action turns, and Lane A (the voice with retrieval) otherwise; Lane B's answer is spoken through
     sewnd's `speak`. The Mac runs both lanes and joins them.
+15. **The Thread keeps what Mary learns, not what she already knows.** The Mac writes an `ability` record per
+    skill, an `AbilitySchema` manifest per package and a `conversation` record per turn, with an
+    `interaction` stub joining the turn to its behaviour, because on the Mac the applications are foreign and
+    the recipes are learned. On MaryOS the applications are the operating system's own, declared in code
+    and published in `skills{apps}`, so recording them would be a second copy of what the registry already
+    is; and Sewn's auto-memory covers the conversation. The `conversation`, `interaction`, `ability`,
+    `ability-schema` and `application` families are retired (threadd cleans a file from before at open,
+    `user_version` 2), the storage lanes are two — `personal` (file, memory, style) and `behavioral`
+    (behavior, routing) — Recall is two switches, and the one thing kept of the abilities side is a `style`
+    record per discipline (`mary-style-profile-<fnv(owner|discipline)>`: the craft, the apps that realize
+    it, their skills' words), so the graph keeps a discipline node each app `practices`. Retrieval for
+    routing and orchestration draws on `behavioral` alone; the reply's context on `personal`, plus
+    `behavioral` when the route names an application.

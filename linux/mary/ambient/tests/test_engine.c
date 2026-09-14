@@ -110,9 +110,10 @@ MARY_TEST(a_literally_named_place_outranks_the_frontmost_one) {
     MARY_ASSERT_STR(route.gate.memory.relationship_hints[0], "multimedia");
     MARY_ASSERT_STR(route.gate.memory.relationship_hints[1], "practices");
     const char *lanes[2];
-    MARY_ASSERT_EQ(ma_lane_storage_lanes(MA_LANE_ABILITY, lanes, 2), 2);
-    MARY_ASSERT_STR(lanes[0], "application");
-    MARY_ASSERT_STR(lanes[1], "behavioral");
+    MARY_ASSERT_EQ(ma_lane_storage_lanes(MA_LANE_ABILITY, lanes, 2), 1);
+    MARY_ASSERT_STR(lanes[0], "behavioral");
+    MARY_ASSERT_EQ(ma_lane_storage_lanes(MA_LANE_PERSONAL, lanes, 2), 1);
+    MARY_ASSERT_STR(lanes[0], "personal");
 }
 
 MARY_TEST(question_forms_shape_the_plan) {
@@ -159,7 +160,7 @@ MARY_TEST(the_route_serialises_with_the_report_vocabulary) {
     const char *text = json_object_to_json_string_ext(o, JSON_C_TO_STRING_PLAIN);
     MARY_ASSERT(strstr(text, "\"intent\":\"ask\"") && strstr(text, "\"decidedBy\":\"namedPart\""));
     MARY_ASSERT(strstr(text, "\"leadApplicationID\":\"textedit\"") && strstr(text, "\"token\":\"applications:textedit\""));
-    MARY_ASSERT(strstr(text, "\"storageLanes\":[\"personal\",\"conversation\"]") != NULL);
+    MARY_ASSERT(strstr(text, "\"storageLanes\":[\"personal\"]") != NULL);
     MARY_ASSERT(strstr(text, "\"namedPart\":\"batteries\"") != NULL);
     json_object_put(o);
 }

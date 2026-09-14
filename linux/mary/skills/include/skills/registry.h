@@ -17,7 +17,7 @@
  * classes, spoken values; the package's title, summary, aliases, paradigm); absent, they take their
  * defaults from the effect. The desktop decides every call; this copy lets maryd say in advance
  * why a call would be refused, render the skills Mary may use as Mistral tools, and write one
- * `ability` record per skill into the Thread (sk_ability_records). */
+ * `style` record per discipline into the Thread (sk_style_records). */
 #ifndef MARY_SKILLS_REGISTRY_H
 #define MARY_SKILLS_REGISTRY_H
 
@@ -109,16 +109,16 @@ const char *sk_access_name(sk_access a);        /* seamless, confirm, reversible
 /* The skill a tool name stands for: "<app>__<skill>" with anything outside [A-Za-z0-9_-] as '_'. */
 void sk_tool_name(const sk_app *app, const sk_skill *skill, char *out, size_t cap);
 
-/* The Thread's `ability` records for this registry (ThreadMemoryTopology): a JSON array of threadd
- * `deposit` requests — one document per skill (its title, summary, invocation, parameters, effect,
- * triggers and target classes, with the app `offers` the skill and the skill `effects` its effect in
- * the graph), one `ability-schema` manifest per app (what it publishes), and one document per
- * discipline naming the apps that realize it. Ids are minted from the owner, the app and the skill
- * (mary-ability-schema-<fnv>), so a second deposit replaces the first. A new reference. */
-struct json_object *sk_ability_records(const sk_registry *r, const char *owner);
-/* The group id an app's (or a discipline's) ability records live in: mary-ability-<fnv(owner|id|paradigm)>. */
+/* The Thread's `style` records for this registry: a JSON array of threadd `deposit` requests, one per
+ * discipline — the craft, the applications that realize it and their skills' titles, tokens and
+ * phrases — in `mary-style-<owner>` ("Style"), id `mary-style-profile-<fnv(owner|discipline)>`, so a
+ * second deposit replaces the first; the graph gets the discipline as an `ability` node each app
+ * `practices`. Nothing else of the registry is written: Mary is the operating system and knows what
+ * the applications can do from this registry itself. A new reference. */
+struct json_object *sk_style_records(const sk_registry *r, const char *owner);
+/* The group id an app's (or a discipline's) behaviour records live in: mary-ability-<fnv(owner|id|paradigm)>,
+ * the Mac's abilityGroup. */
 void sk_ability_group(const char *owner, const char *ability_id, const char *paradigm, char *out, size_t cap);
-void sk_ability_document_id(const char *owner, const char *ability_id, const char *paradigm, const char *skill_id, char *out, size_t cap);
 
 /* The skills Mary may use (enabled app and skill; those that need confirmation too, since
  * the skills lane parks them for the person) as Mistral tools: [{type: "function",

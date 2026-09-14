@@ -13,13 +13,6 @@ const thread_family thread_families[] = {
       "," F("size", "integer", "bytes") "," F("mtime_ms", "integer", "last modified, ms since the epoch") "," F("content_hash", "string", "SHA-256 of the bytes, as decimal")
       "," F("chunks", "integer", "partitions the text became") "," F("tags", "array", "TagGenerator's keywords") "]",
       "a file node; in → folder; opened with → app; about → the concepts extracted from it" },
-    { "conversation", "Conversation", "One record per turn with Mary: what was asked, what she answered, and what the answer drew on.",
-      "mary-turn-", "conversation-", "conversation", "maryd",
-      "[" F("user_text", "string", "the question") "," F("reply", "string", "Mary's answer") "," F("source", "string", "voice or typed")
-      "," F("model", "string", "the chat model") "," F("started_ms", "integer", "when the turn began") "," F("ended_ms", "integer", "when it ended")
-      "," F("cancelled", "boolean", "stopped before the end") "," F("contribution", "object", "the owners and spans the reply was credited to")
-      "," F("route", "object", "intent and what decided it") "," F("skills", "array", "the skills the turn invoked") "]",
-      "a turn node; mentions → entities; retrieved → the documents in the contribution; invoked → skills" },
     { "memory", "Memory", "Auto-memory: a note Sewn writes every seven user messages or on a change of topic.",
       "", "memory-", "personal", "sewnd",
       "[" F("summary", "string", "a bold title then prose, one partition per line") "," F("window_started_ms", "integer", "the first turn summarised")
@@ -31,38 +24,20 @@ const thread_family thread_families[] = {
       "," F("input", "object", "query, ambient capture, prior episode") "," F("output", "object", "actions: the BehavioralActionRecords")
       "," F("provenance", "object", "engine, lane, version") "," F("abilityTargets", "array", "the abilities the episode belongs to") "]",
       "an episode node; records → skill; practices → ability" },
-    { "interaction", "Interaction", "The personal-lane stub of an episode: enough to join a turn back to its behaviour record.",
-      "mary-behavior-interaction-", "mary-behavior-interaction-", "behavioral", "maryd",
-      "[" F("episode_id", "string", "the episode") "," F("query", "string", "the request") "," F("ability_document_id", "string", "the behaviour document")
-      "," F("did_act", "boolean", "whether anything ran") "," F("sealed_reason", "string", "completed, superseded, cancelled") "]",
-      "episode → turn" },
-    { "ability", "Ability", "One callable function of an application — its control surface, as the graph holds it for routing and dispatch.",
-      "mary-ability-schema-", "mary-ability-", "application", "maryd",
-      "[" F("app", "string", "the application id") "," F("skill", "string", "the skill id") "," F("title", "string", "what it is called")
-      "," F("summary", "string", "one sentence") "," F("invocation", "string", "the tool name the model calls") "," F("params", "object", "the JSON Schema of its arguments")
-      "," F("effect", "string", "read, act or destructive") "," F("triggers", "object", "tokens and phrases it listens for") "]",
-      "app offers → skill; skill effects → concept" },
-    { "ability-schema", "Ability schema", "What an application perceives and hands over: its surface fields and selections.",
-      "mary-ability-schema-manifest-", "mary-ability-", "application", "maryd",
-      "[" F("app", "string", "the application id") "," F("perceptions", "array", "the fields its surface publishes") "," F("interactions", "array", "what a selection carries") "]",
-      "app perceives → surface field" },
-    { "style", "Style profile", "The tenets of how the user writes, one durable profile per subject.",
+    { "style", "Style profile", "One profile per discipline: the craft, the applications that realize it, and the words they answer to.",
       "mary-style-profile-", "mary-style-", "personal", "maryd",
-      "[" F("subject", "string", "the ability subject") "," F("profile", "object", "StyleTenet rows") "]",
-      "declared; not written yet" },
+      "[" F("discipline", "string", "the craft: writing, multimedia, awareness, system-control, window-management") "," F("apps", "array", "the applications that realize it")
+      "," F("skills", "array", "their skills, by title") "]",
+      "a discipline node; app practices → discipline" },
     { "routing", "Routing habit", "A request Mary settled without a model, kept so the router learns how the user asks.",
       "mary-routing-", "mary-routing-", "behavioral", "maryd",
       "[" F("intent", "string", "the intent") "," F("skill", "string", "the skill that answered") "," F("query", "string", "the bare utterance") "]",
       "utterance → skill" },
-    { "application", "Application", "Knowledge about an application or project the user works in: units, manifests, habits.",
-      "mary-unit-", "mary-scope-", "application", "maryd",
-      "[" F("project", "string", "the project") "," F("unit_key", "string", "project|path") "," F("labels", "array", "concepts") "," F("content_hash", "string", "the unit's revision") "]",
-      "declared; not written yet" },
     { "unknown", "Unknown", "A record whose family nothing declared — the drift alarm.", "", "", "", "—", "[]", "" },
 };
 const size_t thread_family_count = sizeof thread_families / sizeof thread_families[0];
 
-const char *const thread_lanes[THREAD_LANE_COUNT] = { "personal", "conversation", "application", "behavioral" };
+const char *const thread_lanes[THREAD_LANE_COUNT] = { "personal", "behavioral" };
 
 const thread_family *thread_family_named(const char *name) {
     if (!name) return NULL;
@@ -105,8 +80,6 @@ const char *thread_family_of(const char *document_id, const char *group_id, cons
     }
     const thread_family *f = longest_prefix(document_id, 0);
     if (!f) f = longest_prefix(group_id, 1);
-    /* The legacy conversations group. */
-    if (!f && group_id && strcmp(group_id, "mary-conversations") == 0) f = thread_family_named("conversation");
     return f ? f->name : "unknown";
 }
 

@@ -22,20 +22,19 @@ MARY_TEST(the_verbatim_block_tiers_by_family_and_tags_in_order) {
     sewn_partition ps[5] = {
         part("m1", "Paris trip", "You planned Paris.", "rao", "memory", "personal"),
         part("f1", "notes.txt", "Buy bread.", "rao", "file", "personal"),
-        part("c1", "mary-turn-1", "you asked about Paris", "rao", "conversation", "conversation"),
-        part("a1", "Finder · Open", "Open a folder.", "rao", "ability", "application"),
+        part("y1", "Writing", "Discipline: Writing. Realized by TextEdit.", "rao", "style", "personal"),
+        part("b1", "Behaviour: play the music", "{\"schema\":\"mary.behavior\"}", "rao", "behavior", "behavioral"),
         part("s1", "someone's note", "Bread is good.", "guest", "file", "personal"),
     };
     struct json_object *index = NULL;
     char *text = sewn_compact_verbatim(ps, 5, "rao", &index);
     MARY_ASSERT_STR(text,
         "**Memory:**\n[1] \"Paris trip\"\nYou planned Paris.\n\n"
-        "**Documents:**\n[2] \"notes.txt\"\nBuy bread.\n\n"
-        "**Conversation (what was said before, turn by turn):**\n[3] \"mary-turn-1\"\nyou asked about Paris\n\n"
-        "**Mary's Past Actions (her own records of what the applications can do and what she did \xE2\x80\x94 background, not user prose):**\n[4] \"Finder \xC2\xB7 Open\"\nOpen a folder.\n\n"
+        "**Documents:**\n[2] \"notes.txt\"\nBuy bread.\n\n[3] \"Writing\"\nDiscipline: Writing. Realized by TextEdit.\n\n"
+        "**Mary's Past Actions (her own records of what the applications can do and what she did \xE2\x80\x94 background, not user prose):**\n[4] \"Behaviour: play the music\"\n{\"schema\":\"mary.behavior\"}\n\n"
         "**Perspectives From Others:**\n<external>\n[5] \"someone's note\"\nBread is good.\n</external>");
     MARY_ASSERT_EQ(json_object_array_length(index), 5);
-    MARY_ASSERT_STR(json_object_get_string(json_object_array_get_idx(index, 2)), "c1");
+    MARY_ASSERT_STR(json_object_get_string(json_object_array_get_idx(index, 2)), "y1");
     free(text);
     json_object_put(index);
     text = sewn_compact_verbatim(ps, 0, "rao", NULL);

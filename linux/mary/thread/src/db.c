@@ -102,8 +102,11 @@ int thread_db_backup(sqlite3 *db, const char *path) {
     return rc;
 }
 
-int thread_db_open(const char *path, sqlite3 **out) {
+int thread_db_open(const char *path, sqlite3 **out) { return thread_db_open_versioned(path, out, NULL); }
+
+int thread_db_open_versioned(const char *path, sqlite3 **out, int *found_version) {
     *out = NULL;
+    if (found_version) *found_version = 0;
     sqlite3 *db = NULL;
     int flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX;
     if (sqlite3_open_v2(path, &db, flags, NULL) != SQLITE_OK) {
@@ -119,6 +122,7 @@ int thread_db_open(const char *path, sqlite3 **out) {
     if (rc == 0) rc = thread_db_exec(db, SCHEMA);
     if (rc == 0) {
         int64_t version = thread_db_int(db, "PRAGMA user_version", NULL, NULL);
+        if (found_version) *found_version = (int)version;
         if (version < THREAD_DB_USER_VERSION) {
             char sql[64];
             snprintf(sql, sizeof sql, "PRAGMA user_version=%d", THREAD_DB_USER_VERSION);

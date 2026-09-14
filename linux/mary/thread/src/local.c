@@ -94,7 +94,7 @@ struct json_object *thread_local_handle(thread_caller *caller, struct json_objec
                 free(entities);
                 free(groups);
                 free(lanes);
-                return error_reply(-EINVAL, "a lane is not personal, conversation, application or behavioral");
+                return error_reply(-EINVAL, "a lane is not personal or behavioral");
             }
         }
         thread_search_request q = { .query_text = mc_json_string(req, "query"), .entities = entities, .n_entities = n_entities, .group_ids = groups, .n_groups = n_groups,

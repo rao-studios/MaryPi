@@ -48,7 +48,7 @@
 
 struct mr_daemon {
     mr_config config;
-    char desktop_path[256], sewn_path[256], thread_path[256], owner[64];
+    char desktop_path[256], sewn_path[256], owner[64];
     char thread_local_path[256];
     mr_queue queue;
     mr_desktop desktop;
@@ -119,8 +119,8 @@ struct mr_daemon {
     int skills_gen;                 /* bumped on every skills message; an index built for an older one is dropped */
     int64_t index_retry_at;         /* 0: none pending; else when to build the index again (sewnd was not reachable, or had no key) */
     int index_tries;
-    int64_t abilities_retry_at;     /* 0: none pending; else when to deposit the ability records again (threadd was not reachable) */
-    int abilities_tries;
+    int64_t styles_retry_at;        /* 0: none pending; else when to deposit the style records again (threadd was not reachable) */
+    int styles_tries;
     atomic_bool turn_stopping;      /* the audio callback gives up waiting for room */
     atomic_int turn_gen;
     struct {
@@ -297,56 +297,7 @@ static void voices_job(mr_daemon *d, mr_client *c) {
     spawn(d, key_worker, job);
 }
 
-struct deposit_job {
-    mr_daemon *d;
-    thread_turn turn;
-    char *question, *reply, *contribution, *retrieved;
-    char owner[64];
-};
-
-static void *deposit_worker(void *arg) {
-    struct deposit_job *job = arg;
-    char id[64];
-    int status = 0;
-    int rc = thread_client_deposit_turn(job->d->thread_path, &job->turn, THREAD_CLIENT_TIMEOUT_MS, id, sizeof id, &status);
-    if (rc == 0) mc_log(MC_LOG_DEBUG, "deposited %s in Thread", id);
-    else if (rc == -EPROTO) mc_log(MC_LOG_WARNING, "threadd refused the turn (status %d)", status);
-    else mc_log(MC_LOG_WARNING, "could not reach threadd: %s", strerror(-rc));
-    atomic_fetch_sub(&job->d->workers, 1);
-    free(job->question);
-    free(job->reply);
-    free(job->contribution);
-    free(job->retrieved);
-    free(job);
-    return NULL;
-}
-
-static char *json_copy(struct json_object *o) {
-    if (!o) return NULL;
-    size_t n = 0;
-    const char *text = mc_json_compact(o, &n);
-    return text ? strndup(text, n) : NULL;
-}
-
-static void deposit(mr_daemon *d, bool cancelled) {
-    struct deposit_job *job = calloc(1, sizeof *job);
-    if (!job || !(job->question = strdup(d->turn.question)) ||
-        !(job->reply = strdup(d->turn.reply.data ? (char *)d->turn.reply.data : ""))) {
-        if (job) free(job->question);
-        free(job);
-        return;
-    }
-    job->d = d;
-    snprintf(job->owner, sizeof job->owner, "%s", d->owner);
-    job->contribution = json_copy(d->turn.contribution);
-    job->retrieved = json_copy(d->turn.retrieved);
-    job->turn = (thread_turn){ .owner_id = job->owner, .user_text = job->question, .reply = job->reply,
-                           .source = d->turn.voice ? "voice" : "typed", .started_ms = d->turn.started_wall,
-                           .ended_ms = mc_wall_ms(), .cancelled = cancelled, .contribution = job->contribution, .retrieved = job->retrieved };
-    spawn(d, deposit_worker, job);
-}
-
-/* ---- deposits on the local socket: ability, behaviour and routing records ---- */
+/* ---- deposits on the local socket: style, behaviour and routing records ---- */
 
 struct items_job {
     mr_daemon *d;
@@ -822,8 +773,9 @@ static struct turn_ctx *turn_ctx;       /* the running turn's; one turn at a tim
 
 static struct json_object *str_or_empty(const char *s) { return json_object_new_string(s ? s : ""); }
 
-/* The episode's records for the Thread: the behaviour (one JSON line, the Mac's codec, tagged as the Mac tags it)
- * and the interaction stub that points a turn at it (ThreadMemoryTopology, BehavioralAssembler.flush). */
+/* The episode's record for the Thread: the behaviour, one JSON line in the Mac's codec, tagged as the Mac tags it
+ * (ThreadMemoryTopology, BehavioralAssembler.flush). The interaction stub the Mac wrote beside it was retired:
+ * the turn's id is in the metadata, and there is no conversation record for it to join. */
 static struct json_object *behavior_items(mr_daemon *d) {
     const mf_behavior_episode *e = &d->episode;
     char *line = mf_behavior_encode(e);
@@ -839,7 +791,10 @@ static struct json_object *behavior_items(mr_daemon *d) {
     json_object_object_add(b, "source", json_object_new_string("maryd"));
     json_object_object_add(b, "document_id", json_object_new_string(id));
     json_object_object_add(b, "group", json_object_new_string(group));
-    json_object_object_add(b, "label", json_object_new_string(e->target_count ? "Ability" : "Mary \xC2\xB7 behaviour"));
+    char label[160];
+    if (e->target_count) snprintf(label, sizeof label, "Behaviour \xE2\x80\x94 %s", e->targets[0].ability_id);
+    else snprintf(label, sizeof label, "Mary \xC2\xB7 behaviour");
+    json_object_object_add(b, "label", json_object_new_string(label));
     json_object_object_add(b, "family", json_object_new_string("behavior"));
     json_object_object_add(b, "name", json_object_new_string(name));
     struct json_object *texts = json_object_new_array();
@@ -873,38 +828,6 @@ static struct json_object *behavior_items(mr_daemon *d) {
     json_object_object_add(meta, "actions", json_object_new_int(e->action_count));
     json_object_object_add(b, "metadata", meta);
     json_object_array_add(items, b);
-    /* the interaction stub */
-    struct json_object *stub = json_object_new_object();
-    json_object_object_add(stub, "schema", json_object_new_string("mary.behavior.interaction"));
-    json_object_object_add(stub, "episode", json_object_new_string(e->id));
-    json_object_object_add(stub, "turn", json_object_new_string(d->turn.request_id));
-    json_object_object_add(stub, "query", json_object_new_string(e->query));
-    json_object_object_add(stub, "lane", json_object_new_string(e->lane));
-    json_object_object_add(stub, "did_act", json_object_new_boolean(mf_behavior_did_act(e)));
-    char sealed[40];
-    mf_iso8601(e->sealed_at, sealed, sizeof sealed);
-    json_object_object_add(stub, "sealedAt", json_object_new_string(sealed));
-    struct json_object *s = json_object_new_object();
-    snprintf(id, sizeof id, "mary-behavior-interaction-%s", e->id);
-    snprintf(group, sizeof group, "mary-behavior-interaction-%s", d->owner);
-    json_object_object_add(s, "type", json_object_new_string("deposit"));
-    json_object_object_add(s, "source", json_object_new_string("maryd"));
-    json_object_object_add(s, "document_id", json_object_new_string(id));
-    json_object_object_add(s, "group", json_object_new_string(group));
-    json_object_object_add(s, "label", json_object_new_string("Interactions"));
-    json_object_object_add(s, "family", json_object_new_string("interaction"));
-    snprintf(name, sizeof name, "Interaction: %.80s", e->query);
-    json_object_object_add(s, "name", json_object_new_string(name));
-    texts = json_object_new_array();
-    json_object_array_add(texts, json_object_new_string(mc_json_compact(stub, NULL)));
-    json_object_object_add(s, "texts", texts);
-    meta = json_object_new_object();
-    json_object_object_add(meta, "family", json_object_new_string("interaction"));
-    json_object_object_add(meta, "episode", json_object_new_string(e->id));
-    json_object_object_add(meta, "turn", json_object_new_string(d->turn.request_id));
-    json_object_object_add(s, "metadata", meta);
-    json_object_put(stub);
-    json_object_array_add(items, s);
     free(line);
     return items;
 }
@@ -917,7 +840,6 @@ static void finish_turn(mr_daemon *d, bool cancelled) {
     d->turn.triaging = false;
     const char *reply = d->turn.reply.data ? (char *)d->turn.reply.data : "";
     if (*reply) mb_history_append(&d->history, MB_ROLE_ASSISTANT, reply);
-    if (*reply || !d->turn.failed) deposit(d, cancelled);
     if (d->episode_open) {
         mf_behavior_seal(&d->episode, cancelled ? MF_SEAL_CANCELLED : MF_SEAL_COMPLETED, wall_seconds());
         if (strcmp(d->episode.lane, "voice") != 0) deposit_items(d, behavior_items(d), "behaviour");
@@ -2001,8 +1923,6 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
         struct json_object *recall = mc_json_object(msg, "recall");
         if (recall) {
             mc_json_bool(recall, "personal", &d->recall.personal);
-            mc_json_bool(recall, "conversation", &d->recall.conversation);
-            mc_json_bool(recall, "application", &d->recall.application);
             mc_json_bool(recall, "behavioral", &d->recall.behavioral);
         }
         /* the engines: mistral is served; tinker rides the wire to sewnd, which answers the engine error (PORTING 12) */
@@ -2043,12 +1963,12 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
         ma_roster_merge_skills(&d->roster, mc_json_array(msg, "apps"));
         for (int i = 0; i < MR_CLIENTS_MAX; i++) d->desktop.clients[i].desktop = false;
         c->desktop = true;
-        /* the skill index triage scores against, and the ability records the Thread holds (idempotent ids) */
+        /* the skill index triage scores against, and the Thread's style record per discipline (idempotent ids) */
         (void)skills_gen;
-        d->index_tries = d->abilities_tries = 0;
-        d->index_retry_at = d->abilities_retry_at = 0;
+        d->index_tries = d->styles_tries = 0;
+        d->index_retry_at = d->styles_retry_at = 0;
         build_index(d);
-        deposit_items(d, sk_ability_records(&d->skills, d->owner), "ability");
+        deposit_items(d, sk_style_records(&d->skills, d->owner), "style");
     } else if (strcmp(type, "skill.result") == 0) {
         mcu_pipes_on_message(d->pipes, msg);
     } else if (strcmp(type, "skills.list") == 0) {
@@ -2069,10 +1989,6 @@ static void on_message(mr_desktop *desktop, mr_client *c, struct json_object *ms
         if (!text || !*text) send_to(d, c, error_message("triage", "say what to triage"));
         else if (!indexed) send_to(d, c, error_message("triage", "the skill index is not built: the desktop has not published its skills, or sewnd could not embed them"));
         else triage_job(d, -1, c->id, text);
-    } else if (strcmp(type, "abilities.list") == 0) {
-        struct json_object *o = typed("abilities");
-        json_object_object_add(o, "records", sk_ability_records(&d->skills, d->owner));
-        send_to(d, c, o);
     } else if (strcmp(type, "world") == 0) {
         on_world(d, msg);
     } else if (strcmp(type, "selection") == 0) {
@@ -2234,7 +2150,7 @@ static void tick(mr_daemon *d) {
     mcu_pipes_tick(d->pipes, now);
     if (d->pending.active && now >= d->pending.deadline) begin_pending(d);    /* the desktop said nothing in time */
     if (d->index_retry_at && now >= d->index_retry_at) { d->index_retry_at = 0; build_index(d); }
-    if (d->abilities_retry_at && now >= d->abilities_retry_at) { d->abilities_retry_at = 0; deposit_items(d, sk_ability_records(&d->skills, d->owner), "ability"); }
+    if (d->styles_retry_at && now >= d->styles_retry_at) { d->styles_retry_at = 0; deposit_items(d, sk_style_records(&d->skills, d->owner), "style"); }
     reopen_audio(d, now);
     if (d->sample.draining) {
         int64_t played = d->audio ? d->aops->last_played_ms(d->audio) : 0;
@@ -2289,7 +2205,6 @@ mr_daemon *mr_daemon_new(const mr_config *config, int *error) {
         if (d->config.speaker_stall_ms <= 0) d->config.speaker_stall_ms = 2000;
         d->aops = config->audio_ops ? config->audio_ops : &pipewire_ops;
         resolve(d->sewn_path, sizeof d->sewn_path, config->sewn_socket, "SEWN_SOCKET", SEWN_SOCKET_PATH);
-        resolve(d->thread_path, sizeof d->thread_path, config->thread_socket, "THREAD_SOCKET", THREAD_CLIENT_SOCKET_PATH);
         resolve(d->thread_local_path, sizeof d->thread_local_path, config->thread_local_socket, "THREAD_LOCAL_SOCKET", THREAD_LOCAL_SOCKET_PATH);
         pthread_mutex_init(&d->index_lock, NULL);
         d->recall = mb_recall_default();
@@ -2372,9 +2287,9 @@ int mr_daemon_run(mr_daemon *d) {
                 mc_json_bool(ev, "ok", &ok);
                 mc_json_bool(ev, "unreachable", &unreachable);
                 const char *what = mc_json_string(ev, "what");
-                if (what && strcmp(what, "ability") == 0) {
-                    if (!ok && unreachable && d->abilities_tries < 12) { d->abilities_tries++; d->abilities_retry_at = mc_now_ms() + 5000; }
-                    else d->abilities_retry_at = 0;
+                if (what && strcmp(what, "style") == 0) {
+                    if (!ok && unreachable && d->styles_tries < 12) { d->styles_tries++; d->styles_retry_at = mc_now_ms() + 5000; }
+                    else d->styles_retry_at = 0;
                 }
             }
             json_object_put(ev);

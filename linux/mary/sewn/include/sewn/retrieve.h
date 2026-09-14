@@ -17,7 +17,7 @@
 
 struct json_object;
 
-/* SewnRequest, with the MaryOS lanes: personal | conversation | application | behavioral. */
+/* SewnRequest, with the MaryOS lanes: personal | behavioral. */
 typedef struct sewn_scope {
     const char *owner_id;
     const char *lanes[SEWN_SCOPE_LIST_MAX];

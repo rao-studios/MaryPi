@@ -11,10 +11,8 @@
 #include "common/json.h"
 #include "conduit/grpc.h"
 
-#define PATH_INDEX "/thread.v1.ThreadQuery/Index"
 #define PATH_LIBRARY "/thread.v1.ThreadLibrary/Library"
 #define PATH_DOCUMENTS "/thread.v1.ThreadLibrary/Documents"
-#define NAME_MAX_BYTES 60
 
 const char *thread_client_default_socket(void) {
     const char *path = getenv("THREAD_SOCKET");
@@ -33,74 +31,6 @@ void thread_turn_document_id(int64_t started_ms, char *out, size_t cap) {
     snprintf(out, cap, "mary-turn-%lld-%02x%02x", (long long)started_ms, r[0], r[1]);
 }
 
-/* The document's name: the question, cut to NAME_MAX_BYTES on a UTF-8 boundary. */
-static void turn_name(const char *text, char *out, size_t cap) {
-    size_t n = strlen(text);
-    if (n > NAME_MAX_BYTES) {
-        n = NAME_MAX_BYTES;
-        while (n && ((unsigned char)text[n] & 0xC0) == 0x80) n--;
-    }
-    if (n >= cap) n = cap - 1;
-    memcpy(out, text, n);
-    out[n] = 0;
-}
-
-uint8_t *thread_turn_index_request(const thread_turn *turn, size_t *len, char *document_id, size_t cap) {
-    if (!turn || !turn->user_text || !*turn->user_text) return NULL;
-    char id[64], name[NAME_MAX_BYTES + 1];
-    thread_turn_document_id(turn->started_ms, id, sizeof id);
-    turn_name(turn->user_text, name, sizeof name);
-
-    struct json_object *meta = json_object_new_object();
-    json_object_object_add(meta, "family", json_object_new_string("conversation"));
-    json_object_object_add(meta, "source", json_object_new_string(turn->source ? turn->source : "typed"));
-    if (turn->model) json_object_object_add(meta, "model", json_object_new_string(turn->model));
-    json_object_object_add(meta, "started_ms", json_object_new_int64(turn->started_ms));
-    json_object_object_add(meta, "ended_ms", json_object_new_int64(turn->ended_ms));
-    json_object_object_add(meta, "cancelled", json_object_new_boolean(turn->cancelled));
-    if (turn->contribution && *turn->contribution) {
-        struct json_object *c = mc_json_parse(turn->contribution, strlen(turn->contribution));
-        if (c) json_object_object_add(meta, "contribution", c);
-    }
-    if (turn->retrieved && *turn->retrieved) {
-        struct json_object *r = mc_json_parse(turn->retrieved, strlen(turn->retrieved));
-        if (r) json_object_object_add(meta, "retrieved", r);
-    }
-    size_t meta_len = 0;
-    const char *meta_text = mc_json_compact(meta, &meta_len);
-
-    char *texts[2] = { (char *)turn->user_text, (char *)(turn->reply ? turn->reply : "") };
-    Thread__V1__ThreadIndexItem item = THREAD__V1__THREAD_INDEX_ITEM__INIT;
-    item.document_id = id;
-    item.name = name;
-    item.media_type = "text/plain";
-    item.n_texts = 2;
-    item.texts = texts;
-    item.metadata.data = (uint8_t *)meta_text;
-    item.metadata.len = meta_len;
-    Thread__V1__ThreadIndexItem *items[] = { &item };
-    Thread__V1__ThreadIndexRequest req = THREAD__V1__THREAD_INDEX_REQUEST__INIT;
-    char group[128];
-    snprintf(group, sizeof group, "%s%s", THREAD_CLIENT_GROUP_PREFIX, turn->owner_id && *turn->owner_id ? turn->owner_id : "mary");
-    req.owner_id = (char *)(turn->owner_id ? turn->owner_id : "");
-    req.group_id = group;
-    req.group_label = THREAD_CLIENT_GROUP_LABEL;
-    req.scope = THREAD_CLIENT_SCOPE;
-    req.n_items = 1;
-    req.items = items;
-
-    size_t n = thread__v1__thread_index_request__get_packed_size(&req);
-    uint8_t *packed = malloc(n ? n : 1);
-    if (packed) {
-        thread__v1__thread_index_request__pack(&req, packed);
-        *len = n;
-        if (document_id && cap) snprintf(document_id, cap, "%s", id);
-    }
-    json_object_put(meta);
-    return packed;
-}
-
-/* One unary call on its own connection. On 0, res->body is the caller's to free. */
 static int call(const char *path, const char *method, const uint8_t *request, size_t len, int timeout_ms,
                 conduit_result *res, int *status) {
     int fd = conduit_connect_unix(path ? path : thread_client_default_socket());
@@ -115,23 +45,6 @@ static int call(const char *path, const char *method, const uint8_t *request, si
         return -EPROTO;
     }
     return 0;
-}
-
-int thread_client_deposit_turn(const char *socket_path, const thread_turn *turn, int timeout_ms, char *document_id, size_t cap, int *status) {
-    size_t len = 0;
-    char id[64];
-    uint8_t *request = thread_turn_index_request(turn, &len, id, sizeof id);
-    if (!request) return turn && turn->user_text && *turn->user_text ? -ENOMEM : -EINVAL;
-    conduit_result res;
-    int rc = call(socket_path, PATH_INDEX, request, len, timeout_ms, &res, status);
-    free(request);
-    if (rc < 0) return rc;
-    Thread__V1__ThreadIndexResponse *resp = thread__v1__thread_index_response__unpack(NULL, res.body_len, res.body);
-    free(res.body);
-    rc = resp && resp->success && resp->indexed_count == 1 ? 0 : -EPROTO;
-    if (resp) thread__v1__thread_index_response__free_unpacked(resp, NULL);
-    if (rc == 0 && document_id && cap) snprintf(document_id, cap, "%s", id);
-    return rc;
 }
 
 int thread_client_library(const char *socket_path, int limit, const char *after_id, int timeout_ms,

@@ -2,7 +2,7 @@
  * model reads. Small retrievals (≤ 6000 characters) are injected verbatim under
  * tagged headings; larger ones are briefed by the utility model, with the [n] tags
  * kept adjacent to their content so the marker protocol can name them. The tiers are
- * the Mac's, plus MaryOS's: **Conversation** for the conversation lane, and a background
+ * the Mac's, plus MaryOS's background tier for Mary's own behavioural records (the behavioral lane),
  * tier for Mary's own application and behavioral records, which she is told never to
  * recite. */
 #ifndef MARY_SEWN_COMPACT_H

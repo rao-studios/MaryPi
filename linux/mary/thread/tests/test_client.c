@@ -32,8 +32,8 @@ static void on_index(const uint8_t *request, size_t len, conduit_reply *reply, v
 
 static void on_library(const uint8_t *request, size_t len, conduit_reply *reply, void *user) {
     Thread__V1__ThreadGroup group = THREAD__V1__THREAD_GROUP__INIT;
-    group.id = "conversation-rao";
-    group.label = THREAD_CLIENT_GROUP_LABEL;
+    group.id = "memory-rao";
+    group.label = "Memory";
     group.owner_id = "rao";
     Thread__V1__ThreadGroup *groups[] = { &group };
     Thread__V1__ThreadLibraryResponse resp = THREAD__V1__THREAD_LIBRARY_RESPONSE__INIT;
@@ -49,7 +49,7 @@ static void on_documents(const uint8_t *request, size_t len, conduit_reply *repl
     char *texts[] = { "What is the capital of France?", "Paris." };
     Thread__V1__ThreadDocumentContent doc = THREAD__V1__THREAD_DOCUMENT_CONTENT__INIT;
     doc.id = req && req->n_document_ids ? req->document_ids[0] : "";
-    doc.group_id = "conversation-rao";
+    doc.group_id = "memory-rao";
     doc.n_texts = 2;
     doc.texts = texts;
     Thread__V1__ThreadDocumentContent *docs[] = { &doc };
@@ -104,12 +104,6 @@ static void stop(struct fake *f, pthread_t thread) {
     rmdir(dir);
 }
 
-static const thread_turn TURN = {
-    .owner_id = "rao", .user_text = "What is the capital of France?", .reply = "Paris.",
-    .source = "voice", .model = "mistral-medium-latest", .started_ms = 1757700000000LL,
-    .ended_ms = 1757700004200LL, .cancelled = false,
-};
-
 MARY_TEST(a_turns_document_id_carries_its_start) {
     char id[64];
     thread_turn_document_id(1757700000000LL, id, sizeof id);
@@ -118,72 +112,20 @@ MARY_TEST(a_turns_document_id_carries_its_start) {
     MARY_ASSERT_EQ(strspn(id + 24, "0123456789abcdef"), 4);
 }
 
-MARY_TEST(a_turn_becomes_one_document_in_marys_conversations) {
-    size_t len = 0;
-    char id[64];
-    uint8_t *packed = thread_turn_index_request(&TURN, &len, id, sizeof id);
-    MARY_ASSERT(packed != NULL);
-    Thread__V1__ThreadIndexRequest *req = thread__v1__thread_index_request__unpack(NULL, len, packed);
-    free(packed);
-    MARY_ASSERT(req != NULL);
-    if (!req) return;
-    MARY_ASSERT_STR(req->group_id, "conversation-rao");
-    MARY_ASSERT_STR(req->group_label, THREAD_CLIENT_GROUP_LABEL);
-    MARY_ASSERT_STR(req->scope, "personal");
-    MARY_ASSERT_STR(req->owner_id, "rao");
-    MARY_ASSERT_EQ(req->n_items, 1);
-    Thread__V1__ThreadIndexItem *item = req->items[0];
-    MARY_ASSERT_STR(item->document_id, id);
-    MARY_ASSERT_STR(item->name, "What is the capital of France?");
-    MARY_ASSERT_EQ(item->n_texts, 2);
-    MARY_ASSERT_STR(item->texts[1], "Paris.");
-    struct json_object *meta = mc_json_parse((const char *)item->metadata.data, item->metadata.len);
-    int64_t ended = 0;
-    bool cancelled = true;
-    MARY_ASSERT_STR(mc_json_string(meta, "source"), "voice");
-    MARY_ASSERT_STR(mc_json_string(meta, "family"), "conversation");
-    MARY_ASSERT_STR(mc_json_string(meta, "model"), "mistral-medium-latest");
-    MARY_ASSERT(mc_json_int64(meta, "ended_ms", &ended) && ended == 1757700004200LL);
-    MARY_ASSERT(mc_json_bool(meta, "cancelled", &cancelled) && !cancelled);
-    json_object_put(meta);
-    thread__v1__thread_index_request__free_unpacked(req, NULL);
-
-    thread_turn empty = TURN;
-    empty.user_text = "";
-    MARY_ASSERT(thread_turn_index_request(&empty, &len, NULL, 0) == NULL);
-}
-
-MARY_TEST(a_long_question_is_named_by_its_start_on_a_character_boundary) {
-    thread_turn t = TURN;
-    /* 59 ASCII bytes, then "é" straddling the 60-byte cut. */
-    t.user_text = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\xC3\xA9 and more";
-    size_t len = 0;
-    uint8_t *packed = thread_turn_index_request(&t, &len, NULL, 0);
-    Thread__V1__ThreadIndexRequest *req = thread__v1__thread_index_request__unpack(NULL, len, packed);
-    free(packed);
-    MARY_ASSERT(req && strlen(req->items[0]->name) == 59);
-    if (req) thread__v1__thread_index_request__free_unpacked(req, NULL);
-}
-
-MARY_TEST(deposit_library_and_documents_reach_threadd) {
+MARY_TEST(library_and_documents_reach_threadd) {
     struct fake f;
     pthread_t thread;
-    start(&f, &thread, 3, 3);
-    char id[64];
-    int status = -1;
-    MARY_ASSERT_EQ(thread_client_deposit_turn(sock, &TURN, 2000, id, sizeof id, &status), 0);
-    MARY_ASSERT_EQ(status, CONDUIT_OK);
-    MARY_ASSERT(indexed && indexed->n_items == 1);
-    if (indexed) MARY_ASSERT_STR(indexed->items[0]->document_id, id);
-
+    start(&f, &thread, 2, 3);
     Thread__V1__ThreadLibraryResponse *lib = NULL;
     MARY_ASSERT_EQ(thread_client_library(sock, 0, NULL, 2000, &lib, NULL), 0);
     MARY_ASSERT(lib && lib->n_groups == 1);
     if (lib) {
-        MARY_ASSERT_STR(lib->groups[0]->id, "conversation-rao");
+        MARY_ASSERT_STR(lib->groups[0]->id, "memory-rao");
         thread__v1__thread_library_response__free_unpacked(lib, NULL);
     }
 
+    char id[64];
+    thread_turn_document_id(1757700000000LL, id, sizeof id);
     const char *ids[] = { id };
     Thread__V1__ThreadDocumentsResponse *docs = NULL;
     MARY_ASSERT_EQ(thread_client_documents(sock, ids, 1, 2000, &docs, NULL), 0);
@@ -207,16 +149,16 @@ MARY_TEST(a_refusal_or_a_missing_threadd_is_an_error) {
     MARY_ASSERT(lib == NULL);
     stop(&f, thread);
 
-    int rc = thread_client_deposit_turn("/tmp/no-such-dir/thread.sock", &TURN, 500, NULL, 0, NULL);
+    Thread__V1__ThreadLibraryResponse *none = NULL;
+    int rc = thread_client_library("/tmp/no-such-dir/thread.sock", 0, NULL, 500, &none, NULL);
     MARY_ASSERT(rc == -ENOENT || rc == -ECONNREFUSED);
+    MARY_ASSERT(none == NULL);
 }
 
 int main(void) {
     mc_ignore_sigpipe();
     MARY_RUN(a_turns_document_id_carries_its_start);
-    MARY_RUN(a_turn_becomes_one_document_in_marys_conversations);
-    MARY_RUN(a_long_question_is_named_by_its_start_on_a_character_boundary);
-    MARY_RUN(deposit_library_and_documents_reach_threadd);
+    MARY_RUN(library_and_documents_reach_threadd);
     MARY_RUN(a_refusal_or_a_missing_threadd_is_an_error);
     if (indexed) thread__v1__thread_index_request__free_unpacked(indexed, NULL);
     MARY_TEST_MAIN_END();

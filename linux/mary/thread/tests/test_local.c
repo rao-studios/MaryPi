@@ -66,7 +66,7 @@ MARY_TEST(the_local_socket_deposits_searches_and_refuses_the_unknown) {
 
     MARY_ASSERT(thread_store_enrich_drain(s) >= 1);
     exchange("{\"type\":\"search\",\"query\":\"capital of France\",\"lanes\":[\"personal\"]}\n"
-             "{\"type\":\"search\",\"query\":\"capital of France\",\"lanes\":[\"conversation\"]}\n"
+             "{\"type\":\"search\",\"query\":\"capital of France\",\"lanes\":[\"behavioral\"]}\n"
              "{\"type\":\"search\",\"query\":\"capital\",\"lanes\":[\"elsewhere\"]}\n");
     MARY_ASSERT_EQ(n_replies, 3);
     MARY_ASSERT_STR(mc_json_type(replies[0]), "search.result");
@@ -78,7 +78,7 @@ MARY_TEST(the_local_socket_deposits_searches_and_refuses_the_unknown) {
     exchange("{\"type\":\"library\"}\n{\"type\":\"schemas\"}\n{\"type\":\"ledger\",\"kind\":\"search\"}\n{\"type\":\"graph\",\"documents\":true}\n");
     MARY_ASSERT_EQ(n_replies, 4);
     MARY_ASSERT_EQ(json_object_array_length(mc_json_array(replies[0], "groups")), 1);
-    MARY_ASSERT(json_object_array_length(mc_json_array(replies[1], "families")) >= 10);
+    MARY_ASSERT(json_object_array_length(mc_json_array(replies[1], "families")) == 6);
     MARY_ASSERT_EQ(json_object_array_length(mc_json_array(replies[2], "rows")), 2);      /* the two searches that ran */
     MARY_ASSERT(json_object_array_length(mc_json_array(replies[3], "entities")) > 0);
     close_store(s);

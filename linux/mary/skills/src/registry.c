@@ -292,11 +292,6 @@ void sk_ability_group(const char *owner, const char *ability_id, const char *par
     snprintf(out, cap, "mary-ability-%s", hex);
 }
 
-void sk_ability_document_id(const char *owner, const char *ability_id, const char *paradigm, const char *skill_id, char *out, size_t cap) {
-    char hex[17];
-    keyed(owner, ability_id, paradigm, skill_id, hex);
-    snprintf(out, cap, "mary-ability-schema-%s", hex);
-}
 
 static struct json_object *str(const char *s) { return json_object_new_string(s ? s : ""); }
 
@@ -315,15 +310,6 @@ static struct json_object *relationship(const char *subject, const char *predica
     return r;
 }
 
-static void append_list(char *text, size_t cap, const char *label, char *const *items, size_t n) {
-    if (!n) return;
-    strncat(text, label, cap - strlen(text) - 1);
-    for (size_t i = 0; i < n; i++) {
-        if (i) strncat(text, ", ", cap - strlen(text) - 1);
-        strncat(text, items[i], cap - strlen(text) - 1);
-    }
-    strncat(text, "\n", cap - strlen(text) - 1);
-}
 
 static struct json_object *deposit(const char *owner, const char *document_id, const char *group, const char *label, const char *family, const char *name, const char *text) {
     struct json_object *d = json_object_new_object();
@@ -341,133 +327,75 @@ static struct json_object *deposit(const char *owner, const char *document_id, c
     return d;
 }
 
-struct json_object *sk_ability_records(const sk_registry *r, const char *owner) {
+/* One style record per discipline: the craft, the applications that realize it and their skills' words. */
+struct json_object *sk_style_records(const sk_registry *r, const char *owner) {
     struct json_object *items = json_object_new_array();
     char disciplines[16][64];
     int discipline_count = 0;
     for (size_t a = 0; a < r->app_count; a++) {
         const sk_app *app = &r->apps[a];
-        if (!app->skill_count) continue;
-        char group[80], label[160];
-        sk_ability_group(owner, app->id, app->paradigm, group, sizeof group);
-        snprintf(label, sizeof label, "Ability \xE2\x80\x94 %s", app->title);
-        const char *effects[3] = { "read", "act", "destructive" };
-        for (size_t s = 0; s < app->skill_count; s++) {
-            const sk_skill *k = &app->skills[s];
-            char id[96], text[4096], params[1024] = "";
-            sk_ability_document_id(owner, app->id, app->paradigm, k->id, id, sizeof id);
-            if (k->params) snprintf(params, sizeof params, "%s", json_object_to_json_string_ext(k->params, JSON_C_TO_STRING_PLAIN | JSON_C_TO_STRING_NOSLASHESCAPE));
-            snprintf(text, sizeof text, "Skill: %s\nApplication: %s\nSummary: %s\nInvocation: %s\nEffect: %s\nKind: %s\nAccess: %s\n",
-                     k->title, app->title, k->summary, k->invocation, effects[k->effect], sk_kind_name(k->kind), sk_access_name(k->access));
-            if (params[0]) { strncat(text, "Parameters: ", sizeof text - strlen(text) - 1); strncat(text, params, sizeof text - strlen(text) - 1); strncat(text, "\n", sizeof text - strlen(text) - 1); }
-            append_list(text, sizeof text, "Listens for: ", k->triggers, k->trigger_count);
-            append_list(text, sizeof text, "Phrases: ", k->phrases, k->phrase_count);
-            append_list(text, sizeof text, "Target classes: ", k->target_classes, k->target_class_count);
-            struct json_object *d = deposit(owner, id, group, label, "ability", k->title, text);
-            struct json_object *metadata = json_object_new_object(), *entities = json_object_new_array(), *relationships = json_object_new_array(), *tags = json_object_new_array();
-            json_object_object_add(metadata, "family", str("ability"));
-            json_object_object_add(metadata, "app", str(app->id));
-            json_object_object_add(metadata, "skill", str(k->id));
-            json_object_object_add(metadata, "invocation", str(k->invocation));
-            json_object_object_add(metadata, "effect", str(effects[k->effect]));
-            json_object_object_add(metadata, "kind", str(sk_kind_name(k->kind)));
-            json_object_object_add(metadata, "access", str(sk_access_name(k->access)));
-            json_object_object_add(metadata, "paradigm", str(app->paradigm));
-            if (app->discipline && app->discipline[0]) json_object_object_add(metadata, "discipline", str(app->discipline));
-            json_object_object_add(d, "metadata", metadata);
-            json_object_array_add(entities, entity(app->title, "app"));
-            json_object_array_add(entities, entity(k->title, "skill"));
-            char effect_name[32];
-            snprintf(effect_name, sizeof effect_name, "%s", effects[k->effect]);
-            json_object_array_add(entities, entity(effect_name, "concept"));
-            json_object_array_add(relationships, relationship(app->title, "offers", k->title));
-            json_object_array_add(relationships, relationship(k->title, "effects", effect_name));
-            if (app->discipline && app->discipline[0]) {
-                json_object_array_add(entities, entity(app->discipline, "ability"));
-                json_object_array_add(relationships, relationship(app->title, "practices", app->discipline));
-            }
-            json_object_object_add(d, "entities", entities);
-            json_object_object_add(d, "relationships", relationships);
-            json_object_array_add(tags, str("schema:mary.ability"));
-            char tag[160];
-            snprintf(tag, sizeof tag, "ability:%s", app->id);
-            json_object_array_add(tags, str(tag));
-            snprintf(tag, sizeof tag, "skill:%s", k->id);
-            json_object_array_add(tags, str(tag));
-            json_object_object_add(d, "tags", tags);
-            json_object_array_add(items, d);
-        }
-        /* the manifest: how the app is perceived, and what it offers */
-        char id[96], text[4096], name[160];
-        sk_ability_document_id(owner, app->id, app->paradigm, "manifest", id, sizeof id);
-        snprintf(name, sizeof name, "%s \xE2\x80\x94 schema", app->title);
-        snprintf(text, sizeof text, "Application: %s\nPurpose: %s\nParadigm: %s\n", app->title, app->summary, app->paradigm);
-        if (app->discipline && app->discipline[0]) { strncat(text, "Realizes: ", sizeof text - strlen(text) - 1); strncat(text, app->discipline, sizeof text - strlen(text) - 1); strncat(text, "\n", sizeof text - strlen(text) - 1); }
-        append_list(text, sizeof text, "Aliases: ", app->aliases, app->alias_count);
-        append_list(text, sizeof text, "Publishes: ", app->perception, app->perception_count);
-        strncat(text, "Skills:\n", sizeof text - strlen(text) - 1);
-        for (size_t s = 0; s < app->skill_count; s++) {
-            char line[512];
-            snprintf(line, sizeof line, "- %s: %s\n", app->skills[s].title, app->skills[s].summary);
-            strncat(text, line, sizeof text - strlen(text) - 1);
-        }
-        struct json_object *d = deposit(owner, id, group, label, "ability-schema", name, text);
-        struct json_object *metadata = json_object_new_object(), *entities = json_object_new_array(), *relationships = json_object_new_array();
-        json_object_object_add(metadata, "family", str("ability-schema"));
-        json_object_object_add(metadata, "app", str(app->id));
-        json_object_object_add(metadata, "paradigm", str(app->paradigm));
-        json_object_object_add(d, "metadata", metadata);
-        json_object_array_add(entities, entity(app->title, "app"));
-        for (size_t p = 0; p < app->perception_count; p++) {
-            json_object_array_add(entities, entity(app->perception[p], "surface field"));
-            json_object_array_add(relationships, relationship(app->title, "perceives", app->perception[p]));
-        }
-        json_object_object_add(d, "entities", entities);
-        json_object_object_add(d, "relationships", relationships);
-        json_object_array_add(items, d);
-        if (app->discipline && app->discipline[0] && discipline_count < 16) {
-            bool known = false;
-            for (int i = 0; i < discipline_count && !known; i++) known = strcmp(disciplines[i], app->discipline) == 0;
-            if (!known) snprintf(disciplines[discipline_count++], 64, "%s", app->discipline);
-        }
+        if (!app->skill_count || !app->discipline || !app->discipline[0] || discipline_count >= 16) continue;
+        bool known = false;
+        for (int i = 0; i < discipline_count && !known; i++) known = strcmp(disciplines[i], app->discipline) == 0;
+        if (!known) snprintf(disciplines[discipline_count++], 64, "%s", app->discipline);
     }
-    /* the disciplines: one group each, naming the apps that realize it */
+    char group[80];
+    snprintf(group, sizeof group, "mary-style-%s", owner ? owner : "");
     for (int i = 0; i < discipline_count; i++) {
-        char group[80], id[96], label[160], text[4096];
-        sk_ability_group(owner, disciplines[i], "discipline", group, sizeof group);
-        sk_ability_document_id(owner, disciplines[i], "discipline", disciplines[i], id, sizeof id);
-        char title[64];
+        char id[96], hex[17], title[64], text[4096];
+        keyed(owner, disciplines[i], "style", "profile", hex);
+        snprintf(id, sizeof id, "mary-style-profile-%s", hex);
         snprintf(title, sizeof title, "%s", disciplines[i]);
         if (title[0] >= 'a' && title[0] <= 'z') title[0] = (char)(title[0] - 32);
         for (char *c = title; *c; c++) if (*c == '-') *c = ' ';          /* "window-management" reads "Window management" */
-        snprintf(label, sizeof label, "Ability \xE2\x80\x94 %s", title);
         snprintf(text, sizeof text, "Discipline: %s\nRealized by:\n", title);
-        struct json_object *d = deposit(owner, id, group, label, "ability", title, "");
+        struct json_object *d = deposit(owner, id, group, "Style", "style", title, "");
         struct json_object *entities = json_object_new_array(), *relationships = json_object_new_array(), *metadata = json_object_new_object();
+        struct json_object *apps = json_object_new_array(), *skills = json_object_new_array(), *tags = json_object_new_array();
+        char words[2048] = "", phrases[2048] = "";
         json_object_array_add(entities, entity(disciplines[i], "ability"));
         for (size_t a = 0; a < r->app_count; a++) {
             const sk_app *app = &r->apps[a];
-            if (!app->discipline || strcmp(app->discipline, disciplines[i]) != 0) continue;
+            if (!app->skill_count || !app->discipline || strcmp(app->discipline, disciplines[i]) != 0) continue;
             char line[512];
             snprintf(line, sizeof line, "- %s", app->title);
             strncat(text, line, sizeof text - strlen(text) - 1);
-            for (size_t s = 0; s < app->skill_count; s++) {
-                snprintf(line, sizeof line, "%s %s", s ? "," : ":", app->skills[s].title);
+            for (size_t k = 0; k < app->skill_count; k++) {
+                const sk_skill *sk = &app->skills[k];
+                snprintf(line, sizeof line, "%s %s", k ? "," : ":", sk->title);
                 strncat(text, line, sizeof text - strlen(text) - 1);
+                json_object_array_add(skills, str(sk->title));
+                for (size_t t = 0; t < sk->trigger_count; t++) {
+                    if (words[0]) strncat(words, ", ", sizeof words - strlen(words) - 1);
+                    strncat(words, sk->triggers[t], sizeof words - strlen(words) - 1);
+                }
+                for (size_t t = 0; t < sk->phrase_count; t++) {
+                    if (phrases[0]) strncat(phrases, "; ", sizeof phrases - strlen(phrases) - 1);
+                    strncat(phrases, sk->phrases[t], sizeof phrases - strlen(phrases) - 1);
+                }
             }
             strncat(text, "\n", sizeof text - strlen(text) - 1);
+            json_object_array_add(apps, str(app->id));
             json_object_array_add(entities, entity(app->title, "app"));
             json_object_array_add(relationships, relationship(app->title, "practices", disciplines[i]));
         }
+        if (words[0]) { strncat(text, "Listens for: ", sizeof text - strlen(text) - 1); strncat(text, words, sizeof text - strlen(text) - 1); strncat(text, "\n", sizeof text - strlen(text) - 1); }
+        if (phrases[0]) { strncat(text, "Phrases: ", sizeof text - strlen(text) - 1); strncat(text, phrases, sizeof text - strlen(text) - 1); strncat(text, "\n", sizeof text - strlen(text) - 1); }
         struct json_object *texts = json_object_new_array();
         json_object_array_add(texts, str(text));
         json_object_object_add(d, "texts", texts);
-        json_object_object_add(metadata, "family", str("ability"));
+        json_object_object_add(metadata, "family", str("style"));
         json_object_object_add(metadata, "discipline", str(disciplines[i]));
-        json_object_object_add(metadata, "paradigm", str("discipline"));
+        json_object_object_add(metadata, "apps", apps);
+        json_object_object_add(metadata, "skills", skills);
         json_object_object_add(d, "metadata", metadata);
         json_object_object_add(d, "entities", entities);
         json_object_object_add(d, "relationships", relationships);
+        json_object_array_add(tags, str("schema:mary.style"));
+        char tag[96];
+        snprintf(tag, sizeof tag, "discipline:%s", disciplines[i]);
+        json_object_array_add(tags, str(tag));
+        json_object_object_add(d, "tags", tags);
         json_object_array_add(items, d);
     }
     return items;

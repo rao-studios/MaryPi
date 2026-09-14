@@ -12,22 +12,27 @@ MARY_TEST(every_family_has_a_lane_a_writer_and_fields) {
         MARY_ASSERT(fields && json_object_is_type(fields, json_type_array));
         json_object_put(fields);
     }
-    MARY_ASSERT(thread_family_named("conversation") != NULL);
+    MARY_ASSERT(thread_family_named("style") != NULL);
     MARY_ASSERT(thread_family_named("nope") == NULL);
+    /* the retired families are gone from the table: a record naming one is the drift alarm */
+    MARY_ASSERT(thread_family_named("conversation") == NULL && thread_family_named("interaction") == NULL);
+    MARY_ASSERT(thread_family_named("ability") == NULL && thread_family_named("ability-schema") == NULL && thread_family_named("application") == NULL);
     MARY_ASSERT_STR(thread_family_lane("file"), "personal");
+    MARY_ASSERT_STR(thread_family_lane("style"), "personal");
     MARY_ASSERT_STR(thread_family_lane("behavior"), "behavioral");
-    MARY_ASSERT_STR(thread_family_lane("ability"), "application");
+    MARY_ASSERT_STR(thread_family_lane("routing"), "behavioral");
     MARY_ASSERT_STR(thread_family_lane("nope"), "");
-    MARY_ASSERT(thread_lane_valid("conversation") && !thread_lane_valid("everything"));
+    MARY_ASSERT(thread_lane_valid("personal") && thread_lane_valid("behavioral"));
+    MARY_ASSERT(!thread_lane_valid("conversation") && !thread_lane_valid("application") && !thread_lane_valid("everything"));
 }
 
 MARY_TEST(classification_prefers_metadata_then_the_longest_prefix) {
-    MARY_ASSERT_STR(thread_family_of("mary-behavior-interaction-abc", "mary-behavior-interaction-rao", NULL, 0), "interaction");
     MARY_ASSERT_STR(thread_family_of("mary-behavior-abc", "mary-ability-1234", NULL, 0), "behavior");
-    MARY_ASSERT_STR(thread_family_of("mary-ability-schema-manifest-1", "mary-ability-1", NULL, 0), "ability-schema");
-    MARY_ASSERT_STR(thread_family_of("mary-ability-schema-1", "mary-ability-1", NULL, 0), "ability");
-    MARY_ASSERT_STR(thread_family_of("mary-turn-1757700000000-ab12", "conversation-rao", NULL, 0), "conversation");
-    MARY_ASSERT_STR(thread_family_of("mary-turn-1", "mary-conversations", NULL, 0), "conversation");
+    MARY_ASSERT_STR(thread_family_of("mary-behavior-interaction-abc", "mary-behavior-interaction-rao", NULL, 0), "behavior");   /* the longest prefix left */
+    MARY_ASSERT_STR(thread_family_of("mary-style-profile-1a2b", "mary-style-rao", NULL, 0), "style");
+    MARY_ASSERT_STR(thread_family_of("mary-ability-schema-1", "mary-ability-1", NULL, 0), "behavior");        /* an old ability id in a behaviour group: the group says behaviour; the cleaner goes by the family column */
+    MARY_ASSERT_STR(thread_family_of("mary-turn-1757700000000-ab12", "conversation-rao", NULL, 0), "unknown");
+    MARY_ASSERT_STR(thread_family_of("mary-turn-1", "mary-conversations", NULL, 0), "unknown");
     MARY_ASSERT_STR(thread_family_of("227176196", "memory-rao", NULL, 0), "memory");
     MARY_ASSERT_STR(thread_family_of("file-af63dc4c8601ec8c", "files-rao", NULL, 0), "file");
     MARY_ASSERT_STR(thread_family_of("something", "somewhere", NULL, 0), "unknown");
@@ -35,6 +40,8 @@ MARY_TEST(classification_prefers_metadata_then_the_longest_prefix) {
     MARY_ASSERT_STR(thread_family_of("something", "somewhere", meta, strlen(meta)), "routing");
     const char *bad = "{\"family\":\"nope\"}";
     MARY_ASSERT_STR(thread_family_of("file-x", "", bad, strlen(bad)), "file");
+    const char *retired = "{\"family\":\"conversation\"}";
+    MARY_ASSERT_STR(thread_family_of("mary-turn-2", "", retired, strlen(retired)), "unknown");
 }
 
 MARY_TEST(the_schemas_render_as_json) {

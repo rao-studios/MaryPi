@@ -2,8 +2,8 @@
 
 MARY_TEST(search_finds_the_closest_chunks_within_the_lanes_and_groups_asked) {
     thread_store *s = open_store(true);
-    MARY_ASSERT_EQ(deposit_text(s, "mary", "conversation-mary", "mary-turn-1", "What is the capital of France? Paris is the capital of France.", "France", "place"), 0);
-    MARY_ASSERT_EQ(deposit_text(s, "mary", "conversation-mary", "mary-turn-2", "Remind me to water the plants on Tuesday.", "plants", "concept"), 0);
+    MARY_ASSERT_EQ(deposit_text(s, "mary", "memory-mary", "mary-turn-1", "What is the capital of France? Paris is the capital of France.", "France", "place"), 0);
+    MARY_ASSERT_EQ(deposit_text(s, "mary", "memory-mary", "mary-turn-2", "Remind me to water the plants on Tuesday.", "plants", "concept"), 0);
     MARY_ASSERT_EQ(deposit_text(s, "mary", "files-mary", "file-1", "France travel notes: Paris, the Louvre, the Seine.", "France", "place"), 0);
     MARY_ASSERT_EQ(deposit_text(s, "guest", "files-guest", "file-g", "Paris in the spring, a guest's notes on France.", "France", "place"), 0);
     MARY_ASSERT(thread_store_enrich_drain(s) >= 3);
@@ -13,7 +13,7 @@ MARY_TEST(search_finds_the_closest_chunks_within_the_lanes_and_groups_asked) {
     struct json_object *results = mc_json_array(r, "results");
     MARY_ASSERT(json_object_array_length(results) >= 2);
     MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(results, 0), "document_id"), "mary-turn-1");
-    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(results, 0), "lane"), "conversation");
+    MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(results, 0), "lane"), "personal");
     for (size_t i = 0; i < json_object_array_length(results); i++)
         MARY_ASSERT(strcmp(mc_json_string(json_object_array_get_idx(results, i), "document_id"), "file-g") != 0);   /* never another owner's */
     /* the graph matched "france" and narrowed; the trace says so */
@@ -27,16 +27,22 @@ MARY_TEST(search_finds_the_closest_chunks_within_the_lanes_and_groups_asked) {
     MARY_ASSERT_EQ(thread_db_int(thread_store_db(s), "SELECT COUNT(*) FROM ledger WHERE kind = 'search' AND request_id = 'req-1'", NULL, NULL), 1);
     MARY_ASSERT(thread_db_int(thread_store_db(s), "SELECT COUNT(*) FROM ledger_documents WHERE rank = 0 AND document_id = 'mary-turn-1'", NULL, NULL) == 1);
     MARY_ASSERT_EQ(thread_db_int(thread_store_db(s), "SELECT retrieval_count FROM document_stats WHERE document_id = 'mary-turn-1'", NULL, NULL), 1);
-    /* a lane constrains, the expansion included */
-    const char *lanes[] = { "personal" };
+    /* a lane constrains, the expansion included: nothing here is behavioral */
+    const char *lanes[] = { "behavioral" };
     thread_search_request lane_q = { .query_text = "capital of France", .lanes = lanes, .n_lanes = 1, .top_k = 10 };
+    MARY_ASSERT_EQ(thread_store_search(s, "mary", &lane_q, &r), 0);
+    results = mc_json_array(r, "results");
+    MARY_ASSERT_EQ(json_object_array_length(results), 0);
+    json_object_put(r);
+    const char *personal[] = { "personal" };
+    lane_q.lanes = personal;
     MARY_ASSERT_EQ(thread_store_search(s, "mary", &lane_q, &r), 0);
     results = mc_json_array(r, "results");
     MARY_ASSERT(json_object_array_length(results) >= 1);
     for (size_t i = 0; i < json_object_array_length(results); i++) MARY_ASSERT_STR(mc_json_string(json_object_array_get_idx(results, i), "lane"), "personal");
     json_object_put(r);
     /* a group constrains */
-    const char *groups[] = { "conversation-mary" };
+    const char *groups[] = { "memory-mary" };
     thread_search_request group_q = { .query_text = "water the plants", .group_ids = groups, .n_groups = 1, .top_k = 1 };
     MARY_ASSERT_EQ(thread_store_search(s, "mary", &group_q, &r), 0);
     results = mc_json_array(r, "results");

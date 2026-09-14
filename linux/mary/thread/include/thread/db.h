@@ -13,13 +13,16 @@
 #include <sqlite3.h>
 
 #define THREAD_DB_FILE "thread.db"
-#define THREAD_DB_USER_VERSION 1
+#define THREAD_DB_USER_VERSION 2   /* 2: the conversation, interaction, ability, ability-schema and application families retired */
 #define THREAD_EMBEDDING_DIM 1024
 #define THREAD_EMBEDDING_MODEL "mistral-embed"
 
 /* Opens (creating and migrating) the database at `path`. 0, or -errno / -EIO with
  * sqlite's message logged. */
 int thread_db_open(const char *path, sqlite3 **out);
+/* The same, reporting the user_version the file had before this open brought it up to date
+ * (0 for a new file), so the store can run what an older file still needs. */
+int thread_db_open_versioned(const char *path, sqlite3 **out, int *found_version);
 void thread_db_close(sqlite3 *db);
 
 /* Runs one or more statements. 0, or -EIO (logged). */
