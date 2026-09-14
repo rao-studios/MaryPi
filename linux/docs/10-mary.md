@@ -188,7 +188,10 @@ System Settings › Mary › Skills has a group per app: whether Mary may use it
 before changes, always) and a switch per skill, saved in `~/.config/maryui/skills.conf`. The desktop decides
 every call against that policy before anything runs, whether it came from maryctl, the skills lane or a
 dispatch. A call that asks first is parked on a card in Spotlight (Return allows, Esc declines); the allowed
-call reaches the desktop marked `confirmed`, and only that mark opens the gate.
+call reaches the desktop marked `confirmed`, and only that mark opens the gate. **Allow without asking**, at the
+top of the pane, turns the cards off: every enabled skill runs as soon as Mary calls it, including one that
+cannot be undone (`allow_all=on`). The skills message carries it, so maryd's lane stops parking calls as well;
+a switched-off app or skill stays off.
 
 The **Abilities** app is the Mac's AbilityStudio over what the code declares: a rail of packages (every app
 with skills, then the disciplines they realize — writing, multimedia, awareness, system control, window

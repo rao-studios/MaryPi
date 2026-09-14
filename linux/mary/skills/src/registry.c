@@ -98,6 +98,8 @@ static bool parse_access(const char *s, sk_effect effect, sk_access *out) {
 int sk_registry_load(sk_registry *r, struct json_object *message) {
     struct json_object *list = mc_json_array(message, "apps");
     if (!list) return -EINVAL;
+    bool allow_all = false;
+    mc_json_bool(message, "allow_all", &allow_all);
     size_t n = json_object_array_length(list);
     sk_app *apps = n ? calloc(n, sizeof *apps) : NULL;
     if (n && !apps) return -ENOMEM;
@@ -158,6 +160,7 @@ int sk_registry_load(sk_registry *r, struct json_object *message) {
     free_apps(r->apps, r->app_count);
     r->apps = apps;
     r->app_count = n;
+    r->allow_all = allow_all;
     return 0;
 }
 
@@ -184,6 +187,7 @@ sk_decision sk_registry_decide(const sk_registry *r, const char *app_id, const c
     const sk_skill *skill = sk_registry_skill(r, app_id, skill_id);
     if (!app || !skill) return SK_UNKNOWN;
     if (!app->enabled || !skill->enabled) return SK_DENIED;
+    if (r->allow_all) return SK_ALLOWED;           /* the person turned the cards off: nothing is parked */
     if (skill->effect == SK_EFFECT_DESTRUCTIVE || app->ask == SK_ASK_ALWAYS ||
         (app->ask == SK_ASK_CHANGES && skill->effect == SK_EFFECT_ACT))
         return SK_NEEDS_CONFIRMATION;

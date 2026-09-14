@@ -1,5 +1,7 @@
 #include <errno.h>
 #include <ctype.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "common/json.h"
 #include "mary_test.h"
@@ -63,6 +65,30 @@ MARY_TEST(decisions_follow_the_desktops_rule) {
     MARY_ASSERT_STR(sk_effect_name(SK_EFFECT_DESTRUCTIVE), "destructive");
     MARY_ASSERT_STR(sk_ask_name(SK_ASK_ALWAYS), "always");
     sk_registry_free(&r);
+}
+
+MARY_TEST(allow_all_parks_nothing_but_keeps_every_switch) {
+    char text[4096];
+    snprintf(text, sizeof text, "{\"type\":\"skills\",\"allow_all\":true,%s", MESSAGE + strlen("{\"type\":\"skills\","));
+    sk_registry r;
+    load(&r, MESSAGE);
+    MARY_ASSERT(!r.allow_all);
+    sk_registry_free(&r);
+    load(&r, text);
+    MARY_ASSERT(r.allow_all);
+    static const struct { const char *app, *skill; sk_decision expected; } rows[] = {
+        { "calendar", "new_event", SK_ALLOWED },                 /* would have asked before changes */
+        { "calendar", "delete_event", SK_ALLOWED },              /* would always have asked */
+        { "media", "play_pause", SK_DENIED },                    /* the app is still off */
+        { "calendar", "events.week", SK_DENIED },                /* the skill is still off */
+        { "calendar", "nope", SK_UNKNOWN },
+    };
+    for (size_t i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+        sk_decision got = sk_registry_decide(&r, rows[i].app, rows[i].skill);
+        if (got != rows[i].expected) MARY_FAIL("%s.%s: %s", rows[i].app, rows[i].skill, sk_decision_name(got));
+    }
+    sk_registry_free(&r);
+    MARY_ASSERT(!r.allow_all);
 }
 
 MARY_TEST(only_allowed_skills_become_mistral_tools) {
@@ -152,6 +178,7 @@ MARY_TEST(the_richer_schema_defaults_from_the_effect_and_a_style_record_goes_to_
 int main(void) {
     MARY_RUN(the_desktops_message_becomes_the_registry);
     MARY_RUN(decisions_follow_the_desktops_rule);
+    MARY_RUN(allow_all_parks_nothing_but_keeps_every_switch);
     MARY_RUN(only_allowed_skills_become_mistral_tools);
     MARY_RUN(the_richer_schema_defaults_from_the_effect_and_a_style_record_goes_to_the_thread);
     MARY_TEST_MAIN_END();

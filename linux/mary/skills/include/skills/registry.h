@@ -80,6 +80,7 @@ typedef struct sk_app {
 typedef struct sk_registry {
     sk_app *apps;
     size_t app_count;
+    bool allow_all;                 /* Settings › Mary › Skills › Allow without asking: every enabled skill is allowed */
 } sk_registry;
 
 void sk_registry_init(sk_registry *r);
@@ -97,7 +98,7 @@ typedef enum sk_decision {
     SK_NEEDS_CONFIRMATION,      /* destructive, or the app asks first */
 } sk_decision;
 
-/* The desktop's rule: unknown, then denied, then needs confirmation, else allowed. */
+/* The desktop's rule: unknown, then denied, then (unless allow_all) needs confirmation, else allowed. */
 sk_decision sk_registry_decide(const sk_registry *r, const char *app_id, const char *skill_id);
 
 /* The wire names: "allowed", "unknown", "denied", "needs_confirmation". */
