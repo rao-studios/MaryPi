@@ -168,9 +168,10 @@ seconds while frames run.
 `Ctrl+Space` (or `Super+Space`) opens Spotlight: a platinum panel centred on the
 desktop, its pill-shaped search bar reading “Say “Hey Mary” or type something…”.
 The bar is also the dock. With nothing typed, a row of tiles below it shows the
-pinned applications — each `lp_app` with `dock` set: Finder and TextEdit today,
-plus Terminal — with a dot under the ones that have a window open. Every other
-app (Gallery, About, and the system apps as they arrive) is one keystroke away:
+seven pinned applications — each `lp_app` with `dock` set: Finder, TextEdit, Preview,
+Terminal, Calendar, System Settings and Threads (System Settings › Dock changes the
+set) — with a dot under the ones that have a window open. Every other app (Gallery,
+About, the Media Player, Calculator and the utilities) is one keystroke away:
 typing ranks all of them — titles that start with the text first, then words that
 start with it, then anything containing it; open windows are listed too
 (“Window · Finder”), eight results at most. `↑`/`↓` move the selection (and `←`/`→`
@@ -179,6 +180,14 @@ spawns `foot` until the native Terminal app is registered and then opens that �
 `Esc` or a click outside closes.
 While it is up, the window shortcuts stand down and clients receive no keys.
 
+The command row under the dock ends in an **All Applications** pill. It opens the
+**Launchpad**: the wallpaper softens behind a platinum scrim and every application sits
+on a grid of its marks with its name, a round search field above them — typing ranks
+them the way Spotlight does, `←`/`→`/`↑`/`↓` walk the grid, `Enter` launches, `Esc`,
+a click on the scrim or `Ctrl+Space` (which hands back to Spotlight) closes it. More
+apps than fit go on further pages, reached by the dots at the bottom. It is Linux-only
+chrome (`src/compositor/launchpad.c` hosts `src/ui/lp_launchpad.c`), PARITY D32.
+
 It lives in its own scene layer above the menus (`z.spotlight`), appears with the
 menu's fade-and-scale over 120 ms (none under Reduce Motion), and is hit only
 inside the panel: its shadow falls through to whatever lies beneath. The model
@@ -186,7 +195,7 @@ inside the panel: its shadow falls through to whatever lies beneath. The model
 `spotlight.ts`; the panel is a component (`Spotlight.c`) that other distros can
 paint anywhere; `src/compositor/spotlight.c` is the host.
 
-**Mary.** The bar also carries an Ask Mary orb at its right end. Pressing it, or `Ctrl+Enter` with something
+**Mary.** The bar also carries an Ask Mary orb at its right end. Pressing it, or `Shift+Enter` with something
 typed, asks Mary, and the panel turns into the conversation: a status row saying what she is doing (listening,
 hearing you, reading it back, thinking, speaking) beside the microphone's meter, over a well where each question
 is a small line behind an accent rule and her answer streams in under it as she speaks it, older exchanges
