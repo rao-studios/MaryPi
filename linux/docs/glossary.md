@@ -32,7 +32,7 @@
 - **rootfs**: the root filesystem tree of the system being built.
 - **serial0**: the Raspberry Pi alias for the primary UART; the 3-pin debug header on the Pi 5.
 - **server-side decorations (SSD)**: window frames drawn by the compositor rather than the client; every client window gets a Liquid Platinum frame.
-- **Spotlight**: the desktop's search bar and dock (`Ctrl+Space`): a blank query shows the apps as tiles, typing filters apps, commands and windows.
+- **Spotlight**: the desktop's search bar and dock (`Shift+Space`): a blank query shows the apps as tiles, typing filters apps, commands and windows.
 - **sparse file**: a file whose unwritten regions take no disk space; disk images here are sparse.
 - **target**: what an image is built for, `pi5` or `vm`.
 - **TextArea / TextEdit**: MaryUI's multi-line editing component, and the first application built on it — a plain-text editor reached from Spotlight that writes `~/Documents/<name>.txt`.

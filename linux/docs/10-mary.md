@@ -81,7 +81,7 @@ voice instructions, the last twelve messages), sewnd streams Mistral's answer ba
 shows it as it arrives — and cuts it into sentences for Voxtral's speech in the voice chosen in Settings, which maryd plays. When she has
 finished, a six-second follow-up window listens again; Esc stops her at any point.
 
-**Typed.** Ctrl+Space opens Spotlight; type, then Shift+Enter or the Ask Mary orb at the bar's right end. The
+**Typed.** Shift+Space opens Spotlight; type, then Shift+Enter or the Ask Mary orb at the bar's right end. The
 same turn runs and the answer is spoken too. Pressing the orb with the bar empty opens the microphone without
 the wake word. Plain Enter still launches what the search found. [Chapter 9](09-the-desktop.md) describes the
 conversation's look.

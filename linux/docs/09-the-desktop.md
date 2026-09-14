@@ -165,7 +165,7 @@ seconds while frames run.
 
 ## Spotlight
 
-`Ctrl+Space` (or `Super+Space`) opens Spotlight: a platinum panel centred on the
+`Shift+Space` (or `Super+Space`) opens Spotlight: a platinum panel centred on the
 desktop, its pill-shaped search bar reading “Say “Hey Mary” or type something…”.
 The bar is also the dock. With nothing typed, a row of tiles below it shows the
 seven pinned applications — each `lp_app` with `dock` set: Finder, TextEdit, Preview,
@@ -184,7 +184,7 @@ The command row under the dock ends in an **All Applications** pill. It opens th
 **Launchpad**: the wallpaper softens behind a platinum scrim and every application sits
 on a grid of its marks with its name, a round search field above them — typing ranks
 them the way Spotlight does, `←`/`→`/`↑`/`↓` walk the grid, `Enter` launches, `Esc`,
-a click on the scrim or `Ctrl+Space` (which hands back to Spotlight) closes it. More
+a click on the scrim or `Shift+Space` (which hands back to Spotlight) closes it. More
 apps than fit go on further pages, reached by the dots at the bottom. It is Linux-only
 chrome (`src/compositor/launchpad.c` hosts `src/ui/lp_launchpad.c`), PARITY D32.
 
@@ -424,7 +424,7 @@ Five scene layers: wallpaper, windows, the clock, menus, Spotlight. The wallpape
 a lighter variant of the molten shader that moves on its own like a blurry wavy lava lamp. It is computed on the
 CPU at a quarter of the screen each way, fifteen times a second, and the scene stretches each frame to the output
 with bilinear filtering, which is the blur (`lp_lava.h`, PARITY D33). The timer skips a screen that windows cover
-entirely, and Reduce Motion holds a still frame. The clock sits top right — the weekday, month and day, then the time: "Mon Sep 14 6:21 AM" — with its letters cut from brushed platinum: the desktop's one sheet of metal shows through the glyphs, over a dark keyline and a soft shadow so it reads on any wallpaper, with no plate behind (`lp_clock.h`, shared with `lp-render --clock`). Everything the library
+entirely, and Reduce Motion holds a still frame. The clock sits top right — the weekday, month and day, then the time: "Mon Sep 14 6:21 AM", at half opacity until the pointer comes over it, and a click on it opens the Calendar — with its letters cut from brushed platinum: the desktop's one sheet of metal shows through the glyphs, over a dark keyline and a soft shadow so it reads on any wallpaper, with no plate behind (`lp_clock.h`, shared with `lp-render --clock`). Everything the library
 paints is a *chrome*: a Cairo buffer wrapped as a `wlr_buffer` and shown as a
 `wlr_scene_buffer`; three rotate so the renderer never reads a buffer being
 painted. A chrome's paint function runs an EVENT pass on input (no Cairo; hit
@@ -461,7 +461,7 @@ skips window shadows the way CSS does.
 inside the guest and plays a script: `lp-input 1280x800 move X Y click X Y
 dblclick rclick drag X1 Y1 X2 Y2 keydown alt keyup alt key super+w type "text"
 sleep MS mark TEXT` — for
-example `key ctrl+space type te key Return type "hello" key ctrl+s` opens
+example `key shift+space type te key Return type "hello" key ctrl+s` opens
 TextEdit from Spotlight and saves a document. It needs
 `/dev/uinput`, so `sudo`. `mark` prints a line, which — with the serial console
 logged on the Mac — lets a host-side loop take `screencapture -l <window id>`
