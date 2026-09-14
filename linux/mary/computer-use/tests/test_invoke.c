@@ -42,7 +42,7 @@ MARY_TEST(an_invoke_goes_out_and_its_result_comes_back) {
     struct outcome o = { 0 };
     struct json_object *args = result_line("{\"pane\":\"sound\"}");
     char id[48];
-    MARY_ASSERT_EQ(mcu_invoke(p, "settings", "open_pane", args, 5000, record, &o, id, sizeof id), 0);
+    MARY_ASSERT_EQ(mcu_invoke(p, "settings", "open_pane", args, false, 5000, record, &o, id, sizeof id), 0);
     json_object_put(args);
     MARY_ASSERT_EQ(w.count, 1);
     struct json_object *sent = mc_json_parse(w.sent[0], strlen(w.sent[0]));
@@ -73,9 +73,11 @@ MARY_TEST(results_match_their_calls_in_any_order) {
     mcu_pipes *p = mcu_pipes_new(send_to, &w);
     struct outcome first = { 0 }, second = { 0 };
     char id1[48], id2[48], line[256];
-    mcu_invoke(p, "calendar", "events_today", NULL, 5000, record, &first, id1, sizeof id1);
-    mcu_invoke(p, "media", "play_pause", NULL, 5000, record, &second, id2, sizeof id2);
+    mcu_invoke(p, "calendar", "events_today", NULL, true, 5000, record, &first, id1, sizeof id1);
+    mcu_invoke(p, "media", "play_pause", NULL, false, 5000, record, &second, id2, sizeof id2);
     MARY_ASSERT(strcmp(id1, id2) != 0);
+    MARY_ASSERT(strstr(w.sent[0], "\"confirmed\":true") != NULL);       /* the person's answer rides the call */
+    MARY_ASSERT(strstr(w.sent[1], "confirmed") == NULL);                 /* and only that call */
     snprintf(line, sizeof line, "{\"type\":\"skill.result\",\"call_id\":\"%s\",\"ok\":false,\"error\":\"denied\"}", id2);
     struct json_object *reply = result_line(line);
     mcu_pipes_on_message(p, reply);
@@ -96,8 +98,8 @@ MARY_TEST(timeouts_and_a_lost_connection_end_pending_calls) {
     struct wire w = { 0 };
     mcu_pipes *p = mcu_pipes_new(send_to, &w);
     struct outcome quick = { 0 }, slow = { 0 }, later = { 0 };
-    mcu_invoke(p, "a", "b", NULL, 50, record, &quick, NULL, 0);
-    mcu_invoke(p, "c", "d", NULL, 60000, record, &slow, NULL, 0);
+    mcu_invoke(p, "a", "b", NULL, false, 50, record, &quick, NULL, 0);
+    mcu_invoke(p, "c", "d", NULL, false, 60000, record, &slow, NULL, 0);
     mcu_pipes_tick(p, mc_now_ms() + 100);
     MARY_ASSERT_EQ(quick.calls, 1);
     MARY_ASSERT_STR(quick.error, "timeout");
@@ -105,7 +107,7 @@ MARY_TEST(timeouts_and_a_lost_connection_end_pending_calls) {
     mcu_pipes_disconnect(p);
     MARY_ASSERT_STR(slow.error, "disconnected");
     MARY_ASSERT_EQ(mcu_pipes_pending(p), 0);
-    mcu_invoke(p, "e", "f", NULL, 60000, record, &later, NULL, 0);
+    mcu_invoke(p, "e", "f", NULL, false, 60000, record, &later, NULL, 0);
     mcu_pipes_free(p);
     MARY_ASSERT_STR(later.error, "disconnected");   /* freeing ends what was left */
 }
@@ -114,10 +116,10 @@ MARY_TEST(an_unsendable_call_is_not_left_waiting) {
     struct wire w = { .fail = 1 };
     mcu_pipes *p = mcu_pipes_new(send_to, &w);
     struct outcome o = { 0 };
-    MARY_ASSERT_EQ(mcu_invoke(p, "a", "b", NULL, 1000, record, &o, NULL, 0), -EPIPE);
+    MARY_ASSERT_EQ(mcu_invoke(p, "a", "b", NULL, false, 1000, record, &o, NULL, 0), -EPIPE);
     MARY_ASSERT_EQ(mcu_pipes_pending(p), 0);
     MARY_ASSERT_EQ(o.calls, 0);
-    MARY_ASSERT_EQ(mcu_invoke(p, NULL, "b", NULL, 1000, record, &o, NULL, 0), -EINVAL);
+    MARY_ASSERT_EQ(mcu_invoke(p, NULL, "b", NULL, false, 1000, record, &o, NULL, 0), -EINVAL);
     MARY_ASSERT_EQ(mcu_app_state(p, "calendar", record, &o), -EPIPE);
     MARY_ASSERT_EQ(mcu_pipes_pending(p), 0);
     mcu_pipes_free(p);

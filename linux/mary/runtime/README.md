@@ -25,7 +25,9 @@ reached again next time.
 
 Skills: the desktop publishes `skills{apps}`; `maryctl skill APP SKILL [JSON]` is decided against that
 policy (unknown, denied, needs_confirmation) and otherwise sent to the desktop as `skill.invoke` through
-computer-use's pipes. When the skills arrive maryd builds the skill index triage scores against (sewnd's
+computer-use's pipes. The skills lane parks a call that needs confirmation on the card in Spotlight; when the
+person allows it, the `skill.invoke` carries `confirmed:true` and the desktop's own gate lets it through.
+When the skills arrive maryd builds the skill index triage scores against (sewnd's
 `embed`) and writes one `style` record per discipline into the Thread (over threadd's local socket);
 nothing per skill or app is recorded (PORTING.md 15).
 

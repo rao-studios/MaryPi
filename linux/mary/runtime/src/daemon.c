@@ -472,7 +472,7 @@ static int lane_complete(struct json_object *request, struct json_object **reply
 }
 
 /* The lane thread asks the main loop to run a skill, and waits. */
-static int lane_invoke(const char *app, const char *skill, struct json_object *args, struct json_object **result, char *error, size_t cap, void *user) {
+static int lane_invoke(const char *app, const char *skill, struct json_object *args, bool confirmed, struct json_object **result, char *error, size_t cap, void *user) {
     struct lane_bridge *b = user;
     pthread_mutex_lock(&b->lock);
     b->invoke_done = false;
@@ -484,6 +484,7 @@ static int lane_invoke(const char *app, const char *skill, struct json_object *a
     json_object_object_add(ev, "app", json_object_new_string(app));
     json_object_object_add(ev, "skill", json_object_new_string(skill));
     json_object_object_add(ev, "args", args ? json_object_get(args) : json_object_new_object());
+    json_object_object_add(ev, "confirmed", json_object_new_boolean(confirmed));
     mr_queue_push(&b->d->queue, ev);
     int rc = wait_until(b, &b->invoke_done, b->d->config.skill_timeout_ms + 2000);
     if (rc == 0) {
@@ -1274,7 +1275,7 @@ static void dispatch_now(mr_daemon *d, struct json_object *winner) {
     json_object_object_add(habit, "metadata", meta);
     json_object_array_add(items, habit);
     deposit_items(d, items, "routing");
-    if (mcu_invoke(d->pipes, app, skill, args, d->config.skill_timeout_ms, on_dispatch_done, call, NULL, 0) < 0) {
+    if (mcu_invoke(d->pipes, app, skill, args, false, d->config.skill_timeout_ms, on_dispatch_done, call, NULL, 0) < 0) {
         free(call->args);
         free(call);
         ma_trace_note_skill_result(d->trace, d->turn.request_id, app, skill, "failed", false, "the desktop is not connected", wall_seconds());
@@ -1651,7 +1652,9 @@ static void on_lane_event(mr_daemon *d, const char *type, struct json_object *ev
         struct lane_call *call = malloc(sizeof *call);
         if (!call) return;
         *call = (struct lane_call){ d, (int)gen };
-        if (mcu_invoke(d->pipes, mc_json_string(ev, "app"), mc_json_string(ev, "skill"), mc_json_object(ev, "args"), d->config.skill_timeout_ms, on_lane_invoked, call, NULL, 0) < 0) {
+        bool confirmed = false;     /* the person allowed it on the card: the desktop's gate lets it through */
+        mc_json_bool(ev, "confirmed", &confirmed);
+        if (mcu_invoke(d->pipes, mc_json_string(ev, "app"), mc_json_string(ev, "skill"), mc_json_object(ev, "args"), confirmed, d->config.skill_timeout_ms, on_lane_invoked, call, NULL, 0) < 0) {
             mcu_result r = { .ok = false, .error = "disconnected" };
             on_lane_invoked(&r, call);
         }
@@ -1839,7 +1842,7 @@ static void skill_call(mr_daemon *d, mr_client *c, struct json_object *msg) {
     struct skill_call *call = malloc(sizeof *call);
     if (!call) return;
     *call = (struct skill_call){ d, c->id };
-    if (mcu_invoke(d->pipes, app, skill, mc_json_object(msg, "args"), d->config.skill_timeout_ms, on_skill_done, call, NULL, 0) < 0) {
+    if (mcu_invoke(d->pipes, app, skill, mc_json_object(msg, "args"), false, d->config.skill_timeout_ms, on_skill_done, call, NULL, 0) < 0) {
         free(call);
         send_to(d, c, skill_result(NULL, false, "failed", NULL));
     }

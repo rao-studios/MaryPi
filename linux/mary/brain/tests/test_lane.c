@@ -23,7 +23,7 @@ static const char REGISTRY[] =
 static const char *script[8];
 static int script_len, round_seen, last_messages;
 static char last_system[16384], last_tool_result[600], invoked[8][128];
-static int invoke_count, confirm_calls, confirm_answer;
+static int invoke_count, confirm_calls, confirm_answer, last_confirmed;
 static bool invoke_fails;
 
 static int fake_complete(struct json_object *request, struct json_object **reply, char *message, size_t cap, void *user) {
@@ -42,7 +42,8 @@ static int fake_complete(struct json_object *request, struct json_object **reply
     return 0;
 }
 
-static int fake_invoke(const char *app, const char *skill, struct json_object *args, struct json_object **result, char *error, size_t cap, void *user) {
+static int fake_invoke(const char *app, const char *skill, struct json_object *args, bool confirmed, struct json_object **result, char *error, size_t cap, void *user) {
+    last_confirmed = confirmed;
     if (invoke_count < 8) snprintf(invoked[invoke_count], 128, "%s.%s %s", app, skill, args ? mc_json_compact(args, NULL) : "");
     invoke_count++;
     if (invoke_fails) { snprintf(error, cap, "failed"); return -EIO; }
@@ -57,7 +58,7 @@ static int fake_confirm(const char *call_id, const sk_app *app, const sk_skill *
 
 static const mb_lane_hooks HOOKS = { .complete = fake_complete, .invoke = fake_invoke, .confirm = fake_confirm };
 
-static void reset(void) { round_seen = invoke_count = confirm_calls = 0; invoke_fails = false; confirm_answer = 1; }
+static void reset(void) { round_seen = invoke_count = confirm_calls = last_confirmed = 0; invoke_fails = false; confirm_answer = 1; }
 
 static struct json_object *messages_with(const char *user) {
     struct json_object *a = json_object_new_array(), *m = json_object_new_object();
@@ -132,6 +133,7 @@ MARY_TEST(a_protected_skill_parks_for_the_person_and_a_denied_one_says_so) {
     MARY_ASSERT_EQ(mb_lane_run(&req, &HOOKS, &out), 0);
     MARY_ASSERT_EQ(confirm_calls, 1);
     MARY_ASSERT_EQ(invoke_count, 1);        /* allowed: it ran */
+    MARY_ASSERT_EQ(last_confirmed, 1);      /* marked as the person's answer, so the desktop's gate lets it through */
     MARY_ASSERT(out.outcomes[0].ok);
     MARY_ASSERT_STR(invoked[0], "finder.trash {\"path\":\"/home/mary/old.txt\"}");
     mb_lane_result_free(&out);

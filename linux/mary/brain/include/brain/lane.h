@@ -33,8 +33,9 @@ typedef struct mb_lane_outcome {
 typedef struct mb_lane_hooks {
     /* sewnd's complete: the request object is borrowed; *reply is a new reference ({text, tool_calls[]}). 0, or -errno. */
     int (*complete)(struct json_object *request, struct json_object **reply, char *message, size_t cap, void *user);
-    /* Runs a skill through the desktop; *result is a new reference (may be NULL). 0, or -errno with `error` (the wire's word). */
-    int (*invoke)(const char *app, const char *skill, struct json_object *args, struct json_object **result, char *error, size_t cap, void *user);
+    /* Runs a skill through the desktop; *result is a new reference (may be NULL). 0, or -errno with `error` (the wire's word).
+     * confirmed is true when the person just allowed this call on the card: the desktop's gate lets it through then. */
+    int (*invoke)(const char *app, const char *skill, struct json_object *args, bool confirmed, struct json_object **result, char *error, size_t cap, void *user);
     /* Asks the person (the confirmation card). 1 allowed, 0 refused, -ETIMEDOUT. */
     int (*confirm)(const char *call_id, const sk_app *app, const sk_skill *skill, struct json_object *args, const char *summary, void *user);
     /* A run began, and ended (for the trace and the chips). Optional. */

@@ -203,7 +203,7 @@ int mb_lane_run(const mb_lane_request *req, const mb_lane_hooks *hooks, mb_lane_
                 if (answer == 1) {
                     struct json_object *result = NULL;
                     char error[120] = "";
-                    int irc = hooks->invoke ? hooks->invoke(app->id, skill->id, args, &result, error, sizeof error, hooks->user) : -ENOSYS;
+                    int irc = hooks->invoke ? hooks->invoke(app->id, skill->id, args, true, &result, error, sizeof error, hooks->user) : -ENOSYS;
                     o.ok = irc == 0;        /* delivered; `landed` only when the result says so (a receipt) */
                     if (o.ok) { const char *r = result ? mc_json_compact(result, NULL) : "ok"; set_summary(&o, r); read_result_flags(result, &o); }
                     else set_summary(&o, error[0] ? error : strerror(-irc));
@@ -219,7 +219,7 @@ int mb_lane_run(const mb_lane_request *req, const mb_lane_hooks *hooks, mb_lane_
                 if (hooks->run_started) hooks->run_started(&o, hooks->user);
                 struct json_object *result = NULL;
                 char error[120] = "";
-                int irc = hooks->invoke ? hooks->invoke(app->id, skill->id, args, &result, error, sizeof error, hooks->user) : -ENOSYS;
+                int irc = hooks->invoke ? hooks->invoke(app->id, skill->id, args, false, &result, error, sizeof error, hooks->user) : -ENOSYS;
                 o.ok = irc == 0;
                 if (o.ok) { const char *r = result ? mc_json_compact(result, NULL) : "ok"; set_summary(&o, r); read_result_flags(result, &o); }
                 else set_summary(&o, error[0] ? error : strerror(-irc));

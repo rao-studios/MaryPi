@@ -187,7 +187,8 @@ the apps that realize it and the words they answer to.
 System Settings › Mary › Skills has a group per app: whether Mary may use it, when she asks first (never,
 before changes, always) and a switch per skill, saved in `~/.config/maryui/skills.conf`. The desktop decides
 every call against that policy before anything runs, whether it came from maryctl, the skills lane or a
-dispatch.
+dispatch. A call that asks first is parked on a card in Spotlight (Return allows, Esc declines); the allowed
+call reaches the desktop marked `confirmed`, and only that mark opens the gate.
 
 The **Abilities** app is the Mac's AbilityStudio over what the code declares: a rail of packages (every app
 with skills, then the disciplines they realize — writing, multimedia, awareness, system control, window

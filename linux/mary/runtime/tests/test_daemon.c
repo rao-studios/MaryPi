@@ -813,6 +813,8 @@ MARY_TEST(an_action_turn_runs_the_skills_lane_and_parks_a_protected_skill) {
     MARY_ASSERT(invoke != NULL);
     if (invoke) {
         MARY_ASSERT_STR(mc_json_string(invoke, "app"), "calendar");
+        bool confirmed = false;     /* the person's yes rides the call, so the desktop's own gate lets it through */
+        MARY_ASSERT(mc_json_bool(invoke, "confirmed", &confirmed) && confirmed);
         char line[256];
         snprintf(line, sizeof line, "{\"type\":\"skill.result\",\"call_id\":\"%s\",\"ok\":true,\"result\":{\"events\":2}}", mc_json_string(invoke, "call_id"));
         client_send(&desktop, line);

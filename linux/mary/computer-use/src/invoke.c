@@ -105,7 +105,7 @@ static int send_call(mcu_pipes *p, struct json_object *msg, struct call *call, i
     return 0;
 }
 
-int mcu_invoke(mcu_pipes *p, const char *app, const char *skill, struct json_object *args, int timeout_ms,
+int mcu_invoke(mcu_pipes *p, const char *app, const char *skill, struct json_object *args, bool confirmed, int timeout_ms,
                mcu_result_fn done, void *user, char *call_id, size_t cap) {
     if (!app || !skill) return -EINVAL;
     struct call call = { 0 };
@@ -114,6 +114,7 @@ int mcu_invoke(mcu_pipes *p, const char *app, const char *skill, struct json_obj
     json_object_object_add(msg, "app", json_object_new_string(app));
     json_object_object_add(msg, "skill", json_object_new_string(skill));
     json_object_object_add(msg, "args", args ? json_object_get(args) : json_object_new_object());
+    if (confirmed) json_object_object_add(msg, "confirmed", json_object_new_boolean(1));
     return send_call(p, msg, &call, timeout_ms, done, user, call_id, cap);
 }
 

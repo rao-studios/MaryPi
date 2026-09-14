@@ -38,10 +38,12 @@ mcu_pipes *mcu_pipes_new(mcu_send_fn send, void *send_user);
 /* Ends every pending call "disconnected", then frees. */
 void mcu_pipes_free(mcu_pipes *pipes);
 
-/* Sends skill.invoke. `args` is borrowed (a reference is taken) and may be NULL.
- * The call id is copied into call_id when given. 0, or -errno when the message could
- * not be sent (done is not called then). */
-int mcu_invoke(mcu_pipes *pipes, const char *app, const char *skill, struct json_object *args, int timeout_ms,
+/* Sends skill.invoke. `args` is borrowed (a reference is taken) and may be NULL. `confirmed`
+ * marks a call the person just allowed on the card (the skills lane asked): the message carries
+ * `confirmed:true` and the desktop's gate lets a skill that asks first through. The call id is
+ * copied into call_id when given. 0, or -errno when the message could not be sent (done is not
+ * called then). */
+int mcu_invoke(mcu_pipes *pipes, const char *app, const char *skill, struct json_object *args, bool confirmed, int timeout_ms,
                mcu_result_fn done, void *user, char *call_id, size_t cap);
 
 /* Feeds a message from the desktop. 1 when it finished a call, 0 when it is not a
