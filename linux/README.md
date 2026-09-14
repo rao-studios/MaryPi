@@ -1,15 +1,16 @@
 # MaryOS kit
 
-MaryOS is an Ubuntu 24.04 (Noble) arm64 fork built from source in this
-directory: Ubuntu's package archive plus MaryOS's own package lists, file
-overlay, hooks and branding under [distro/](distro/). This kit builds the
-images (in Docker), boots the VM image in an Apple Virtualization.framework
-window, and writes the Raspberry Pi 5 image to an SD card with one admin
-prompt. It is the Linux sibling of the [ravynOS kit](../ravynos/README.md)
-and follows the same rule: say plainly what a card or a VM will do.
+The Mac side of [MaryOS](https://github.com/rao-studios/MaryOS), an Ubuntu 24.04 (Noble) arm64
+fork with the Liquid Platinum desktop. MaryOS itself (the definition in `distro/`, the image
+pipeline in `builder/`, the desktop in `maryui/`, Mary in `mary/` and the docs) is its own
+repository, checked out here as the submodule [maryos/](maryos/README.md). This directory is the
+Swift package that works on it: it drives the image build (in Docker), boots the VM image in an
+Apple Virtualization.framework window, and writes the Raspberry Pi 5 image to an SD card with one
+admin prompt. It is the Linux sibling of the [ravynOS kit](../ravynos/README.md) and follows the
+same rule: say plainly what a card or a VM will do.
 
-The full story, from `distro.conf` to a login prompt on the Pi and in the VM,
-is in [docs/](docs/README.md).
+The full story, from `distro.conf` to a login prompt and a desktop on the Pi and in the VM, is in
+[maryos/docs/](maryos/docs/README.md).
 
 ## Requirements
 
@@ -29,86 +30,51 @@ is in [docs/](docs/README.md).
 ## Quick start
 
 ```sh
+git submodule update --init     # maryos/, the MaryOS repository
 cd linux
-./vm.sh                         # one command: build the CLI, build the VM image if missing, boot it in a window
-./vm.sh --console               # same, with this terminal on the serial console (Ctrl-] stops the VM)
-./vm.sh stop                    # ask the guest to shut down
-./ui.sh                         # compile the desktop, then boot it (from out/ui over virtiofs, restarted on every rebuild); Ctrl+Space opens Spotlight
-./ui.sh                         # again while it runs: recompile, and the running VM restarts the desktop on the new build
-./ui.sh --image                 # the desktop embedded in the image instead (--rebuild re-embeds the fresh one)
+maryos/vm.sh                    # build the CLI, compile the desktop and Mary, build the VM image if missing, boot to the desktop; Shift+Space opens Spotlight
+maryos/vm.sh                    # again while it runs: recompile, and the running VM restarts the desktop on the new build
+maryos/vm.sh --image            # the desktop embedded in the image instead (--rebuild re-embeds the fresh one)
+maryos/terminal.sh              # the same image to a login prompt
+maryos/terminal.sh --console    # with this terminal on the serial console (Ctrl-] stops the VM)
+maryos/vm.sh stop               # ask the guest to shut down
 
 make build                      # swift build, then scripts/sign.sh on the binaries
 make cli ARGS=doctor            # tools, kit, Docker, Virtualization, entitlement, built images
-make image TARGET=vm            # builder/build.sh all vm -> out/maryos-0.0-vm.img + out/vm/
-make ui                         # builder/build.sh ui: compile + test MaryUI/linux -> out/ui (MARYUI_DIR=… for a sibling checkout)
-make desktop / make ui-dev      # both ui.sh
-make vm                         # vm.sh; log in as mary (password in distro.conf)
-make image TARGET=pi5           # out/maryos-0.0-pi5.img
+make image TARGET=vm            # maryos/builder/build.sh all vm -> maryos/out/maryos-0.0-vm.img + maryos/out/vm/
+make image TARGET=pi5           # maryos/out/maryos-0.0-pi5.img
+make ui                         # compile + test the desktop (maryos/maryui) -> maryos/out/ui
+make mary                       # compile + test Mary's packages (maryos/mary) -> maryos/out/mary
+make vm / make terminal         # maryos/vm.sh / maryos/terminal.sh; log in as mary (password in distro.conf)
 make cli ARGS=list              # removable disks the flasher is willing to erase
 make flash DISK=disk4           # erase disk4 and write the pi5 image (asks first, one admin prompt)
 make run-app                    # the GUI
 make app                        # dist/MaryOS.app (release, kit bundled, signed)
-make test                       # swift test + the builder's Python tests
+make test                       # swift test + the builder's tests
 ```
+
+`vm.sh` and `terminal.sh` belong to MaryOS. They build this package's `maryos` CLI, finding it
+through `MARYPI_DIR`, through `..` when MaryOS is this submodule, or in a MaryPi clone beside a
+MaryOS clone, and point it at their own checkout. A standalone MaryOS clone therefore boots the
+same way. Each kit keeps its own images in `out/` and its VM disk in `state/`, so to flash an
+image built in a standalone clone, name that kit: `MARYOS_KIT_DIR=../../MaryOS make flash DISK=disk4`.
 
 The CLI, once built and signed (`.build/debug/maryos`):
 
 ```
 maryos doctor                       what this Mac can do
 maryos config                       distro.conf, directories, built images
-maryos build [--target pi5|vm|both] [--stage rootfs|ui|target|image|all] [--fresh] [--dry-run]
+maryos build [--target pi5|vm|both] [--stage rootfs|ui|mary|target|image|all] [--fresh] [--dry-run]
 maryos list [--all]                 removable disks
 maryos flash --disk diskN [--image PATH] [--target pi5] [--build] [--yes]
-maryos vm run [--desktop [--dev]] [--headless] [--console] [--memory MiB] [--cpus N] [--share tag=/dir] [--fresh] [--disk-size GiB] [--dry-run]
+maryos vm run [--desktop [--dev]] [--headless] [--console] [--microphone] [--memory MiB] [--cpus N] [--share tag=/dir] [--fresh] [--disk-size GiB] [--dry-run]
 maryos vm stop | status | serial [--no-follow] | reset
 ```
 
-Every command accepts `--kit <dir>` to point at a kit directory; otherwise it
-is found from the current directory, `MARYOS_KIT_DIR`, the app bundle, or
-this checkout. `swift run maryos <command>` works too: `vm run` signs the
+Every command accepts `--kit <dir>` to point at a kit (a MaryOS checkout); otherwise it is found
+from `MARYOS_KIT_DIR`, from the current directory or its `maryos/` or `linux/maryos/`, from the app
+bundle, or in this checkout's submodule. `swift run maryos <command>` works too: `vm run` signs the
 binary on its first use after a build and starts again.
-
-## What the fork is
-
-Everything MaryOS-specific is data in `distro/`:
-
-```
-distro.conf          name, id, version and codename (0.0 "Liquid Platinum"), Ubuntu suite and mirror, first user, labels, sizes
-packages/base.list   every target: an explicit list, no ubuntu-* metapackages, no snapd
-packages/pi5.list    linux-raspi, Raspberry Pi firmware, flash-kernel, Wi-Fi and Bluetooth
-packages/vm.list     linux-generic (virtio drivers as modules)
-overlay/             files copied onto every rootfs (netplan, the first-boot service)
-overlay-pi5/         boot/firmware/config.txt and usercfg.txt for the Pi firmware
-overlay-vm/          WirePlumber for the VM's virtio sound card: full volume, VM buffers, its microphone
-hooks/               scripts run in the chroot: locale, user, branding, services, fstab
-hooks/pi5, hooks/vm  target-only steps (cmdline.txt; the virtiofs share)
-hooks/final/         cleanup at the end of every target build
-```
-
-Changing MaryOS means editing these files and running `make image`.
-[docs/02-the-fork.md](docs/02-the-fork.md) walks through each of them.
-
-## How an image is built
-
-`builder/build.sh` runs three stages inside the `maryos-builder` container
-(or natively as root on an arm64 Linux host):
-
-1. **rootfs**: `debootstrap --variant=minbase noble` from ports.ubuntu.com,
-   `apt-get install` of `packages/base.list`, the overlay, the base hooks,
-   then a tarball cached by the content of `distro/`.
-2. **target**: unpack the tarball, install `packages/<target>.list`, apply
-   `overlay-<target>/` and `hooks/<target>/`, collect the boot files (Pi:
-   kernel, initrd, device trees and overlays into `/boot/firmware`; VM: the
-   raw arm64 `Image` extracted from Ubuntu's compressed `vmlinuz`, the initrd
-   and a `boot.json`), run `hooks/final/`.
-3. **image**: `mkfs.vfat` + `mcopy` for partition 1, `mke2fs -d` for
-   partition 2 straight from the tree, `sfdisk` for the MBR, `dd` into a
-   sparse file. No loop devices, no mounts.
-
-Outputs land in `out/`: `maryos-0.0-pi5.img`, `maryos-0.0-vm.img`, their
-`.sha256` and `.txt` manifests, and `out/vm/{Image,initrd.img,boot.json}`.
-Downloads and the base tarball live in Docker volumes (`maryos-cache`,
-`maryos-work`), so a rebuild after editing `distro/` takes minutes.
 
 ## What a card looks like
 
@@ -118,27 +84,19 @@ MBR partition table, the same for both targets:
 2. `maryos-root`, ext4, the rest of the image. Grown to the whole card or
    disk by `maryos-firstboot` on the first boot.
 
-On the Pi's FAT partition:
-
-```
-config.txt              kernel=vmlinuz, initramfs initrd.img followkernel, enable_uart=1, KMS
-cmdline.txt             console=serial0,115200 console=tty1 root=LABEL=maryos-root rootfstype=ext4 rootwait fixrtc
-usercfg.txt             local additions, included by config.txt
-vmlinuz, initrd.img     Ubuntu's raspi kernel and initramfs (flash-kernel updates them on upgrade)
-bcm2712-rpi-5-b.dtb     device tree, plus overlays/
-bootcode.bin, start*.elf, fixup*.dat   firmware blobs older boards need; the Pi 5 ignores them
-MARYOS.txt              name, version, target, kernel, build date, git sha, layout
-```
+What goes into the image, and how it is built, is MaryOS's to explain:
+[the fork](maryos/docs/02-the-fork.md), [building from source](maryos/docs/03-building-from-source.md)
+and [booting on the Pi 5](maryos/docs/04-boot-on-pi5.md).
 
 ## The VM
 
 Virtualization.framework boots the kernel directly: `VZLinuxBootLoader`
-with `out/vm/Image` and `initrd.img`, command line
+with the kit's `out/vm/Image` and `initrd.img`, command line
 `console=hvc0 root=LABEL=maryos-root rootfstype=ext4 rw rootwait`. The
-disk is an APFS clone of the built image in `state/vm/vm/disk.img`, grown
-(sparsely) to `VM_DISK_GIB` so the guest fills it on first boot. The guest
+disk is an APFS clone of the built image in the kit's `state/vm/vm/disk.img`,
+grown (sparsely) to `VM_DISK_GIB` so the guest fills it on first boot. The guest
 gets NAT networking with a fixed MAC address, a virtio-gpu window with USB
-keyboard and pointer, and `out/` shared over virtiofs as `maryos-out`
+keyboard and pointer, and the kit's `out/` shared over virtiofs as `maryos-out`
 (mounted at `/mnt/maryos-out`). Everything on the serial console goes to
 `state/vm/vm/serial.log`; `--console` attaches your terminal to it (Ctrl-]
 stops the VM) and `--headless` drops the window.
@@ -150,7 +108,7 @@ starts from the built image again.
 
 ## How flashing works
 
-1. The image comes from `out/` (built first if missing).
+1. The image comes from the kit's `out/` (built first if missing).
 2. The target disk is re-read with `diskutil info` right before writing and
    must still be a whole, physical, external disk of the same size.
 3. One generated shell script runs under `osascript … with administrator
@@ -184,27 +142,21 @@ console.
 ```sh
 swift build && sh scripts/sign.sh .build/debug/maryos .build/debug/MaryOSApp   # what make build does
 swift test                                                                       # MaryOSKit unit tests
-python3 builder/tests/unzboot_test.py                                            # the kernel extractor
-builder/build.sh all vm --dry-run                                                # the stages, in Docker
-MARYUI_DIR=../../MaryUI builder/build.sh ui                                      # the desktop from a sibling MaryUI checkout
+make -C maryos test                                                              # the builder's tests
+maryos/builder/build.sh all vm --dry-run                                         # the stages, in Docker
 ```
 
 Layout:
 
 ```
-distro/                the MaryOS definition (see above)
-builder/               Dockerfile, run-in-docker.sh, build.sh, lib/{common,chroot,rootfs,ui,target,image}.sh, unzboot.py, tests/
-maryui/                MaryUI (git submodule): web/ is the design system, linux/ the C library + compositor the ui stage builds (pinned to a commit that carries both)
+maryos/                MaryOS (git submodule): distro/, builder/, maryui/ (the desktop in C), mary/, docs/,
+                       vm.sh and terminal.sh; its out/, cache/, work/ and state/ are gitignored there
 Sources/MaryOSKit      Distro (config, paths), Build (runner, artifacts), VM (spec, configuration, runner,
                        controller, window), Disks, Flash, Shell, Model, Orchestration (doctor, coordinator)
 Sources/maryos         the CLI (swift-argument-parser); synchronous commands that pump the main run loop
 Sources/MaryOSApp      the SwiftUI app (product MaryOSApp; bundled as MaryOS.app)
 Tests/MaryOSKitTests   unit tests and diskutil fixtures
 scripts/               sign.sh, bundle.sh
-vm.sh                  one command to build what is missing and boot the VM
-ui.sh                  compile the desktop and boot to it, live-reloading on each rebuild (--image for the embedded one)
-docs/                  the MaryOS journey
-out/ cache/ work/ state/   build output, caches, VM state (gitignored)
 ```
 
 ## Relationship to the ravynOS kit

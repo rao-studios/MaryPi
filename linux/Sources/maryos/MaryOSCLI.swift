@@ -19,12 +19,12 @@ struct MaryOSCLI: ParsableCommand {
 
 /// Options shared by every subcommand.
 struct KitOptions: ParsableArguments {
-    @Option(name: .long, help: "The kit directory (linux/, with distro/ and builder/). Default: found from the current directory, \(KitPaths.environmentKey), or this checkout.")
+    @Option(name: .long, help: "The kit directory: a MaryOS checkout, with distro/ and builder/. Default: found from the current directory (or its maryos/ or linux/maryos/), \(KitPaths.environmentKey), or this checkout's maryos submodule.")
     var kit: String?
 
     func paths() throws -> KitPaths {
         guard let paths = KitPaths.locate(explicitRoot: kit) else {
-            throw ValidationError("kit directory not found: run from the checkout's linux/ directory, pass --kit, or set \(KitPaths.environmentKey)")
+            throw ValidationError("kit directory not found: run from a MaryOS checkout or MaryPi's linux/ (git submodule update --init), pass --kit, or set \(KitPaths.environmentKey)")
         }
         return paths
     }

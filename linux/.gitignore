@@ -9,5 +9,3 @@ state/
 *.img
 *.log
 .DS_Store
-# mary/: local make output (the builder writes under work/)
-mary/build/

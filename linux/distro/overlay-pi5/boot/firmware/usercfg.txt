@@ -1,2 +1,0 @@
-# Local config.txt additions for this card (included at the end of config.txt).
-# Example: dtoverlay=disable-wifi

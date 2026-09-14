@@ -1,4 +1,0 @@
-# The Mac's clipboard, under `maryos vm run`: a virtio console port the desktop reads
-# (/dev/virtio-ports/org.maryos.clipboard, MaryUI's lp_clipboard_port). The desktop runs as
-# DEFAULT_USER, who is in plugdev (hooks/20-user.sh). There is no such port on a Pi.
-SUBSYSTEM=="virtio-ports", ATTR{name}=="org.maryos.clipboard", GROUP="plugdev", MODE="0660"

@@ -1,18 +1,21 @@
-# MaryOS kit. Images are built from source in Docker (builder/); the VM
-# runner, the flasher and the app are the Swift package in this directory.
-# Virtualization.framework needs codesigned binaries, so `build` signs them
-# and `swift run` alone is not enough for the vm commands.
+# MaryOS kit, the Mac side: the Swift package in this directory (MaryOSKit, the maryos CLI
+# and MaryOS.app: the Virtualization.framework runner, the build driver and the flasher).
+# The OS itself is the MaryOS submodule in maryos/ (git submodule update --init): distro/,
+# builder/ (images are built from source in Docker), the desktop in maryui/ and Mary in mary/.
+# Virtualization.framework needs codesigned binaries, so `build` signs them and `swift run`
+# alone is not enough for the vm commands.
 #
-# The desktop (MaryUI/linux, Liquid Platinum) is compiled by the builder's ui
-# stage from the submodule maryui/ or from MARYUI_DIR=/path/to/MaryUI:
-#   make ui                  compile it into out/ui (seconds; Docker)
-#   make mary                compile Mary's packages (linux/mary: sewnd, threadd, maryd) into out/mary
-#   make desktop / ui-dev    ui.sh: compile, then boot the VM to that desktop (out/ui, restarted on every rebuild);
+#   make ui                  compile the desktop (maryos/maryui) into maryos/out/ui (seconds; Docker)
+#   make mary                compile Mary's packages (maryos/mary: sewnd, threadd, maryd) into maryos/out/mary
+#   make vm                  maryos/vm.sh: compile, then boot the VM to that desktop (out/ui, restarted on every rebuild);
 #                            run again while the VM is up to rebuild into it; ARGS=--image for the embedded desktop
+#   make terminal            maryos/terminal.sh: boot the VM to a login prompt; ARGS=--console for the serial console
+#   make flash DISK=disk4    erase disk4 and write the pi5 image (asks first)
 SWIFT ?= swift
 TARGET ?= vm
 DISK ?=
 ARGS ?=
+KIT = maryos
 BIN_CLI = .build/debug/maryos
 BIN_APP = .build/debug/MaryOSApp
 
@@ -22,8 +25,7 @@ build:
 
 test:
 	$(SWIFT) test
-	python3 builder/tests/unzboot_test.py
-	sh builder/tests/mary_fetch_test.sh
+	$(MAKE) -C $(KIT) test
 
 cli: build
 	$(BIN_CLI) $(ARGS)
@@ -35,30 +37,27 @@ app:
 	sh scripts/bundle.sh
 
 rootfs:
-	builder/build.sh rootfs
+	$(KIT)/builder/build.sh rootfs
 
 ui:
-	builder/build.sh ui
+	$(KIT)/builder/build.sh ui
 
 mary:
-	builder/build.sh mary
+	$(KIT)/builder/build.sh mary
 
 image:
-	builder/build.sh all $(TARGET)
+	$(KIT)/builder/build.sh all $(TARGET)
 
 vm:
-	sh vm.sh $(ARGS)
+	sh $(KIT)/vm.sh $(ARGS)
 
-desktop:
-	sh ui.sh $(ARGS)
-
-ui-dev:
-	sh ui.sh $(ARGS)
+terminal:
+	sh $(KIT)/terminal.sh $(ARGS)
 
 flash: build
 	$(BIN_CLI) flash --disk $(DISK)
 
 clean:
-	rm -rf .build dist work out/ui out/mary
+	rm -rf .build dist
 
-.PHONY: build test cli run-app app rootfs ui mary image vm desktop ui-dev flash clean
+.PHONY: build test cli run-app app rootfs ui mary image vm terminal flash clean

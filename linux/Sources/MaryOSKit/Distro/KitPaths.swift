@@ -1,40 +1,32 @@
 import Foundation
 
-/// Where the kit (`distro/`, `builder/`) lives and where its outputs go.
+/// Where the kit (a MaryOS checkout: `distro/`, `builder/`, `maryui/`, `mary/`) lives
+/// and where its outputs go.
 ///
 /// Lookup order for the kit directory: an explicit path, `$MARYOS_KIT_DIR`,
-/// a `distro/distro.conf` found by walking up from the current directory,
-/// the app bundle's `Contents/Resources/kit`, then the package checkout this
+/// a `distro/distro.conf` found by walking up from the current directory (in each
+/// directory itself, its `maryos/` or its `linux/maryos/`), the app bundle's
+/// `Contents/Resources/kit`, then the MaryOS submodule of the package checkout this
 /// source file belongs to (covers `swift run` from any directory).
 ///
-/// Inside a checkout (a `Package.swift` next to `distro/`) images go to
-/// `out/` and VM state to `state/`; from an app bundle both go to
-/// `~/Library/Caches/MaryOS`. `$MARYOS_OUT` and `$MARYOS_STATE_DIR` override.
-///
-/// The desktop's C sources (MaryUI) come from the submodule `maryui/` in the
-/// kit, or from the MaryUI checkout named by `$MARYUI_DIR` (its `linux/`
-/// directory), so edits there are what the builder compiles.
+/// Inside a checkout (a git work tree: `.git` is a directory in a clone and a file in
+/// a submodule) images go to `out/` and VM state to `state/`; from an app bundle both
+/// go to `~/Library/Caches/MaryOS`. `$MARYOS_OUT` and `$MARYOS_STATE_DIR` override.
 public struct KitPaths: Sendable, Equatable {
     public static let environmentKey = "MARYOS_KIT_DIR"
     public static let outEnvironmentKey = "MARYOS_OUT"
     public static let stateEnvironmentKey = "MARYOS_STATE_DIR"
-    public static let maryUIEnvironmentKey = "MARYUI_DIR"
 
     public let root: URL
     public let isCheckout: Bool
     public let outDirectory: URL
     public let stateRoot: URL
-    /// `<kit>/maryui/linux`, or `$MARYUI_DIR/linux` when the override is set.
-    public let maryUISource: URL
-    public let maryUIIsOverride: Bool
 
-    public init(root: URL, isCheckout: Bool, outDirectory: URL, stateRoot: URL, maryUISource: URL? = nil, maryUIIsOverride: Bool = false) {
+    public init(root: URL, isCheckout: Bool, outDirectory: URL, stateRoot: URL) {
         self.root = root
         self.isCheckout = isCheckout
         self.outDirectory = outDirectory
         self.stateRoot = stateRoot
-        self.maryUISource = maryUISource ?? root.appending(path: "maryui/linux")
-        self.maryUIIsOverride = maryUIIsOverride
     }
 
     public var distroDirectory: URL { root.appending(path: "distro") }
@@ -42,10 +34,12 @@ public struct KitPaths: Sendable, Equatable {
     public var builderDirectory: URL { root.appending(path: "builder") }
     public var buildScript: URL { builderDirectory.appending(path: "build.sh") }
     public var vmOutDirectory: URL { outDirectory.appending(path: "vm") }
+    /// The desktop's C sources (libmaryui, maryui-desktop, the apps): the kit's `maryui/`.
+    public var maryUISource: URL { root.appending(path: "maryui") }
     /// The compiled desktop: a DESTDIR tree (`usr/bin/maryui-desktop`, `usr/share/maryui/`) the `ui` stage writes.
     public var uiOutDirectory: URL { outDirectory.appending(path: "ui") }
     public var uiBinary: URL { uiOutDirectory.appending(path: "usr/bin/maryui-desktop") }
-    /// Mary's C packages (`linux/mary`): part of this repository, never an override.
+    /// Mary's C packages: the kit's `mary/`.
     public var marySource: URL { root.appending(path: "mary") }
     /// Mary's compiled packages: a DESTDIR tree (`usr/bin/sewnd`, `usr/share/doc/mary/`) the `mary` stage writes.
     public var maryOutDirectory: URL { outDirectory.appending(path: "mary") }
@@ -60,7 +54,7 @@ public struct KitPaths: Sendable, Equatable {
 
     public static func make(root: URL, environment: [String: String], home: URL, fileManager: FileManager = .default) -> KitPaths {
         let root = root.standardizedFileURL
-        let checkout = fileManager.fileExists(atPath: root.appending(path: "Package.swift").path)
+        let checkout = fileManager.fileExists(atPath: root.appending(path: ".git").path)
         let caches = home.appending(path: "Library/Caches/MaryOS")
         func override(_ key: String) -> URL? {
             guard let value = environment[key], !value.isEmpty else { return nil }
@@ -68,8 +62,7 @@ public struct KitPaths: Sendable, Equatable {
         }
         let out = override(outEnvironmentKey) ?? (checkout ? root.appending(path: "out") : caches.appending(path: "out"))
         let state = override(stateEnvironmentKey) ?? (checkout ? root.appending(path: "state") : caches.appending(path: "state"))
-        let maryUI = override(maryUIEnvironmentKey).map { $0.appending(path: "linux") }
-        return KitPaths(root: root, isCheckout: checkout, outDirectory: out, stateRoot: state, maryUISource: maryUI, maryUIIsOverride: maryUI != nil)
+        return KitPaths(root: root, isCheckout: checkout, outDirectory: out, stateRoot: state)
     }
 
     public static func locate(
@@ -90,7 +83,8 @@ public struct KitPaths: Sendable, Equatable {
         var dir = currentDirectory.standardizedFileURL
         for _ in 0..<12 {
             candidates.append(dir)
-            candidates.append(dir.appending(path: "linux"))
+            candidates.append(dir.appending(path: "maryos"))
+            candidates.append(dir.appending(path: "linux/maryos"))
             let parent = dir.deletingLastPathComponent()
             if parent.path == dir.path { break }
             dir = parent
@@ -100,7 +94,7 @@ public struct KitPaths: Sendable, Equatable {
         }
         let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        candidates.append(packageRoot)
+        candidates.append(packageRoot.appending(path: "maryos"))
 
         guard let found = candidates.first(where: { hasKit($0, fileManager: fileManager) }) else { return nil }
         return make(root: found, environment: environment, home: home, fileManager: fileManager)

@@ -10,7 +10,7 @@ struct BuildCommand: ParsableCommand {
     @Option(name: .long, help: "pi5, vm or both (default vm).")
     var target: String = "vm"
 
-    @Option(name: .long, help: "rootfs, ui (compile the desktop from MaryUI), mary (compile linux/mary), target, image or all (default all).")
+    @Option(name: .long, help: "rootfs, ui (compile the desktop, maryui/), mary (compile mary/), target, image or all (default all).")
     var stage: String = "all"
 
     @Flag(name: .long, help: "Rebuild the base rootfs even when the cache matches distro/.")

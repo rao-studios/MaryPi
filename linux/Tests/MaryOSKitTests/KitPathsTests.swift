@@ -3,22 +3,27 @@ import Testing
 @testable import MaryOSKit
 
 @Suite struct KitPathsTests {
-    func makeKit(checkout: Bool) throws -> URL {
-        let root = FileManager.default.temporaryDirectory.appending(path: "maryos-kit-\(UUID().uuidString)")
+    /// A kit at `root`. A checkout carries `.git`, as a submodule's file here.
+    func makeKit(at root: URL, checkout: Bool) throws {
         try FileManager.default.createDirectory(at: root.appending(path: "distro"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: root.appending(path: "builder"), withIntermediateDirectories: true)
         try "DISTRO_ID=x\n".write(to: root.appending(path: "distro/distro.conf"), atomically: true, encoding: .utf8)
         try "#!/bin/sh\n".write(to: root.appending(path: "builder/build.sh"), atomically: true, encoding: .utf8)
         if checkout {
-            try "// swift-tools-version: 6.0\n".write(to: root.appending(path: "Package.swift"), atomically: true, encoding: .utf8)
+            try "gitdir: ../.git/modules/maryos\n".write(to: root.appending(path: ".git"), atomically: true, encoding: .utf8)
         }
+    }
+
+    func makeKit(checkout: Bool) throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appending(path: "maryos-kit-\(UUID().uuidString)")
+        try makeKit(at: root, checkout: checkout)
         return root
     }
 
     @Test func findsTheKitByWalkingUp() throws {
         let root = try makeKit(checkout: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let deep = root.appending(path: "Sources/MaryOSKit/VM")
+        let deep = root.appending(path: "maryui/src/core")
         try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
         let paths = try #require(KitPaths.locate(environment: [:], currentDirectory: deep, bundleResources: nil, home: URL(fileURLWithPath: "/tmp/home")))
         #expect(paths.root.standardizedFileURL.path == root.standardizedFileURL.path)
@@ -28,16 +33,17 @@ import Testing
         #expect(paths.state(for: .vm).directory.path.hasSuffix("state/vm/vm"))
     }
 
-    @Test func findsLinuxSubdirectoryFromRepositoryRoot() throws {
-        let repo = FileManager.default.temporaryDirectory.appending(path: "maryos-repo-\(UUID().uuidString)")
+    @Test func findsTheMaryOSSubmoduleFromMaryPi() throws {
+        let repo = FileManager.default.temporaryDirectory.appending(path: "marypi-repo-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: repo) }
-        let kit = repo.appending(path: "linux")
-        try FileManager.default.createDirectory(at: kit.appending(path: "distro"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: kit.appending(path: "builder"), withIntermediateDirectories: true)
-        try "DISTRO_ID=x\n".write(to: kit.appending(path: "distro/distro.conf"), atomically: true, encoding: .utf8)
-        try "#!/bin/sh\n".write(to: kit.appending(path: "builder/build.sh"), atomically: true, encoding: .utf8)
-        let paths = try #require(KitPaths.locate(environment: [:], currentDirectory: repo, bundleResources: nil))
-        #expect(paths.root.standardizedFileURL.path == kit.standardizedFileURL.path)
+        let kit = repo.appending(path: "linux/maryos")
+        try makeKit(at: kit, checkout: true)
+        for start in [repo, repo.appending(path: "linux")] {
+            let paths = try #require(KitPaths.locate(environment: [:], currentDirectory: start, bundleResources: nil))
+            #expect(paths.root.standardizedFileURL.path == kit.standardizedFileURL.path)
+            #expect(paths.isCheckout)
+            #expect(paths.outDirectory.path == kit.standardizedFileURL.appending(path: "out").path)
+        }
     }
 
     @Test func environmentAndExplicitOverrides() throws {
@@ -54,24 +60,18 @@ import Testing
         #expect(explicit.outDirectory.path == "/tmp/home/Library/Caches/MaryOS/out")
     }
 
-    @Test func maryUISourcesDefaultToTheSubmoduleUnlessOverridden() throws {
+    @Test func sourcesLiveInTheKit() throws {
         let root = try makeKit(checkout: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let home = URL(fileURLWithPath: "/tmp/home")
-        let plain = try #require(KitPaths.locate(explicitRoot: root.path, environment: [:], currentDirectory: URL(fileURLWithPath: "/"), bundleResources: nil, home: home))
-        #expect(plain.maryUISource.path == root.standardizedFileURL.appending(path: "maryui/linux").path)
-        #expect(!plain.maryUIIsOverride)
-        #expect(!plain.hasMaryUISources)
-        #expect(plain.uiBinary.path.hasSuffix("out/ui/usr/bin/maryui-desktop"))
-        let checkout = FileManager.default.temporaryDirectory.appending(path: "maryui-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: checkout.appending(path: "linux"), withIntermediateDirectories: true)
-        try "all:\n".write(to: checkout.appending(path: "linux/Makefile"), atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: checkout) }
-        let overridden = try #require(KitPaths.locate(explicitRoot: root.path, environment: [KitPaths.maryUIEnvironmentKey: checkout.path],
-                                                      currentDirectory: URL(fileURLWithPath: "/"), bundleResources: nil, home: home))
-        #expect(overridden.maryUIIsOverride)
-        #expect(overridden.maryUISource.path == checkout.standardizedFileURL.appending(path: "linux").path)
-        #expect(overridden.hasMaryUISources)
+        let paths = try #require(KitPaths.locate(explicitRoot: root.path, environment: [:], currentDirectory: URL(fileURLWithPath: "/"), bundleResources: nil, home: home))
+        #expect(paths.maryUISource.path == root.standardizedFileURL.appending(path: "maryui").path)
+        #expect(paths.marySource.path == root.standardizedFileURL.appending(path: "mary").path)
+        #expect(!paths.hasMaryUISources)
+        #expect(paths.uiBinary.path.hasSuffix("out/ui/usr/bin/maryui-desktop"))
+        try FileManager.default.createDirectory(at: root.appending(path: "maryui"), withIntermediateDirectories: true)
+        try "all:\n".write(to: root.appending(path: "maryui/Makefile"), atomically: true, encoding: .utf8)
+        #expect(paths.hasMaryUISources)
     }
 
     @Test func fallsBackToThisCheckout() throws {

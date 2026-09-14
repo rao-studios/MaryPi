@@ -2,7 +2,7 @@ import Foundation
 
 /// Persisted preferences: `~/Library/Application Support/MaryOS/config.json`.
 public struct Settings: Codable, Sendable, Equatable {
-    /// The kit directory (linux/) chosen in the app, when not running from a checkout.
+    /// The kit directory (a MaryOS checkout) chosen in the app, when not running from a checkout.
     public var kitDirectory: String?
 
     public init(kitDirectory: String? = nil) {

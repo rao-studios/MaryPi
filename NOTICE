@@ -17,18 +17,18 @@ file beside this one. If not, see <https://www.gnu.org/licenses/>.
 What this licence does and does not cover
 --------------------------------------------------------------------------------
 
-It covers what is in this repository: the distro definition (`linux/distro/`),
-the image pipeline (`linux/builder/`), the `maryos` CLI and app
-(`linux/Sources/`), the ravynOS installer tooling (`ravynos/`), and the
-documentation.
+It covers what is in this repository: the `maryos` CLI and app
+(`linux/Sources/`), their scripts, the ravynOS installer tooling (`ravynos/`),
+and the documentation.
+
+`linux/maryos` is a git submodule pointing at MaryOS (the distro definition,
+the image pipeline, the desktop and Mary's packages), which is separately
+licensed under the same GPL-3.0-or-later terms and carries its own NOTICE,
+including an unresolved question about the molten wallpaper's shader.
 
 It does not cover what the build *assembles*. A MaryOS image is built from
 Ubuntu Noble packages fetched at build time; every one of them keeps its own
 licence, and none of them are redistributed in this repository.
-
-`linux/maryui` is a git submodule pointing at MaryUI, which is separately
-licensed under the same GPL-3.0-or-later terms and carries its own NOTICE —
-including an unresolved question about the molten wallpaper's shader.
 
 `ravynos/` is tooling that prepares and installs ravynOS images. ravynOS itself
 is a separate project under its own terms and is not included here.

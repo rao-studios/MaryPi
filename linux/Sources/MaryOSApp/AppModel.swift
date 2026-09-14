@@ -46,7 +46,7 @@ final class AppModel {
                 configError = error.localizedDescription
             }
         } else {
-            configError = "Kit directory not found. Choose the linux/ directory of a MaryPi checkout (Card > Choose Kit Directory…)."
+            configError = "Kit directory not found. Choose a MaryOS checkout (Card > Choose Kit Directory…)."
         }
         refreshArtifacts()
     }
@@ -133,7 +133,7 @@ final class AppModel {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Use Kit"
-        panel.message = "Choose the MaryOS kit directory (linux/ in a MaryPi checkout, containing distro/ and builder/)."
+        panel.message = "Choose the MaryOS kit directory (a MaryOS checkout, containing distro/ and builder/; linux/maryos in a MaryPi checkout)."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         var settings = Settings.load()
         settings.kitDirectory = url.path
