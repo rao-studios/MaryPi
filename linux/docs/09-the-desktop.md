@@ -420,7 +420,7 @@ without root.
 
 ## Inside the compositor
 
-Five scene layers: wallpaper, windows, the clock, menus, Spotlight. Everything the library
+Five scene layers: wallpaper, windows, the clock, menus, Spotlight. The clock sits top right on a brushed platinum capsule cut from the desktop's one sheet of metal, dark embossed ink that reads over any wallpaper (`lp_clock.h`, shared with `lp-render --clock`). Everything the library
 paints is a *chrome*: a Cairo buffer wrapped as a `wlr_buffer` and shown as a
 `wlr_scene_buffer`; three rotate so the renderer never reads a buffer being
 painted. A chrome's paint function runs an EVENT pass on input (no Cairo; hit
