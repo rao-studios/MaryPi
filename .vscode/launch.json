@@ -101,6 +101,26 @@
             "target": "MaryOSApp",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release MaryOSApp (linux)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MaryPi}/linux",
+            "name": "Debug MaryVNCApp (linux)",
+            "target": "MaryVNCApp",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MaryVNCApp (linux)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MaryPi}/linux",
+            "name": "Release MaryVNCApp (linux)",
+            "target": "MaryVNCApp",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MaryVNCApp (linux)"
         }
     ]
 }
