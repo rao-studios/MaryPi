@@ -119,6 +119,9 @@ in one is paired in the other; run one of the two at a time.
   every other key goes to the Pi.
 - **The menu**: the Pis nearby (choose one to open it), Pis ready to pair, Close Portal, the picture, ⌘ on the Pi
   and Forget.
+- **Switching the Pi off**: hold its power button until the green light stays on, about two seconds, and let
+  go. The Pi shuts down cleanly (held on, the Pi 5 cuts the power itself), MaryVNC Light closes its window, and
+  the next press starts the Pi and brings the window back.
 - **A second Mac**: press the button while the first Mac's desktop is open. The Pi stays ready to pair for two
   minutes, and the first Mac leaves it alone.
 
