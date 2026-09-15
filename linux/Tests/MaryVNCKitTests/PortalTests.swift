@@ -57,7 +57,7 @@ import Testing
         var rules = PortalRules(now: t0)
         watch(&rules, pairs: [a], from: 0, to: 40, called: false)             // a session was up: no calls went out
         let afterSession = answers(&rules, a, [(false, 1, 40)])
-        watch(&rules, pairs: [a], from: 41, to: 71)                           // 31 s watched
+        watch(&rules, pairs: [a], from: 41, to: 71)                           // 31 s watched: more than enough
         _ = rules.tick(now: t0.addingTimeInterval(3671), pairs: [a], cadence: 1, called: true, toGroups: true)   // an hour asleep
         let afterWake = answers(&rules, a, [(false, 2, 3672)])
         watch(&rules, pairs: [a], from: 3673, to: 3720)

@@ -58,7 +58,13 @@ public final class PiSession: @unchecked Sendable {
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
         tcp.enableKeepalive = true
+        // A Pi switched off or out of range sends nothing more, and a viewer waiting for frames sends nothing
+        // either: probes every 5 s after 15 s of quiet, and a drop when 3 go unanswered or when data sent is not
+        // acknowledged within 20 s, find a vanished Pi within half a minute rather than ten.
         tcp.keepaliveIdle = 15
+        tcp.keepaliveInterval = 5
+        tcp.keepaliveCount = 3
+        tcp.connectionDropTime = 20
         tcp.connectionTimeout = 8
         let parameters = NWParameters(tls: nil, tcp: tcp)
         if let interface { parameters.requiredInterface = interface }

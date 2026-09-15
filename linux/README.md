@@ -175,7 +175,7 @@ Pis, `MaryVNCKit` and `MaryVNCViewer` (the desktop view and one session's lifecy
   Pis' last addresses and the groups in turn (never both in one call, so a Pi answers each of this Mac's
   addresses at most once a call), and not while its portal is showing. `PortalRules` (`Sources/MaryVNCKit/Nearby`)
   decides when the portal opens on its own: a paired Pi's answer shows its window open once it has been seen
-  closed (its power button was pressed, and connecting closes the window again); a paired Pi answers after 30 s of
+  closed (its power button was pressed, and connecting closes the window again); a paired Pi answers after 20 s of
   watching without a word (it has just booted), outside the 15 s after launch, wake or a network change; or a Pi
   whose portal was lost answers again. A Pi ready to pair brings up a pair dialog (a list when there are several);
   Not Now keeps it quiet until its window closes. The portal is a borderless, non-activating panel that takes the

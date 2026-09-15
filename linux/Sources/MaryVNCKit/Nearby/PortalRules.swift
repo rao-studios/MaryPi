@@ -21,7 +21,8 @@ public struct PortalRules: Sendable {
     }
 
     public static let grace: TimeInterval = 15
-    public static let away: TimeInterval = 30
+    /// A Pi 5 is answering again 15 to 20 s after the press that boots it; a Pi that is there answers every call.
+    public static let away: TimeInterval = 20
     /// An offer is gone after this long without it, across at least `offerGoneCalls` calls to the groups.
     public static let offerGone: TimeInterval = 10
     public static let offerGoneCalls = 3
