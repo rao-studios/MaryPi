@@ -75,6 +75,7 @@ used last, if several are), and when the link drops it looks for the Pi again an
 | Pointer, clicks, scrolling | go to the Pi |
 | ⌘ | is the Pi's Super key: ⌘W closes a window, ⌘Space toggles Spotlight |
 | ⌘Q, ⌘H, ⌘M, ⌘, | stay with the Mac |
+| Copy and paste | text crosses both ways while connected: copy on the Mac and paste in MaryOS, or the other way round (what a password manager marks private stays on the Mac) |
 | Toolbar | Disconnect; Refresh (redraw the whole desktop) or, when not connected, Look Again; Best or Fast picture; Pair |
 | MaryVNC › Settings… | the accent (Blue or Graphite), ⌘ as Super or as Control (for terminal programs), the picture |
 | File › Forget This Pi… | unpairs on the Mac; `maryvncctl forget <fingerprint>` unpairs on the Pi |
@@ -117,6 +118,7 @@ in one is paired in the other; run one of the two at a time.
 - **The window**: rest the pointer on its top edge for a grabber that moves it (double-click it to fill the
   screen), and drag its edges to resize it. ⌘Q, ⌘H or ⌘M put it away and MaryVNC Light stays in the menu bar;
   every other key goes to the Pi.
+- **Copy and paste** text between the Mac and the Pi, both ways, as in MaryVNC.app.
 - **The menu**: the Pis nearby (choose one to open it), Pis ready to pair, Close Portal, the picture, ⌘ on the Pi
   and Forget.
 - **Switching the Pi off**: hold its power button until the green light stays on, about two seconds, and let

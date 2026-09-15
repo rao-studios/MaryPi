@@ -17,6 +17,9 @@ import Testing
         .quality(.fast),
         .refresh,
         .viewerBye,
+        .serverClipboard(text: "two\nlines\tand an 🍎 — from the Pi"),
+        .clipboard(text: ""),
+        .clipboard(text: "from the Mac"),
     ]
 
     @Test(arguments: WireMessageTests.samples)
@@ -31,6 +34,27 @@ import Testing
             #expect(throws: MaryVNCError.self) { try WireMessage.decode(Array(bytes.prefix(length))) }
         }
         #expect(throws: MaryVNCError.self) { try WireMessage.decode(bytes + [0]) }
+    }
+
+    @Test func aClipboardIsUTF8WithoutNULAndAtMostAMegabyte() throws {
+        #expect(try WireMessage.clipboard(text: "hi").encoded() == [0x16, 0x02, 0x00, 0x00, 0x00, 0x68, 0x69])
+        #expect(try WireMessage.serverClipboard(text: "").encoded() == [0x05, 0x00, 0x00, 0x00, 0x00])
+        #expect(throws: MaryVNCError.self) { try WireMessage.clipboard(text: "a\u{0}b").encoded() }
+        #expect(throws: MaryVNCError.self) { try WireMessage.clipboard(text: String(repeating: "a", count: MaryVNC.clipboardMax + 1)).encoded() }
+        #expect(try WireMessage.clipboard(text: String(repeating: "a", count: MaryVNC.clipboardMax)).encoded().count == 5 + MaryVNC.clipboardMax)
+        #expect(throws: MaryVNCError.self) { try WireMessage.decode([0x05, 0x01, 0x00, 0x00, 0x00, 0xff]) }
+        #expect(throws: MaryVNCError.self) { try WireMessage.decode([0x16, 0x01, 0x00, 0x00, 0x00, 0x00]) }
+        #expect(throws: MaryVNCError.self) { try WireMessage.decode([0x05, 0x01, 0x00, 0x10, 0x00]) }
+        #expect(WireMessage.isKnownType(0x05) && WireMessage.isKnownType(0x16) && !WireMessage.isKnownType(0x7e))
+    }
+
+    @Test func aConcealedOrTransientCopyStaysOnTheMac() {
+        #expect(ClipboardText.shareable("sk-live-1", types: ["public.utf8-plain-text", "org.nspasteboard.ConcealedType"]) == nil)
+        #expect(ClipboardText.shareable("one-time", types: ["org.nspasteboard.TransientType", "public.utf8-plain-text"]) == nil)
+        #expect(ClipboardText.shareable("", types: ["public.utf8-plain-text"]) == nil)
+        #expect(ClipboardText.shareable(nil, types: ["public.png"]) == nil)
+        #expect(ClipboardText.shareable("a\u{0}b", types: ["public.utf8-plain-text"]) == nil)
+        #expect(ClipboardText.shareable("hello, Pi", types: ["public.utf8-plain-text"]) == "hello, Pi")
     }
 
     /// The layouts, byte for byte, as maryvnc/src/wire.c writes them.

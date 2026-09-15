@@ -222,6 +222,47 @@ struct MaryvncdInteropTests {
         #expect(try await next(from: scanner, within: .milliseconds(800)) == nil)
     }
 
+    @Test func theClipboardCrossesToThePiAndBack() async throws {
+        let binary = ProcessInfo.processInfo.environment["MARYVNCD"]!
+        let daemon = try Daemon.start(binary: binary)
+        defer { daemon.stop() }
+        try await daemon.waitUntilListening()
+        let session = try PiSession(endpoint: daemon.endpoint, identity: NoiseKeyPair.generate(), mode: .pair(displayName: "swift test", expected: nil))
+        let text = "héllo from the Mac\n\tand an 🍎"
+        // The test pattern hands a viewer's clipboard straight back.
+        let heard: String? = await withTaskGroup(of: String?.self) { group in
+            group.addTask {
+                session.start()
+                var sent = false
+                for await event in session.events {
+                    switch event {
+                    case let .frame(seq, _):
+                        session.send(.ack(seq: seq))
+                        if !sent {
+                            sent = true
+                            session.send(.clipboard(text: text))
+                        }
+                    case let .clipboard(back):
+                        session.close()
+                        return back
+                    default:
+                        break
+                    }
+                }
+                return nil
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(10))
+                session.close()
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        #expect(heard == text)
+    }
+
     @Test func aPairedMacsSessionClosesThePairingWindow() async throws {
         let binary = ProcessInfo.processInfo.environment["MARYVNCD"]!
         let daemon = try Daemon.start(binary: binary)

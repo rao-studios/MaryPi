@@ -24,6 +24,8 @@ public enum MaryVNC {
     /// A session record's body: the message and its tag.
     public static let recordMax = messageMax + NoiseCipher.tagLength
     public static let rectsMax = 8
+    /// A clipboard's text, either way: UTF-8 without NUL.
+    public static let clipboardMax = 1 << 20
 
     static let logger = Logger(subsystem: "com.maryos.MaryVNC", category: "kit")
 }

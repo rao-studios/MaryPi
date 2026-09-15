@@ -62,6 +62,7 @@ public final class PiLink {
     @ObservationIgnored private var identity: NoiseKeyPair?
     @ObservationIgnored private var session: PiSession?
     @ObservationIgnored private let decoder = FrameDecoder()
+    @ObservationIgnored private let pasteboard = PasteboardBridge()
     @ObservationIgnored private var backoff = Backoff()
     @ObservationIgnored private var reconnect: Task<Void, Never>?
     @ObservationIgnored private var lostAt: ContinuousClock.Instant?
@@ -70,7 +71,9 @@ public final class PiLink {
     @ObservationIgnored private var statBytes = 0
     @ObservationIgnored private var statStart = Date()
 
-    public init() {}
+    public init() {
+        pasteboard.send = { [weak self] text in self?.send(.clipboard(text: text)) }
+    }
 
     public var isActive: Bool { phase != .idle }
     public var isConnected: Bool { phase == .connected }
@@ -82,6 +85,7 @@ public final class PiLink {
     }
 
     public func disconnect() {
+        pasteboard.stop()
         stayDisconnected = true
         reconnect?.cancel()
         reconnect = nil
@@ -150,12 +154,15 @@ public final class PiLink {
                 hadDesktop = true
                 onDesktop(fingerprint, target?.host)
                 session.send(.quality(quality))
+                pasteboard.start()
             case let .frame(seq, rects):
                 if let image = await decoder.apply(rects) { frame = image.image }
                 session.send(.ack(seq: seq))
                 count(bytes: rects.reduce(0) { $0 + $1.jpeg.count })
             case let .cursor(_, _, shown):
                 cursorShown = shown
+            case let .clipboard(text):
+                pasteboard.received(text)
             case let .ended(reason):
                 ended(reason)
             }
@@ -176,6 +183,7 @@ public final class PiLink {
     }
 
     private func ended(_ reason: SessionEnd) {
+        pasteboard.stop()
         session = nil
         switch reason.outcome(name: target?.name ?? "The Pi") {
         case .closed:

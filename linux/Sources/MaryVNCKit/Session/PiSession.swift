@@ -35,6 +35,8 @@ public enum SessionEvent: Sendable, Equatable {
     /// Apply the rectangles, then `ack(seq:)`: the Pi sends at most two frames ahead of the acks.
     case frame(seq: UInt32, rects: [FrameRect])
     case cursor(x: Int, y: Int, shown: Bool)
+    /// The Pi's clipboard changed.
+    case clipboard(String)
     case ended(SessionEnd)
 }
 
@@ -212,6 +214,8 @@ public final class PiSession: @unchecked Sendable {
         guard var cipher = receiveCipher else { throw MaryVNCError("a session record before the handshake") }
         let plain = try cipher.open(body)
         receiveCipher = cipher
+        // A message of a type a newer Pi added: skipped, as maryvncd skips a newer viewer's.
+        if let type = plain.first, !WireMessage.isKnownType(type) { return }
         switch try WireMessage.decode(plain) {
         case let .hello(version, name, width, height, fingerprint):
             guard version == MaryVNC.version else { throw MaryVNCError("the Pi speaks MaryVNC \(version)") }
@@ -223,6 +227,8 @@ public final class PiSession: @unchecked Sendable {
             continuation.yield(.frame(seq: seq, rects: rects))
         case let .cursor(x, y, shown):
             continuation.yield(.cursor(x: Int(x), y: Int(y), shown: shown))
+        case let .serverClipboard(text):
+            continuation.yield(.clipboard(text))
         case let .serverBye(reason):
             end(.bye(reason))
         default:

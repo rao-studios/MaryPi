@@ -167,6 +167,10 @@ Pis, `MaryVNCKit` and `MaryVNCViewer` (the desktop view and one session's lifecy
 - **Keys.** This Mac's private key is in the login Keychain (service `com.maryos.MaryVNC`, this device only);
   after a rebuild macOS asks whether the new binary may read it: choose Always Allow. The paired Pis are in
   `~/Library/Application Support/MaryVNC/pairs.json` (public keys and last addresses), with the settings beside it.
+- **The clipboard.** Text crosses both ways while connected (`PasteboardBridge` in `Sources/MaryVNCViewer`): the
+  Mac's pasteboard goes to the Pi when the desktop shows and whenever it changes (looked for twice a second), unless
+  the copying app marked it concealed or transient (`ClipboardText`), and the Pi's clipboard lands on the Mac's
+  pasteboard without being sent back. UTF-8 up to 1 MiB, text only.
 - **The keyboard.** ⌘ is Super on the Pi by default, so MaryOS's own chords work (⌘Space opens Spotlight, ⌘W
   closes a window); Settings switches it to Control for terminal programs. ⌘Q, ⌘H, ⌘⌥H, ⌘M and ⌘, stay with
   the Mac.

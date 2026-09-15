@@ -41,7 +41,8 @@ public struct FrameRect: Equatable, Sendable {
 }
 
 /// One session message, in either direction (`maryvnc/include/maryvnc/wire.h`). The type byte comes first;
-/// decoding is strict, so a message is exactly its fields.
+/// decoding is strict, so a message is exactly its fields. A session skips a message whose type it does not know
+/// (`isKnownType`), as maryvncd does, so a newer Pi can add messages.
 public enum WireMessage: Equatable, Sendable {
     // Pi → Mac
     case hello(version: UInt16, name: String, width: UInt16, height: UInt16, fingerprint: [UInt8])
@@ -49,6 +50,8 @@ public enum WireMessage: Equatable, Sendable {
     /// `shown`: the pointer is a hardware plane on the Pi, not in the pixels, so the viewer draws one.
     case cursor(x: Int16, y: Int16, shown: Bool)
     case serverBye(reason: String)
+    /// The Pi's clipboard.
+    case serverClipboard(text: String)
     // Mac → Pi
     case pointer(x: UInt16, y: UInt16, buttons: PointerButtons, scrollX: Int16, scrollY: Int16)
     case key(evdev: UInt16, pressed: Bool)
@@ -56,17 +59,24 @@ public enum WireMessage: Equatable, Sendable {
     case quality(FrameQuality)
     case refresh
     case viewerBye
+    /// The Mac's clipboard.
+    case clipboard(text: String)
 
     enum Kind: UInt8 {
-        case hello = 0x01, frame = 0x02, cursor = 0x03, serverBye = 0x04
-        case pointer = 0x10, key = 0x11, ack = 0x12, quality = 0x13, refresh = 0x14, viewerBye = 0x15
+        case hello = 0x01, frame = 0x02, cursor = 0x03, serverBye = 0x04, serverClipboard = 0x05
+        case pointer = 0x10, key = 0x11, ack = 0x12, quality = 0x13, refresh = 0x14, viewerBye = 0x15, clipboard = 0x16
     }
 
     public var isFromServer: Bool {
         switch self {
-        case .hello, .frame, .cursor, .serverBye: true
+        case .hello, .frame, .cursor, .serverBye, .serverClipboard: true
         default: false
         }
+    }
+
+    /// Whether a message's first byte names a type this viewer knows.
+    public static func isKnownType(_ type: UInt8) -> Bool {
+        Kind(rawValue: type) != nil
     }
 
     public func encoded() throws -> [UInt8] {
@@ -103,6 +113,12 @@ public enum WireMessage: Equatable, Sendable {
         case let .serverBye(reason):
             w.u8(Kind.serverBye.rawValue)
             try w.string(reason, max: MaryVNC.reasonMax)
+        case let .serverClipboard(text), let .clipboard(text):
+            let bytes = Array(text.utf8)
+            guard bytes.count <= MaryVNC.clipboardMax, !bytes.contains(0) else { throw MaryVNCError("a clipboard of more than 1 MiB, or with a NUL") }
+            w.u8(isFromServer ? Kind.serverClipboard.rawValue : Kind.clipboard.rawValue)
+            w.u32(UInt32(bytes.count))
+            w.raw(bytes)
         case let .pointer(x, y, buttons, scrollX, scrollY):
             guard buttons.rawValue <= 7 else { throw MaryVNCError("pointer buttons past middle") }
             w.u8(Kind.pointer.rawValue)
@@ -158,6 +174,14 @@ public enum WireMessage: Equatable, Sendable {
             message = .cursor(x: x, y: y, shown: shown == 1)
         case .serverBye:
             message = .serverBye(reason: try r.string(max: MaryVNC.reasonMax))
+        case .serverClipboard, .clipboard:
+            let length = Int(try r.u32())
+            guard length <= MaryVNC.clipboardMax else { throw MaryVNCError("a clipboard of more than 1 MiB") }
+            let bytes = try r.take(length)
+            guard !bytes.contains(0), let text = String(validating: bytes, as: UTF8.self) else {
+                throw MaryVNCError("a clipboard that is not UTF-8 without NUL")
+            }
+            message = kind == .clipboard ? .clipboard(text: text) : .serverClipboard(text: text)
         case .pointer:
             let x = try r.u16(), y = try r.u16(), buttons = try r.u8(), scrollX = try r.i16(), scrollY = try r.i16()
             guard buttons <= 7 else { throw MaryVNCError("pointer buttons past middle") }
