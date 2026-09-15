@@ -52,8 +52,8 @@ make flash DISK=disk4           # erase disk4 and write the pi5 image (asks firs
 make run-app                    # the GUI
 make app                        # dist/MaryOS.app (release, kit bundled, signed)
 make test                       # the token check, swift test and the builder's tests
-./vnc.sh                        # MaryVNC: the viewer for a MaryOS desktop, finding Pis on the USB cable and the network
-./vnc.sh --connect maryos.local # by address, with the key of the Pi used last (add --pair to pair)
+./vnc.sh                        # MaryVNC: the viewer for a MaryOS desktop, finding Pis with MaryVNC Nearby
+./vnc.sh --connect 10.0.0.73    # by address, with the key of the Pi used last (add --pair to pair)
 make app-vnc                    # dist/MaryVNC.app
 make lp-tokens                  # regenerate Liquid Platinum's tokens from maryos/maryui's lp_tokens.h
 ```
