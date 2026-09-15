@@ -67,9 +67,11 @@ let package = Package(
                 ]),
             ]
         ),
+        // What MaryVNC.app and MaryVNC Light share: the remote desktop view and one session's lifecycle.
+        .target(name: "MaryVNCViewer", dependencies: ["MaryVNCKit", "LiquidPlatinum"]),
         .executableTarget(
             name: "MaryVNCApp",
-            dependencies: ["MaryVNCKit", "LiquidPlatinum"],
+            dependencies: ["MaryVNCKit", "MaryVNCViewer", "LiquidPlatinum"],
             exclude: ["Info.plist", "AppIcon.svg"],
             resources: [.copy("AppIcon.iconset")],
             linkerSettings: [

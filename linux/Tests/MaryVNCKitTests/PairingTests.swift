@@ -80,6 +80,26 @@ import Testing
         #expect(try PairingStore(url: url).pis.map(\.publicKey) == [b])
     }
 
+    @Test func twoViewersOnOneFileKeepEachOthersChanges() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        var light = try PairingStore(url: url)
+        var viewer = try PairingStore(url: url)
+        let a = NoiseKeyPair.generate().publicKey, b = NoiseKeyPair.generate().publicKey
+        try light.upsert(publicKey: a, name: "maryos")
+        try viewer.upsert(publicKey: b, name: "kitchen")                    // reads a back before it writes
+        #expect(try PairingStore(url: url).pis.map(\.publicKey) == [a, b])
+        let reloaded = light.reloadIfChanged(), again = light.reloadIfChanged()
+        #expect(reloaded)
+        #expect(light.pis.count == 2)
+        #expect(!again)
+        try light.forget(Fingerprint(publicKey: b))
+        try viewer.remember(address: "10.0.0.74", for: Fingerprint(publicKey: a))
+        let file = try PairingStore(url: url)
+        #expect(file.pis.map(\.publicKey) == [a])
+        #expect(file.pis.first?.lastAddress == "10.0.0.74")
+    }
+
     @Test func aLaterVersionOrABadKeyIsRefused() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

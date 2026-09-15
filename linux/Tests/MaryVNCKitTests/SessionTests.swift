@@ -221,4 +221,37 @@ struct MaryvncdInteropTests {
         scanner.call(keys: [try NearbyKey(identity: NoiseKeyPair.generate(), piPublicKey: piKey)], addresses: ["127.0.0.1"], multicast: false)
         #expect(try await next(from: scanner, within: .milliseconds(800)) == nil)
     }
+
+    @Test func aPairedMacsSessionClosesThePairingWindow() async throws {
+        let binary = ProcessInfo.processInfo.environment["MARYVNCD"]!
+        let daemon = try Daemon.start(binary: binary)
+        defer { daemon.stop() }
+        try await daemon.waitUntilListening()
+        let piKey = try [UInt8](Data(contentsOf: daemon.directory.appending(path: "state/identity.pub")))
+        let mac = NoiseKeyPair.generate()
+        let scanner = NearbyScanner(port: daemon.nearbyPort)
+        try scanner.start()
+        defer { scanner.stop() }
+        let paired = try await run(PiSession(endpoint: daemon.endpoint, identity: mac,
+                                             mode: .pair(displayName: "swift test", expected: Fingerprint(publicKey: piKey))), frames: 1)
+        #expect(paired.piKey == piKey)
+
+        // A press to use the Pi: the paired Mac's call hears the window open, as MaryVNC Light does.
+        #expect(try daemon.control(["pair-window", "120"], binary: binary) == 0)
+        let key = try NearbyKey(identity: mac, piPublicKey: piKey)
+        let call = scanner.call(keys: [key], addresses: ["127.0.0.1"], multicast: false)
+        let open = try await next(from: scanner)
+        #expect(open?.piPublicKey == piKey)
+        #expect(open?.offer != nil)
+        #expect(open?.call == call)
+
+        // The Mac answers it with a session, and the window closes behind it.
+        let resumed = try await run(PiSession(endpoint: daemon.endpoint, identity: mac, mode: .resume(piPublicKey: piKey, displayName: "swift test")), frames: 1)
+        #expect(resumed.frames >= 1)
+        try await Task.sleep(for: .milliseconds(1100))
+        scanner.call(keys: [key], addresses: ["127.0.0.1"], multicast: false)
+        let closed = try await next(from: scanner)
+        #expect(closed?.piPublicKey == piKey)
+        #expect(closed?.offer == nil)
+    }
 }

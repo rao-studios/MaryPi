@@ -2,19 +2,14 @@ import AppKit
 import CoreGraphics
 import LiquidPlatinum
 import MaryVNCKit
+import MaryVNCViewer
 import Network
 import Observation
 
 /// The viewer: the Pis in view, the paired ones, and at most one session.
 @MainActor @Observable
 final class AppModel {
-    enum Phase: Equatable {
-        case idle
-        case connecting(name: String)
-        case pairing(name: String)
-        case connected
-        case waiting(name: String, seconds: Int)
-    }
+    typealias Phase = PiLink.Phase
 
     enum Sheet: Equatable {
         case pair(NearbyPi)
@@ -23,29 +18,13 @@ final class AppModel {
         case forget(PairedPi)
     }
 
-    /// Where a session goes, and with which key.
-    struct Target: Equatable {
-        var name: String
-        var endpoint: NWEndpoint
-        /// The address to remember for the next Nearby call.
-        var host: String?
-        var piKey: [UInt8]?
-        var fingerprint: Fingerprint?
-    }
-
-    var pis: [NearbyPi] = []
+    private(set) var nearby = NearbyList()
     var selectionID: String?
-    var phase: Phase = .idle
     var sheet: Sheet?
-    var desktopName = ""
-    var desktopSize = CGSize.zero
-    var frame: CGImage?
-    var cursorShown = false
-    var framesPerSecond = 0
-    var bytesPerSecond = 0
     var settings: ViewerSettings
     var pairing: PairingStore
     let identity: NoiseKeyPair
+    let link = PiLink()
 
     @ObservationIgnored private let arguments: [String]
     /// `--test-profile DIR`: this Mac's key, the pairs and the settings in DIR rather than the Keychain and
@@ -54,18 +33,9 @@ final class AppModel {
     @ObservationIgnored private let settingsURL: URL
     @ObservationIgnored private let scanner = NearbyScanner()
     @ObservationIgnored private let pathMonitor = NWPathMonitor()
-    @ObservationIgnored private let decoder = FrameDecoder()
-    @ObservationIgnored private var session: PiSession?
-    @ObservationIgnored private var target: Target?
-    @ObservationIgnored private var backoff = Backoff()
-    @ObservationIgnored private var reconnect: Task<Void, Never>?
     @ObservationIgnored private var calling: Task<Void, Never>?
     /// Until then, a call every 5 s rather than every 15.
     @ObservationIgnored private var callOftenUntil = Date.distantPast
-    @ObservationIgnored private var stayDisconnected = false
-    @ObservationIgnored private var statFrames = 0
-    @ObservationIgnored private var statBytes = 0
-    @ObservationIgnored private var statStart = Date()
     @ObservationIgnored private var startupMessage: Sheet?
 
     init(arguments: [String]) {
@@ -96,33 +66,53 @@ final class AppModel {
             startupMessage = .message(title: "The Keychain would not keep this Mac’s key",
                                       text: "\(error). This session uses a key of its own; a Pi paired now will not know this Mac next time.")
         }
+        link.quality = settings.quality
+        link.onPaired = { [unowned self] key, target in
+            try? pairing.upsert(publicKey: key, name: target.name)
+            nearby.paired(key)
+        }
+        link.onDesktop = { [unowned self] fingerprint, host in
+            try? pairing.touch(fingerprint, address: host)
+        }
+        link.onEnded = { [unowned self] end, target in ended(end, target) }
+        link.onRetry = { [unowned self] in lookAgain() }
+        link.freshen = { [unowned self] target in freshened(target) }
     }
 
     // MARK: What the window shows
 
+    var pis: [NearbyPi] { nearby.pis }
+    var phase: Phase { link.phase }
+    var desktopName: String { link.desktopName }
+    var desktopSize: CGSize { link.desktopSize }
+    var frame: CGImage? { link.frame }
+    var cursorShown: Bool { link.cursorShown }
+    var framesPerSecond: Int { link.framesPerSecond }
+    var bytesPerSecond: Int { link.bytesPerSecond }
+
     var fingerprint: Fingerprint { Fingerprint(publicKey: identity.publicKey) }
     var selectedPi: NearbyPi? { pis.first { $0.id == selectionID } }
     var selectedPaired: PairedPi? { selectedPi.flatMap { pairing.find($0.fingerprint) } }
-    var isSessionActive: Bool { phase != .idle }
-    var isConnected: Bool { phase == .connected }
+    var isSessionActive: Bool { link.isActive }
+    var isConnected: Bool { link.isConnected }
     var canPairSelected: Bool { selectedPi?.isPairable == true && selectedPaired == nil && !isSessionActive }
 
     /// Pis whose pairing window is open and that do not know this Mac.
-    var readyToPair: [NearbyPi] { pis.filter { !$0.isPaired } }
+    var readyToPair: [NearbyPi] { nearby.readyToPair }
     /// Paired Pis that answered.
-    var pairedNearby: [NearbyPi] { pis.filter(\.isPaired) }
+    var pairedNearby: [NearbyPi] { nearby.pairedNearby }
 
     var pairedOutOfView: [PairedPi] {
         pairing.pis.filter { paired in !pis.contains { $0.isPaired && $0.fingerprint == paired.fingerprint } }
     }
 
     func isCurrent(_ pi: NearbyPi) -> Bool {
-        isSessionActive && target?.fingerprint == pi.fingerprint
+        isSessionActive && link.target?.fingerprint == pi.fingerprint
     }
 
     /// A paired Pi that this session is for, whether or not it answered a call (a Pi reached by address).
     func isCurrent(_ paired: PairedPi) -> Bool {
-        isSessionActive && target?.piKey == paired.publicKey
+        isSessionActive && link.target?.piKey == paired.publicKey
     }
 
     var windowTitle: String {
@@ -187,9 +177,9 @@ final class AppModel {
         }
         let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!)
         if arguments.contains("--pair") {
-            connect(Target(name: host, endpoint: endpoint, host: host, piKey: nil, fingerprint: nil))
+            connect(SessionTarget(name: host, endpoint: endpoint, host: host, piKey: nil, fingerprint: nil))
         } else if let recent = pairing.pis.max(by: { ($0.lastConnected ?? $0.paired) < ($1.lastConnected ?? $1.paired) }) {
-            connect(Target(name: host, endpoint: endpoint, host: host, piKey: recent.publicKey, fingerprint: recent.fingerprint))
+            connect(SessionTarget(name: host, endpoint: endpoint, host: host, piKey: recent.publicKey, fingerprint: recent.fingerprint))
         } else {
             sheet = .message(title: "No Pi is paired yet",
                              text: "Pair first: ./vnc.sh --connect \(value) --pair while the Pi’s pairing window is open.")
@@ -202,20 +192,21 @@ final class AppModel {
     /// wakes, on Look Again, and while a lost Pi is being looked for.
     func lookAgain() {
         callOftenUntil = Date().addingTimeInterval(120)
-        if phase != .connected { callNow() }
+        if !isConnected { callNow() }
     }
 
     private func keepCalling() async {
         while !Task.isCancelled {
             let wait: Duration = Date() < callOftenUntil ? .seconds(5) : .seconds(15)
             try? await Task.sleep(for: wait)
-            if phase != .connected { callNow() }
+            if !isConnected { callNow() }
         }
     }
 
     private func callNow() {
-        let now = Date()
-        pis.removeAll { now.timeIntervalSince($0.lastSeen) > 40 && !isCurrent($0) }
+        pairing.reloadIfChanged()
+        let current = isSessionActive ? link.target?.fingerprint : nil
+        nearby.prune { $0.fingerprint == current }
         let recent = pairing.pis.sorted { ($0.lastConnected ?? $0.paired) > ($1.lastConnected ?? $1.paired) }.prefix(Nearby.tagsMax)
         let keys = recent.compactMap { try? NearbyKey(identity: identity, piPublicKey: $0.publicKey) }
         scanner.call(keys: keys, addresses: recent.compactMap(\.lastAddress))
@@ -234,44 +225,22 @@ final class AppModel {
 
     /// An answer to one of this Mac's calls.
     private func hear(_ heard: NearbyHeard) {
-        let now = Date()
-        let found: NearbyPi
-        if let key = heard.piPublicKey, let paired = pairing.find(Fingerprint(publicKey: key)) {
-            // The tag proves this is the Pi paired with this Mac, so where it answered from is worth keeping.
-            found = NearbyPi(publicKey: key, name: heard.offer?.name ?? paired.name, host: heard.host, port: heard.port,
-                             isPaired: true, isPairable: heard.offer != nil, lastSeen: now)
-            try? pairing.remember(address: heard.host, for: paired.fingerprint)
-        } else if let offer = heard.offer, pairing.find(Fingerprint(publicKey: offer.publicKey)) == nil {
-            found = NearbyPi(publicKey: offer.publicKey, name: offer.name, host: heard.host, port: heard.port,
-                             isPaired: false, isPairable: true, lastSeen: now)
-        } else {
-            // An offer without a tag naming a Pi this Mac is paired with proves nothing about where that Pi is.
-            return
-        }
-        if let index = pis.firstIndex(where: { $0.id == found.id }) {
-            pis[index] = found
-        } else {
-            pis.append(found)
-            pis.sort { ($0.isPaired ? 0 : 1, $0.name) < ($1.isPaired ? 0 : 1, $1.name) }
-        }
-        if selectedPi == nil { selectionID = found.id }
+        guard let result = nearby.hear(heard, pairing: pairing) else { return }
+        if let address = result.address { try? pairing.remember(address: address, for: result.pi.fingerprint) }
+        if selectedPi == nil { selectionID = result.pi.id }
         autoConnect()
     }
 
     private func autoConnect() {
-        guard phase == .idle, !stayDisconnected, sheet == nil else { return }
+        guard phase == .idle, !link.stayDisconnected, sheet == nil else { return }
         let inView = Set(pairedNearby.map(\.fingerprint))
         guard let paired = pairing.mostRecent(among: inView), let pi = pairedNearby.first(where: { $0.fingerprint == paired.fingerprint }) else { return }
         selectionID = pi.id
-        connect(target(for: pi, key: paired.publicKey))
-    }
-
-    private func target(for pi: NearbyPi, key: [UInt8]?) -> Target {
-        Target(name: pi.name, endpoint: pi.endpoint, host: pi.host, piKey: key, fingerprint: pi.fingerprint)
+        connect(SessionTarget(pi: pi, key: paired.publicKey))
     }
 
     /// The target at the address its Pi answered from most recently.
-    private func freshened(_ target: Target) -> Target {
+    private func freshened(_ target: SessionTarget) -> SessionTarget {
         guard let fingerprint = target.fingerprint, let pi = pairedNearby.first(where: { $0.fingerprint == fingerprint }) else { return target }
         var fresh = target
         fresh.endpoint = pi.endpoint
@@ -288,7 +257,7 @@ final class AppModel {
     func connectSelected() {
         guard let pi = selectedPi else { return }
         if let paired = selectedPaired {
-            connect(target(for: pi, key: paired.publicKey))
+            connect(SessionTarget(pi: pi, key: paired.publicKey))
         } else if pi.isPairable {
             sheet = .pair(pi)
         }
@@ -300,16 +269,16 @@ final class AppModel {
 
     func confirmPair(_ pi: NearbyPi) {
         sheet = nil
-        connect(target(for: pi, key: nil))
+        connect(SessionTarget(pi: pi, key: nil))
     }
 
     func connectManually(host: String, port: UInt16, pair: Bool) {
         sheet = nil
         let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port) ?? NWEndpoint.Port(rawValue: MaryVNC.port)!)
         if pair {
-            connect(Target(name: host, endpoint: endpoint, host: host, piKey: nil, fingerprint: nil))
+            connect(SessionTarget(name: host, endpoint: endpoint, host: host, piKey: nil, fingerprint: nil))
         } else if let recent = pairing.pis.max(by: { ($0.lastConnected ?? $0.paired) < ($1.lastConnected ?? $1.paired) }) {
-            connect(Target(name: host, endpoint: endpoint, host: host, piKey: recent.publicKey, fingerprint: recent.fingerprint))
+            connect(SessionTarget(name: host, endpoint: endpoint, host: host, piKey: recent.publicKey, fingerprint: recent.fingerprint))
         } else {
             sheet = .message(title: "No Pi is paired yet",
                              text: "Tick Pair to pair with \(host) while its pairing window is open: a press of its power button, or maryvncctl pair-window.")
@@ -322,35 +291,28 @@ final class AppModel {
 
     func forget(_ paired: PairedPi) {
         sheet = nil
-        if target?.piKey == paired.publicKey { disconnect() }
+        if link.target?.piKey == paired.publicKey { disconnect() }
         try? pairing.forget(paired.fingerprint)
-        pis.removeAll { $0.fingerprint == paired.fingerprint }
+        nearby.remove(paired.fingerprint)
     }
 
     func disconnect() {
-        stayDisconnected = true
-        reconnect?.cancel()
-        reconnect = nil
-        session?.close()
-        session = nil
-        phase = .idle
-        frame = nil
+        link.disconnect()
     }
 
     /// Connected: the whole screen again. Otherwise: call for Pis again.
     func refresh() {
-        if isConnected { session?.send(.refresh) } else { lookAgain() }
+        if isConnected { link.refresh() } else { lookAgain() }
     }
 
     func send(_ message: WireMessage) {
-        guard isConnected else { return }
-        session?.send(message)
+        link.send(message)
     }
 
     func setQuality(_ quality: FrameQuality) {
         settings.quality = quality
         try? settings.save(to: settingsURL)
-        session?.send(.quality(quality))
+        link.setQuality(quality)
     }
 
     func setAccent(_ accent: ViewerSettings.Accent) {
@@ -371,158 +333,23 @@ final class AppModel {
 
     // MARK: The session
 
-    private func connect(_ target: Target) {
-        reconnect?.cancel()
-        reconnect = nil
-        session?.close()
-        stayDisconnected = false
-        self.target = target
-        let name = Identity.displayName
-        let mode: SessionMode = target.piKey.map { .resume(piPublicKey: $0, displayName: name) } ?? .pair(displayName: name, expected: target.fingerprint)
-        phase = target.piKey == nil ? .pairing(name: target.name) : .connecting(name: target.name)
-        do {
-            let session = try PiSession(endpoint: target.endpoint, identity: identity, mode: mode)
-            self.session = session
-            session.start()
-            Task { await run(session) }
-        } catch {
-            phase = .idle
-            sheet = .message(title: "MaryVNC could not start a session", text: "\(error)")
-        }
+    private func connect(_ target: SessionTarget) {
+        link.connect(target, identity: identity)
     }
 
-    private func run(_ session: PiSession) async {
-        for await event in session.events {
-            guard session === self.session else { continue }
-            switch event {
-            case .connecting, .handshaking:
-                break
-            case let .paired(piPublicKey):
-                if let target {
-                    try? pairing.upsert(publicKey: piPublicKey, name: target.name)
-                    self.target?.piKey = piPublicKey
-                    self.target?.fingerprint = Fingerprint(publicKey: piPublicKey)
-                    if let index = pis.firstIndex(where: { $0.publicKey == piPublicKey }) {
-                        pis[index].isPaired = true
-                        pis[index].isPairable = false
-                    }
-                }
-            case let .desktop(name, width, height, fingerprint):
-                desktopName = name
-                desktopSize = CGSize(width: width, height: height)
-                await decoder.resize(width: width, height: height)
-                phase = .connected
-                backoff.reset()
-                try? pairing.touch(fingerprint, address: target?.host)
-                session.send(.quality(settings.quality))
-            case let .frame(seq, rects):
-                if let image = await decoder.apply(rects) { frame = image.image }
-                session.send(.ack(seq: seq))
-                count(bytes: rects.reduce(0) { $0 + $1.jpeg.count })
-            case let .cursor(_, _, shown):
-                cursorShown = shown
-            case let .ended(reason):
-                ended(reason)
-            }
-        }
-    }
-
-    private func count(bytes: Int) {
-        statFrames += 1
-        statBytes += bytes
-        let elapsed = Date().timeIntervalSince(statStart)
-        if elapsed >= 1 {
-            framesPerSecond = Int((Double(statFrames) / elapsed).rounded())
-            bytesPerSecond = Int(Double(statBytes) / elapsed)
-            statFrames = 0
-            statBytes = 0
-            statStart = Date()
-        }
-    }
-
-    private func ended(_ reason: SessionEnd) {
-        session = nil
-        let name = target?.name ?? "The Pi"
-        switch reason {
-        case .byViewer:
-            phase = .idle
-            frame = nil
-        case .bye("replaced"):
-            settle(title: "Another Mac is watching \(name)", text: "A Pi shows its desktop to one Mac at a time. Connect again to take it back.")
-        case .bye("forgotten"):
+    private func ended(_ end: PiLink.End, _ target: SessionTarget?) {
+        switch end {
+        case .closed, .stopped, .gaveUp:
+            break
+        case let .settled(title, text), let .failed(title, text):
+            sheet = .message(title: title, text: text)
+        case let .forgotten(title, text):
             // The Pi said so after proving its key: drop the pairing here too.
             if let key = target?.piKey {
                 try? pairing.forget(Fingerprint(publicKey: key))
-                pis.removeAll { $0.publicKey == key }
+                nearby.remove(Fingerprint(publicKey: key))
             }
-            settle(title: "\(name) no longer knows this Mac", text: "Pair again: press the Pi’s power button, then click Pair.")
-        case .notPaired:
-            // A silent refusal proves nothing about who refused: an address can be stale, or another machine's. So the
-            // pairing stays, and Forget This Pi… is there if the Pi really has forgotten this Mac.
-            settle(title: "\(name) did not accept this Mac",
-                   text: "Either the Pi has forgotten this Mac, or another machine answered at that address. If maryvncctl pairs on the Pi no longer lists this Mac, choose Forget This Pi… and pair again.")
-        case .pairingRefused:
-            settle(title: "\(name) did not accept pairing",
-                   text: "Its pairing window is closed: it closes after two minutes, and as soon as a Mac pairs. Press the Pi’s power button (or run maryvncctl pair-window on it), then click Pair again.")
-        case .wrongPi:
-            settle(title: "That Pi proved another key", text: "The key it proved is not the one its answer carried, so MaryVNC left before sending this Mac’s key.")
-        case .bye, .failed:
-            retry(reason)
+            sheet = .message(title: title, text: text)
         }
-    }
-
-    private func settle(title: String, text: String) {
-        stayDisconnected = true
-        phase = .idle
-        frame = nil
-        sheet = .message(title: title, text: text)
-    }
-
-    private func retry(_ reason: SessionEnd) {
-        guard let target, target.piKey != nil, !stayDisconnected else {
-            phase = .idle
-            frame = nil
-            if case let .failed(text) = reason { sheet = .message(title: "The session ended", text: text) }
-            return
-        }
-        let delay = backoff.next()
-        let seconds = max(1, Int((Double(delay.components.seconds) + Double(delay.components.attoseconds) / 1e18).rounded(.up)))
-        phase = .waiting(name: target.name, seconds: seconds)
-        lookAgain()
-        reconnect = Task { [weak self] in
-            try? await Task.sleep(for: delay)
-            guard !Task.isCancelled, let self, !self.stayDisconnected else { return }
-            self.connect(self.freshened(target))
-        }
-    }
-}
-
-extension NearbyPi {
-    var endpoint: NWEndpoint {
-        .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port) ?? NWEndpoint.Port(rawValue: Nearby.port)!)
-    }
-}
-
-/// A CGImage handed from the decoder to the window.
-struct DecodedFrame: @unchecked Sendable {
-    let image: CGImage
-}
-
-/// Applies frames off the main thread; the framebuffer lives here and nowhere else.
-actor FrameDecoder {
-    private var framebuffer: Framebuffer?
-
-    func resize(width: Int, height: Int) {
-        if framebuffer?.width != width || framebuffer?.height != height {
-            framebuffer = try? Framebuffer(width: width, height: height)
-        }
-    }
-
-    func apply(_ rects: [FrameRect]) -> DecodedFrame? {
-        guard let framebuffer else { return nil }
-        for rect in rects {
-            try? framebuffer.apply(rect)
-        }
-        return framebuffer.makeImage().map(DecodedFrame.init)
     }
 }

@@ -5,21 +5,34 @@ import MaryVNCKit
 import SwiftUI
 
 /// The Pi's desktop, aspect-fit, taking this Mac's pointer, scroll and keys for the Pi.
-struct RemoteView: NSViewRepresentable {
-    var image: CGImage
-    var desktopSize: CGSize
-    var cursorShown: Bool
-    var keyMap: MaryVNCKit.KeyMap
-    var enabled: Bool
-    var send: (WireMessage) -> Void
+public struct RemoteView: NSViewRepresentable {
+    public var image: CGImage
+    public var desktopSize: CGSize
+    public var cursorShown: Bool
+    public var keyMap: MaryVNCKit.KeyMap
+    public var enabled: Bool
+    /// The letters that, with ⌘, stay with the Mac.
+    public var reservedCommandKeys: Set<String>
+    public var send: (WireMessage) -> Void
 
-    func makeNSView(context: Context) -> RemoteNSView {
+    public init(image: CGImage, desktopSize: CGSize, cursorShown: Bool, keyMap: MaryVNCKit.KeyMap, enabled: Bool,
+                reservedCommandKeys: Set<String> = ["q", "h", "m", ","], send: @escaping (WireMessage) -> Void) {
+        self.image = image
+        self.desktopSize = desktopSize
+        self.cursorShown = cursorShown
+        self.keyMap = keyMap
+        self.enabled = enabled
+        self.reservedCommandKeys = reservedCommandKeys
+        self.send = send
+    }
+
+    public func makeNSView(context: Context) -> RemoteNSView {
         let view = RemoteNSView(frame: .zero)
         update(view)
         return view
     }
 
-    func updateNSView(_ view: RemoteNSView, context: Context) {
+    public func updateNSView(_ view: RemoteNSView, context: Context) {
         update(view)
     }
 
@@ -29,23 +42,26 @@ struct RemoteView: NSViewRepresentable {
         view.desktopSize = desktopSize
         view.cursorShown = cursorShown
         view.enabled = enabled
+        view.reservedCommandKeys = reservedCommandKeys
         view.show(image)
     }
 }
 
-final class RemoteNSView: NSView {
-    var send: (WireMessage) -> Void = { _ in }
-    var keyMap = MaryVNCKit.KeyMap()
-    var desktopSize = CGSize.zero
-    var cursorShown = false {
+public final class RemoteNSView: NSView {
+    public var send: (WireMessage) -> Void = { _ in }
+    public var keyMap = MaryVNCKit.KeyMap()
+    public var desktopSize = CGSize.zero
+    public var cursorShown = false {
         didSet { if oldValue != cursorShown { window?.invalidateCursorRects(for: self) } }
     }
-    var enabled = false {
+    public var enabled = false {
         didSet {
             if !enabled { releaseAll() }
             if enabled && !oldValue { window?.makeFirstResponder(self) }
         }
     }
+    /// The letters that, with ⌘, stay with the Mac; every other chord goes to the Pi.
+    public var reservedCommandKeys: Set<String> = ["q", "h", "m", ","]
 
     private var buttons: PointerButtons = []
     private var held: Set<UInt16> = []
@@ -57,7 +73,7 @@ final class RemoteNSView: NSView {
     /// A cursor with nothing in it, for when the Pi paints its pointer into the picture.
     private static let blankCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
 
-    override init(frame: NSRect) {
+    public override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.contentsGravity = .resizeAspect
@@ -66,7 +82,7 @@ final class RemoteNSView: NSView {
         layer?.minificationFilter = .trilinear
     }
 
-    required init?(coder: NSCoder) {
+    public required init?(coder: NSCoder) {
         return nil
     }
 
@@ -74,18 +90,20 @@ final class RemoteNSView: NSView {
         if let monitor { NSEvent.removeMonitor(monitor) }
     }
 
-    override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    public override var isFlipped: Bool { true }
+    public override var acceptsFirstResponder: Bool { true }
+    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    /// A drag on the desktop is the Pi's, never a move of a window without a title bar.
+    public override var mouseDownCanMoveWindow: Bool { false }
 
-    func show(_ image: CGImage) {
+    public func show(_ image: CGImage) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer?.contents = image
         CATransaction.commit()
     }
 
-    override func viewWillMove(toWindow newWindow: NSWindow?) {
+    public override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
@@ -93,7 +111,7 @@ final class RemoteNSView: NSView {
         resignObserver = nil
     }
 
-    override func viewDidMoveToWindow() {
+    public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window else { return }
         // Keys go through a local monitor: AppKit never delivers a key up while ⌘ is held, and the Pi needs
@@ -105,20 +123,22 @@ final class RemoteNSView: NSView {
         resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.releaseAll() }
         }
+        // Enabled before it had a window (the desktop arrived first): take the keys now, not after a click.
+        if enabled { window.makeFirstResponder(self) }
     }
 
-    override func resignFirstResponder() -> Bool {
+    public override func resignFirstResponder() -> Bool {
         releaseAll()
         return super.resignFirstResponder()
     }
 
-    override func updateTrackingAreas() {
+    public override func updateTrackingAreas() {
         super.updateTrackingAreas()
         for area in trackingAreas { removeTrackingArea(area) }
         addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
     }
 
-    override func resetCursorRects() {
+    public override func resetCursorRects() {
         if !cursorShown { addCursorRect(bounds, cursor: Self.blankCursor) }
     }
 
@@ -148,43 +168,43 @@ final class RemoteNSView: NSView {
         send(.pointer(x: last.x, y: last.y, buttons: buttons, scrollX: 0, scrollY: 0))
     }
 
-    override func mouseMoved(with event: NSEvent) { pointer(event) }
-    override func mouseDragged(with event: NSEvent) { pointer(event) }
-    override func rightMouseDragged(with event: NSEvent) { pointer(event) }
-    override func otherMouseDragged(with event: NSEvent) { pointer(event) }
+    public override func mouseMoved(with event: NSEvent) { pointer(event) }
+    public override func mouseDragged(with event: NSEvent) { pointer(event) }
+    public override func rightMouseDragged(with event: NSEvent) { pointer(event) }
+    public override func otherMouseDragged(with event: NSEvent) { pointer(event) }
 
-    override func mouseDown(with event: NSEvent) {
+    public override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         buttons.insert(.left)
         pointer(event)
     }
 
-    override func mouseUp(with event: NSEvent) {
+    public override func mouseUp(with event: NSEvent) {
         buttons.remove(.left)
         pointer(event)
     }
 
-    override func rightMouseDown(with event: NSEvent) {
+    public override func rightMouseDown(with event: NSEvent) {
         buttons.insert(.right)
         pointer(event)
     }
 
-    override func rightMouseUp(with event: NSEvent) {
+    public override func rightMouseUp(with event: NSEvent) {
         buttons.remove(.right)
         pointer(event)
     }
 
-    override func otherMouseDown(with event: NSEvent) {
+    public override func otherMouseDown(with event: NSEvent) {
         if event.buttonNumber == 2 { buttons.insert(.middle) }
         pointer(event)
     }
 
-    override func otherMouseUp(with event: NSEvent) {
+    public override func otherMouseUp(with event: NSEvent) {
         if event.buttonNumber == 2 { buttons.remove(.middle) }
         pointer(event)
     }
 
-    override func scrollWheel(with event: NSEvent) {
+    public override func scrollWheel(with event: NSEvent) {
         guard enabled else { return }
         // A wheel's line is libinput's 15; a trackpad already speaks in points. Down on the Pi is positive.
         let factor: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 15
@@ -206,7 +226,7 @@ final class RemoteNSView: NSView {
         guard enabled, let window, window.isKeyWindow, window.firstResponder === self else { return false }
         switch event.type {
         case .keyDown:
-            if Self.isReserved(event) { return false }
+            if isReserved(event) { return false }
             if event.isARepeat { return true }            // the Pi repeats held keys itself
             guard let code = keyMap.evdev(forKeyCode: event.keyCode) else { return true }
             held.insert(code)
@@ -236,7 +256,7 @@ final class RemoteNSView: NSView {
         }
     }
 
-    func releaseAll() {
+    public func releaseAll() {
         for code in held { send(.key(evdev: code, pressed: false)) }
         held.removeAll()
         if !buttons.isEmpty {
@@ -245,10 +265,10 @@ final class RemoteNSView: NSView {
         }
     }
 
-    /// ⌘Q, ⌘H, ⌘⌥H, ⌘M and ⌘, stay with the Mac; every other chord goes to the Pi.
-    static func isReserved(_ event: NSEvent) -> Bool {
+    /// ⌘ with one of `reservedCommandKeys` stays with the Mac.
+    func isReserved(_ event: NSEvent) -> Bool {
         guard event.modifierFlags.contains(.command) else { return false }
-        return ["q", "h", "m", ","].contains(event.charactersIgnoringModifiers?.lowercased() ?? "")
+        return reservedCommandKeys.contains(event.charactersIgnoringModifiers?.lowercased() ?? "")
     }
 
     /// The device-dependent flag for each side's modifier (NX_DEVICE…KEYMASK), so releasing one Shift while

@@ -1,5 +1,6 @@
 import LiquidPlatinum
 import MaryVNCKit
+import MaryVNCViewer
 import SwiftUI
 
 /// The viewer's one window: title bar, toolbar, the Pis on the left, the desktop, the status bar.

@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 
 /// What one answer said: where it came from, the paired Pi whose tag it carried, and a Pi's offer to pair.
 public struct NearbyHeard: Equatable, Sendable {
@@ -11,6 +12,8 @@ public struct NearbyHeard: Equatable, Sendable {
     public let piPublicKey: [UInt8]?
     /// The Pi's key and name, while its pairing window is open.
     public let offer: NearbyAnswer.Offer?
+    /// The number of the call it answered: `call` numbers them from 1, in the order they are made.
+    public let call: Int
 }
 
 /// A Pi in view, as the sidebar lists it.
@@ -45,14 +48,18 @@ public struct NearbyPi: Identifiable, Equatable, Sendable {
 /// this scanner's calls from the last ten seconds count. BSD sockets, as a viewer on any system would use.
 public final class NearbyScanner: @unchecked Sendable {
     public let heard: AsyncStream<NearbyHeard>
+    /// Told, on the scanner's queue, when a call could not go out: the errno and where it was going. macOS says
+    /// EHOSTUNREACH while the app has no Local Network access. Set it before `start()`.
+    public var sendFailed: (@Sendable (_ error: Int32, _ destination: String) -> Void)?
 
     private let continuation: AsyncStream<NearbyHeard>.Continuation
     private let queue = DispatchQueue(label: "com.maryos.MaryVNC.nearby")
     private let port: UInt16
+    private let numbers = Mutex(0)
     private var sources: [DispatchSourceRead] = []
     private var fd4: Int32 = -1
     private var fd6: Int32 = -1
-    private var calls: [(challenge: [UInt8], keys: [NearbyKey], at: ContinuousClock.Instant)] = []
+    private var calls: [(challenge: [UInt8], keys: [NearbyKey], at: ContinuousClock.Instant, number: Int)] = []
 
     /// `port`: where Pis answer, 5901 but for tests.
     public init(port: UInt16 = Nearby.port) {
@@ -92,17 +99,24 @@ public final class NearbyScanner: @unchecked Sendable {
     }
 
     /// One call carrying a tag for each key (at most 32), to each address and, with `multicast`, to the groups.
-    public func call(keys: [NearbyKey], addresses: [String], multicast: Bool = true) {
+    /// Returns the call's number, which the answers to it carry.
+    @discardableResult
+    public func call(keys: [NearbyKey], addresses: [String], multicast: Bool = true) -> Int {
+        let number = numbers.withLock { value in
+            value += 1
+            return value
+        }
         queue.async { [self] in
             let keys = Array(keys.prefix(Nearby.tagsMax))
             guard !sources.isEmpty, let call = try? NearbyCall(keys: keys), let bytes = try? call.encoded() else { return }
             let now = ContinuousClock.now
             calls.removeAll { now - $0.at > .seconds(10) }
-            calls.append((call.challenge, keys, now))
+            calls.append((call.challenge, keys, now, number))
             if calls.count > 16 { calls.removeFirst(calls.count - 16) }
             for address in Set(addresses) { send(bytes, to: address) }
             if multicast { sendToGroups(bytes) }
         }
+        return number
     }
 
     // MARK: On the queue
@@ -188,7 +202,7 @@ public final class NearbyScanner: @unchecked Sendable {
                 group.sin_family = sa_family_t(AF_INET)
                 group.sin_port = port.bigEndian
                 inet_pton(AF_INET, Nearby.group4, &group.sin_addr)
-                send(bytes, on: fd4, to: &group)
+                send(bytes, on: fd4, to: &group, named: "\(Nearby.group4) on \(interface.name)")
             }
             if fd6 >= 0, interface.ipv6, interface.index != 0 {
                 var index = interface.index
@@ -199,19 +213,19 @@ public final class NearbyScanner: @unchecked Sendable {
                 group.sin6_port = port.bigEndian
                 group.sin6_scope_id = index
                 inet_pton(AF_INET6, Nearby.group6, &group.sin6_addr)
-                send(bytes, on: fd6, to: &group)
+                send(bytes, on: fd6, to: &group, named: "\(Nearby.group6) on \(interface.name)")
             }
         }
     }
 
-    private func send<Address>(_ bytes: [UInt8], on fd: Int32, to address: inout Address) {
+    private func send<Address>(_ bytes: [UInt8], on fd: Int32, to address: inout Address, named destination: String) {
         let length = socklen_t(MemoryLayout<Address>.size)
         let sent = bytes.withUnsafeBytes { buffer in
             withUnsafePointer(to: &address) {
                 $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sendto(fd, buffer.baseAddress, buffer.count, 0, $0, length) }
             }
         }
-        if sent < 0 { MaryVNC.logger.debug("a Nearby call did not go: \(String(cString: strerror(errno)), privacy: .public)") }
+        if sent < 0 { failed(errno, destination) }
     }
 
     /// A call to one address, when it is a numeric one (a name would need a lookup).
@@ -225,7 +239,12 @@ public final class NearbyScanner: @unchecked Sendable {
         let fd = info.pointee.ai_family == AF_INET6 ? fd6 : fd4
         guard fd >= 0, let address = info.pointee.ai_addr else { return }
         let sent = bytes.withUnsafeBytes { sendto(fd, $0.baseAddress, $0.count, 0, address, info.pointee.ai_addrlen) }
-        if sent < 0 { MaryVNC.logger.debug("a Nearby call to \(host, privacy: .public) did not go: \(String(cString: strerror(errno)), privacy: .public)") }
+        if sent < 0 { failed(errno, host) }
+    }
+
+    private func failed(_ error: Int32, _ destination: String) {
+        MaryVNC.logger.debug("a Nearby call to \(destination, privacy: .public) did not go: \(String(cString: strerror(error)), privacy: .public)")
+        sendFailed?(error, destination)
     }
 
     private func receive(_ fd: Int32) {
@@ -257,6 +276,6 @@ public final class NearbyScanner: @unchecked Sendable {
         }
         guard named == 0 else { return }
         let text = String(decoding: host.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
-        continuation.yield(NearbyHeard(host: text, port: answer.port, piPublicKey: key?.piPublicKey, offer: answer.offer))
+        continuation.yield(NearbyHeard(host: text, port: answer.port, piPublicKey: key?.piPublicKey, offer: answer.offer, call: call.number))
     }
 }

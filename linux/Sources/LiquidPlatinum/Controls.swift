@@ -224,22 +224,25 @@ struct EqualWidths: Layout {
     }
 }
 
+/// A button on a sheet or an alert panel.
+public struct LPAlertAction {
+    public var title: String
+    public var role: Role
+    public var action: () -> Void
+
+    public enum Role { case primary, cancel, other }
+
+    public init(_ title: String, role: Role = .other, action: @escaping () -> Void) {
+        self.title = title
+        self.role = role
+        self.action = action
+    }
+}
+
 /// A sheet as maryui's lp_sheet hangs one: from under the title bar, over a dimmed body, with an icon, a title,
 /// a message, optional content, and its buttons on the right (the first is the default, the second cancels).
 public struct LPSheet<Content: View>: View {
-    public struct Action {
-        public var title: String
-        public var role: Role
-        public var action: () -> Void
-
-        public enum Role { case primary, cancel, other }
-
-        public init(_ title: String, role: Role = .other, action: @escaping () -> Void) {
-            self.title = title
-            self.role = role
-            self.action = action
-        }
-    }
+    public typealias Action = LPAlertAction
 
     var symbol: String?
     var title: String
@@ -261,11 +264,36 @@ public struct LPSheet<Content: View>: View {
             let width = bodyWidth - 48 >= 240 ? min(440, bodyWidth - 48) : min(240, bodyWidth - 16)
             ZStack(alignment: .top) {
                 Color.black.opacity(0.08).contentShape(Rectangle())
-                panel.frame(width: width).offset(y: -14)
+                LPAlertPanel(symbol: symbol, title: title, message: message, actions: actions) { content }
+                    .frame(width: width).offset(y: -14)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
         }
+    }
+}
+
+/// The panel a sheet hangs, on its own, for a window of its own (MaryVNC Light's dialogs): the icon, the title, the
+/// message, optional content and the buttons, on brushed metal with its shadow falling a few points outside it.
+public struct LPAlertPanel<Content: View>: View {
+    public typealias Action = LPAlertAction
+
+    var symbol: String?
+    var title: String
+    var message: String?
+    var actions: [Action]
+    var content: Content
+
+    public init(symbol: String? = nil, title: String, message: String? = nil, actions: [Action], @ViewBuilder content: () -> Content) {
+        self.symbol = symbol
+        self.title = title
+        self.message = message
+        self.actions = actions
+        self.content = content()
+    }
+
+    public var body: some View {
+        panel
     }
 
     private var panel: some View {
@@ -325,6 +353,12 @@ public struct LPSheet<Content: View>: View {
 }
 
 extension LPSheet where Content == EmptyView {
+    public init(symbol: String? = nil, title: String, message: String? = nil, actions: [Action]) {
+        self.init(symbol: symbol, title: title, message: message, actions: actions) { EmptyView() }
+    }
+}
+
+extension LPAlertPanel where Content == EmptyView {
     public init(symbol: String? = nil, title: String, message: String? = nil, actions: [Action]) {
         self.init(symbol: symbol, title: title, message: message, actions: actions) { EmptyView() }
     }
