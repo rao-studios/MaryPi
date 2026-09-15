@@ -11,6 +11,7 @@ import PackageDescription
 // signed after building (scripts/sign.sh, run by the Makefile).
 let infoPlist = "\(Context.packageDirectory)/Sources/MaryOSApp/Info.plist"
 let vncInfoPlist = "\(Context.packageDirectory)/Sources/MaryVNCApp/Info.plist"
+let lightInfoPlist = "\(Context.packageDirectory)/Sources/MaryVNCLightApp/Info.plist"
 
 let package = Package(
     name: "MaryOS",
@@ -24,6 +25,8 @@ let package = Package(
         .executable(name: "MaryOSApp", targets: ["MaryOSApp"]),
         // The MaryVNC viewer (vnc.sh, scripts/bundle.sh MaryVNC).
         .executable(name: "MaryVNCApp", targets: ["MaryVNCApp"]),
+        // MaryVNC Light, the menu bar portal (vnc-light.sh, scripts/bundle.sh MaryVNCLight).
+        .executable(name: "MaryVNCLightApp", targets: ["MaryVNCLightApp"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
@@ -80,6 +83,20 @@ let package = Package(
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
                     "-Xlinker", vncInfoPlist,
+                ]),
+            ]
+        ),
+        // MaryVNC Light: MaryVNC in the menu bar, with a borderless portal (vnc-light.sh, scripts/bundle.sh MaryVNCLight).
+        .executableTarget(
+            name: "MaryVNCLightApp",
+            dependencies: ["MaryVNCKit", "MaryVNCViewer", "LiquidPlatinum"],
+            exclude: ["Info.plist"],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", lightInfoPlist,
                 ]),
             ]
         ),

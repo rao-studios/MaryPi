@@ -55,6 +55,7 @@ make test                       # the token check, swift test and the builder's 
 ./vnc.sh                        # MaryVNC: the viewer for a MaryOS desktop, finding Pis with MaryVNC Nearby
 ./vnc.sh --connect 10.0.0.73    # by address, with the key of the Pi used last (add --pair to pair)
 make app-vnc                    # dist/MaryVNC.app
+./vnc-light.sh                  # MaryVNC Light: MaryVNC in the menu bar; a press of the Pi's power button opens its desktop
 make lp-tokens                  # regenerate Liquid Platinum's tokens from maryos/maryui's lp_tokens.h
 ```
 
@@ -145,8 +146,11 @@ console.
 ## MaryVNC
 
 MaryVNC shows a MaryOS desktop on this Mac and sends it this Mac's pointer and keys. The server is MaryOS's
-`maryvncd` ([maryos/docs/14-maryvnc.md](maryos/docs/14-maryvnc.md)); the viewer is here. `./vnc.sh` (or
-`make vnc`) builds and opens it; `make app-vnc` makes `dist/MaryVNC.app`.
+`maryvncd` ([maryos/docs/14-maryvnc.md](maryos/docs/14-maryvnc.md)); the viewers are here. `./vnc.sh` (or
+`make vnc`) builds and opens MaryVNC.app, the windowed viewer; `make app-vnc` makes `dist/MaryVNC.app`.
+`./vnc-light.sh` (or `make vnc-light`) builds `dist/MaryVNCLight.app` and opens it: MaryVNC Light, the same viewer
+in the menu bar, whose portal opens when a Pi's power button is pressed. They share this Mac's key and the paired
+Pis, `MaryVNCKit` and `MaryVNCViewer` (the desktop view and one session's lifecycle); run one of them at a time.
 
 - **Finding Pis.** MaryVNC Nearby (`Sources/MaryVNCKit/Nearby`; the protocol is in maryos/docs/14-maryvnc.md):
   the viewer calls on UDP 5901, to a multicast group on each interface and to the address each paired Pi last
@@ -157,7 +161,7 @@ MaryVNC shows a MaryOS desktop on this Mac and sends it this Mac's pointer and k
   answers are replies. macOS asks once for Local Network access.
 - **Pairing.** A short press of the Pi's power button (or `maryvncctl pair-window 120`) opens its pairing window,
   and the Pi appears under Ready to pair. Pair runs Noise XX expecting the key the Pi's answer offered, and the
-  window closes once this Mac has paired. `./vnc.sh --connect HOST --pair` pairs by address. A paired Pi that
+  window closes once a Mac has paired, or once a paired Mac connects while it is open. `./vnc.sh --connect HOST --pair` pairs by address. A paired Pi that
   answers then connects on its own, the one used last first, and a lost one is looked for and reached wherever it
   answers from. A refusal never unpairs this Mac on its own: only the Pi's `bye` `forgotten`, or Forget This Pi….
 - **Keys.** This Mac's private key is in the login Keychain (service `com.maryos.MaryVNC`, this device only);
@@ -166,6 +170,19 @@ MaryVNC shows a MaryOS desktop on this Mac and sends it this Mac's pointer and k
 - **The keyboard.** ⌘ is Super on the Pi by default, so MaryOS's own chords work (⌘Space opens Spotlight, ⌘W
   closes a window); Settings switches it to Control for terminal programs. ⌘Q, ⌘H, ⌘⌥H, ⌘M and ⌘, stay with
   the Mac.
+- **MaryVNC Light.** A menu bar app (`Sources/MaryVNCLightApp`, `LSUIElement`) with no window until a Pi's
+  desktop shows. It calls every second while a paired Pi is answering and every 1.5 s otherwise, to the paired
+  Pis' last addresses and the groups in turn (never both in one call, so a Pi answers each of this Mac's
+  addresses at most once a call), and not while its portal is showing. `PortalRules` (`Sources/MaryVNCKit/Nearby`)
+  decides when the portal opens on its own: a paired Pi's answer shows its window open once it has been seen
+  closed (its power button was pressed, and connecting closes the window again); a paired Pi answers after 30 s of
+  watching without a word (it has just booted), outside the 15 s after launch, wake or a network change; or a Pi
+  whose portal was lost answers again. A Pi ready to pair brings up a pair dialog (a list when there are several);
+  Not Now keeps it quiet until its window closes. The portal is a borderless, non-activating panel that takes the
+  keys as it appears, one point per Pi pixel up to 90% of the screen: rest the pointer on its top edge for a
+  grabber that moves it (double-click fills the screen), drag its edges to resize, and ⌘Q, ⌘H or ⌘M put it away.
+  A lost link dims it and retries for 20 s. The menu lists the Pis nearby and ready to pair, the picture, ⌘ on the
+  Pi and Forget. Its log: `log stream --predicate 'subsystem == "com.maryos.MaryVNC"'`.
 - **Liquid Platinum.** The window is drawn with `Sources/LiquidPlatinum`. Its tokens are generated from the
   submodule's `lp_tokens.h` (`make lp-tokens`; `make test` fails when they drift), and the brushed grain is
   maryui's tile byte for byte. `LP_GALLERY_OUT=/tmp/lp swift test --filter GalleryRenderTests` renders every
@@ -197,11 +214,14 @@ Sources/maryos         the CLI (swift-argument-parser); synchronous commands tha
 Sources/MaryOSApp      the SwiftUI app (product MaryOSApp; bundled as MaryOS.app)
 Sources/MaryVNCKit     MaryVNC's viewer side: Noise XX and IK, the wire, MaryVNC Nearby, the session, pairing, the key map
 Sources/LiquidPlatinum Liquid Platinum for SwiftUI: generated tokens, the brushed grain, surfaces and controls
+Sources/MaryVNCViewer  what the two viewers share: RemoteView (the desktop, pointer and keys) and PiLink (one session)
 Sources/MaryVNCApp     the MaryVNC viewer (product MaryVNCApp; bundled as MaryVNC.app; vnc.sh runs it)
+Sources/MaryVNCLightApp  MaryVNC Light, the menu bar portal (product MaryVNCLightApp; bundled as MaryVNCLight.app by vnc-light.sh)
 Tests/MaryOSKitTests   unit tests and diskutil fixtures
-Tests/MaryVNCKitTests  the Noise and Nearby vectors (the same fixtures as MaryOS's maryvnc/), the wire, pairing, the session
+Tests/MaryVNCKitTests  the Noise and Nearby vectors (the same fixtures as MaryOS's maryvnc/), the wire, pairing, the session,
+                       the Pis in view and MaryVNC Light's portal rules
 Tests/LiquidPlatinumTests  the tokens, the brush tile against maryui's, the gallery render
-scripts/               sign.sh, bundle.sh (MaryOS or MaryVNC), gen-lp-tokens.py
+scripts/               sign.sh, bundle.sh (MaryOS, MaryVNC or MaryVNCLight), gen-lp-tokens.py
 ```
 
 ## Relationship to the ravynOS kit

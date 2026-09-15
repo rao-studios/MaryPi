@@ -13,6 +13,8 @@
 #   make flash DISK=disk4    erase disk4 and write the pi5 image (asks first)
 #   make vnc                 build and open the MaryVNC viewer (vnc.sh; ARGS="--connect HOST --pair", --release)
 #   make app-vnc             dist/MaryVNC.app (scripts/bundle.sh MaryVNC)
+#   make vnc-light           build and open MaryVNC Light, MaryVNC in the menu bar (vnc-light.sh; ARGS=--release)
+#   make app-vnc-light       dist/MaryVNCLight.app, a release build (scripts/bundle.sh MaryVNCLight)
 #   make lp-tokens           regenerate Sources/LiquidPlatinum/LPTokens.swift from maryos/maryui's lp_tokens.h
 #   make lp-tokens-check     fail when LPTokens.swift is out of date (make test runs it)
 SWIFT ?= swift
@@ -46,6 +48,12 @@ vnc:
 app-vnc:
 	sh scripts/bundle.sh MaryVNC
 
+vnc-light:
+	sh vnc-light.sh $(ARGS)
+
+app-vnc-light:
+	sh scripts/bundle.sh MaryVNCLight
+
 lp-tokens:
 	python3 scripts/gen-lp-tokens.py
 
@@ -76,4 +84,4 @@ flash: build
 clean:
 	rm -rf .build dist
 
-.PHONY: build test cli run-app app vnc app-vnc lp-tokens lp-tokens-check rootfs ui mary image vm terminal flash clean
+.PHONY: build test cli run-app app vnc app-vnc vnc-light app-vnc-light lp-tokens lp-tokens-check rootfs ui mary image vm terminal flash clean

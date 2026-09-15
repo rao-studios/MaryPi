@@ -19,8 +19,8 @@ tooling says plainly what a card will do.
 MaryOS itself (the distro, the image pipeline, the desktop and Mary) lives in
 [rao-studios/MaryOS](https://github.com/rao-studios/MaryOS). This repository keeps the
 Mac side of it: the `maryos` CLI and MaryOS.app, which drive the image build, run the VM
-window and flash cards, and MaryVNC.app, which shows a MaryOS desktop on the Mac over the USB
-cable or the network.
+window and flash cards, and MaryVNC.app and MaryVNC Light, which show a MaryOS Pi's desktop on
+the Mac over the network.
 
 ## Quick start
 
@@ -39,6 +39,7 @@ make image TARGET=vm                    # just the image: rootfs from Ubuntu's a
 make image TARGET=pi5                   # the Raspberry Pi 5 image
 make flash DISK=disk4                   # erase disk4 and write it (asks first)
 ./vnc.sh                                # MaryVNC: a MaryOS Pi's desktop on this Mac (see MaryVNC below)
+./vnc-light.sh                          # MaryVNC Light: press the Pi's power button and its desktop appears
 ```
 
 ## MaryVNC: a Pi's desktop on your Mac
@@ -84,7 +85,7 @@ used last, if several are), and when the link drops it looks for the Pi again an
 |---|---|
 | Nothing in the sidebar | Allow MaryVNC under System Settings › Privacy & Security › Local Network. A viewer started from an editor's terminal gets the editor's network permission, which is often off: open `dist/MaryVNC.app` instead. On the Pi, `maryvncctl status` shows where it answers (`nearby: UDP 5901 on wlan0`). |
 | A paired Pi never appears | Some networks keep their devices apart or drop multicast (guest Wi-Fi, some mesh routers). Use Connect to Address… once with the Pi's address; MaryVNC then calls that address directly. |
-| "did not accept pairing" | The pairing window closed: it lasts two minutes and closes when a Mac pairs. Press the power button again. |
+| "did not accept pairing" | The pairing window closed: it lasts two minutes, and closes when a Mac pairs or a paired Mac connects. Press the power button again. |
 | "did not accept this Mac" | The Pi forgot this Mac or was reflashed, or another machine now has its old address. If `maryvncctl pairs` on the Pi does not list this Mac, choose File › Forget This Pi… and pair again. |
 | "Another Mac is watching" | A Pi shows its desktop to one Mac at a time; Connect takes it back. |
 | "Connecting…" never ends | On the Pi, `maryvncctl status` should say `desktop: 1280x800 (connected)`; if it does not, see `systemctl status maryos-desktop`. |
@@ -93,6 +94,33 @@ used last, if several are), and when the link drops it looks for the Pi again an
 **Nobody else sees the Pi.** MaryVNC Nearby (MaryOS docs/14) takes Bonjour's place: the viewer calls, and a Pi
 answers only a call carrying the tag of a Mac it is paired with, or any call while its pairing window is open. It
 announces nothing, so no other device on the network can list it.
+
+## MaryVNC Light: press the button, see the desktop
+
+MaryVNC Light is MaryVNC in the menu bar. It shows nothing until you want the Pi: a press of the Pi's power button
+opens its desktop in a borderless window, with your keyboard and mouse.
+
+```sh
+cd linux
+./vnc-light.sh
+```
+
+It builds `dist/MaryVNCLight.app` and opens it. Allow Local Network access if macOS asks, and choose Always Allow if
+the Keychain asks for this Mac's key. It shares this Mac's key and the paired Pis with MaryVNC.app, so a Pi paired
+in one is paired in the other; run one of the two at a time.
+
+- **The first time**, press the Pi's power button. A dialog asks to pair with the Pi and shows its key: click
+  **Pair**, and the desktop appears.
+- **From then on**, press the button once. The desktop appears in about a second, and the green light stops
+  blinking as it does: the Pi closes its pairing window when your Mac connects. A Pi that is switched off boots
+  from the same press, and the desktop opens when it comes up.
+- **The window**: rest the pointer on its top edge for a grabber that moves it (double-click it to fill the
+  screen), and drag its edges to resize it. ⌘Q, ⌘H or ⌘M put it away and MaryVNC Light stays in the menu bar;
+  every other key goes to the Pi.
+- **The menu**: the Pis nearby (choose one to open it), Pis ready to pair, Close Portal, the picture, ⌘ on the Pi
+  and Forget.
+- **A second Mac**: press the button while the first Mac's desktop is open. The Pi stays ready to pair for two
+  minutes, and the first Mac leaves it alone.
 
 Building, testing and the files behind the viewer are in [linux/README.md](linux/README.md#maryvnc); how MaryVNC
 works and what keeps it private are in MaryOS's
@@ -103,7 +131,7 @@ works and what keeps it private are in MaryOS's
 ```
 ravynos/   Swift package MaryPi (MaryPiKit, marypi CLI, MaryPi.app), vm/ QEMU profiles, docs/
 linux/     Swift package MaryOS (MaryOSKit, maryos CLI, MaryOS.app with the VZ window and the flasher;
-           MaryVNCKit, LiquidPlatinum and MaryVNC.app, the remote-desktop viewer);
+           MaryVNCKit, MaryVNCViewer, LiquidPlatinum, MaryVNC.app and MaryVNC Light, the remote-desktop viewers);
            maryos/ is the MaryOS submodule: distro/, builder/, maryui/ (the desktop in C), mary/, docs/
 Makefile   make ravynos-<target> / make linux-<target> delegate to the kits
 ```
