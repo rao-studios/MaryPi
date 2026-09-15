@@ -42,6 +42,13 @@ public struct LiquidBead: View {
         var pressed: Colors {
             Colors(base: base.mixed(with: deep, 0.35), deep: deep.mixed(with: .black, 0.35), light: light.mixed(with: base, 0.35))
         }
+
+        /// Hovering (not pressed): every stop lifts toward white. `fill` goes to the brim (1.12, not
+        /// 1 — see LiquidBubble's README) and buries the pale glass highlight that normally keeps a
+        /// resting bead light, so without this the hover state reads flatly dark.
+        var hovered: Colors {
+            Colors(base: base.mixed(with: .white, 0.12), deep: deep.mixed(with: .white, 0.12), light: light.mixed(with: .white, 0.12))
+        }
     }
 
     var colors: Colors
@@ -170,7 +177,7 @@ private struct BeadButton: View {
     @State private var hovering = false
 
     var body: some View {
-        LiquidBead(colors: pressed ? colors.pressed : colors, fill: hovering ? 1.12 : LP.Liquid.fillTraffic, phase: phase, glyph: glyph)
+        LiquidBead(colors: pressed ? colors.pressed : (hovering ? colors.hovered : colors), fill: hovering ? 1.12 : LP.Liquid.fillTraffic, phase: phase, glyph: glyph)
             .animation(.easeInOut(duration: LP.Motion.slow), value: hovering)
             .animation(.easeOut(duration: pressed ? LP.Motion.fast : 0.2), value: pressed)
             .contentShape(Circle())
