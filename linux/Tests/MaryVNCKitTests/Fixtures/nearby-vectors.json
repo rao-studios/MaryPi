@@ -1,0 +1,51 @@
+{
+  "source": "maryvnc/tools/maryvnc-nearby-vectors.c prints this file; docs/14-maryvnc.md has the protocol. MaryPi keeps a byte-identical copy (Tests/MaryVNCKitTests/Fixtures).",
+  "label": "MaryVNC/1 nearby",
+  "vectors": [
+    {
+      "description": "a Mac paired with the Pi calls, its tag second of four; the Pi answers with the tag for it",
+      "pi_static": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "pi_public": "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c",
+      "mac_static": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "mac_public": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a",
+      "nearby_key": "44f13b4bd5f2a73c76d9a8df8767d95596e1bd65bb6c2f012912c65ed81736eb",
+      "challenge": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "call_tag": "5f710b5ad1628ce2",
+      "call": "4d564e5101a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0411111111111111115f710b5ad1628ce222222222222222223333333333333333",
+      "pairable": false,
+      "port": 5901,
+      "answer_tag": "c5bc64b7feec6c25",
+      "answer": "4d564e4101a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0d170001c5bc64b7feec6c25"
+    },
+    {
+      "description": "a Mac paired with no Pi calls while the pairing window is open; the Pi answers with its key and name",
+      "pi_static": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "pi_public": "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c",
+      "mac_static": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+      "mac_public": "493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d",
+      "nearby_key": "5e5f0129e022b8694e51e47888c64b9348100c9ccae342f79b85a39711a39e8c",
+      "challenge": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "call": "4d564e5101b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00",
+      "pairable": true,
+      "port": 5901,
+      "name": "maryos",
+      "answer": "4d564e4101b0b1b2b3b4b5b6b7b8b9babbbcbdbebf0d170107a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c06006d6172796f7300"
+    },
+    {
+      "description": "the paired Mac calls while the window is open; the name is not ASCII",
+      "pi_static": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "pi_public": "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c",
+      "mac_static": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "mac_public": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a",
+      "nearby_key": "44f13b4bd5f2a73c76d9a8df8767d95596e1bd65bb6c2f012912c65ed81736eb",
+      "challenge": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "call_tag": "51feebe0151d1a6b",
+      "call": "4d564e5101c0c1c2c3c4c5c6c7c8c9cacbcccdcecf04111111111111111151feebe0151d1a6b22222222222222223333333333333333",
+      "pairable": true,
+      "port": 5901,
+      "name": "Mary’s Pi",
+      "answer_tag": "115845a5fa56e7db",
+      "answer": "4d564e4101c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0d170107a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c0b004d617279e280997320506901115845a5fa56e7db"
+    }
+  ]
+}

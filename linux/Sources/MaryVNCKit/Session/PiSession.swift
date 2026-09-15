@@ -4,7 +4,7 @@ import Network
 
 /// How a session starts.
 public enum SessionMode: Sendable, Equatable {
-    /// Noise XX: pair with a Pi. `expected` is the fingerprint its Bonjour record announced; a Pi that
+    /// Noise XX: pair with a Pi. `expected` is the fingerprint its Nearby answer offered; a Pi that
     /// proves another key is left before this Mac's key is sent.
     case pair(displayName: String, expected: Fingerprint?)
     /// Noise IK: resume with a Pi paired before.
@@ -53,7 +53,7 @@ public final class PiSession: @unchecked Sendable {
     private var receiveCipher: NoiseCipher?
     private var finished = false
 
-    /// `interface` pins the connection to one interface: pairing goes over the USB cable's, never Wi-Fi.
+    /// `interface` pins the connection to one interface.
     public init(endpoint: NWEndpoint, identity: NoiseKeyPair, mode: SessionMode, interface: NWInterface? = nil) throws {
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true

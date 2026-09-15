@@ -24,14 +24,10 @@
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>15.0</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_maryvnc._tcp</string>
-	</array>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>MaryVNC finds MaryOS Pis on the USB cable and your network, and shows their desktops.</string>
+	<string>MaryVNC calls for the MaryOS Pis you paired with, and Pis ready to pair, on your network, and shows their desktops.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

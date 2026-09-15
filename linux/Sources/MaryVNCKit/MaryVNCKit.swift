@@ -1,12 +1,12 @@
 import Foundation
 import os
 
-/// MaryVNC's viewer side: the Noise handshake, the wire, discovery and the session that talk to
+/// MaryVNC's viewer side: the Noise handshake, the wire, MaryVNC Nearby and the session that talk to
 /// `maryvncd` on a Pi (MaryOS `maryvnc/`, docs/14-maryvnc.md). Every layout here follows
-/// `maryvnc/include/maryvnc/wire.h` byte for byte; the two sides share one Noise vector fixture.
+/// `maryvnc/include/maryvnc/wire.h` and `nearby.h` byte for byte; the two sides share the Noise and Nearby
+/// vector fixtures.
 public enum MaryVNC {
     public static let version: UInt16 = 1
-    public static let serviceType = "_maryvnc._tcp"
     public static let port: UInt16 = 5901
     /// The Noise prologue both sides mix in before the first message.
     public static let prologue = Array("MaryVNC/1".utf8)

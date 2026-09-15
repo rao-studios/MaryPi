@@ -44,32 +44,32 @@ struct ViewerWindow: View {
             } else {
                 Button("Connect") { model.connectSelected() }
                     .buttonStyle(LPPillButtonStyle())
-                    .disabled(model.selectedPi == nil)
+                    .disabled(model.selectedPaired == nil)
             }
-            Button("Refresh") { model.refresh() }
+            Button(model.isConnected ? "Refresh" : "Look Again") { model.refresh() }
                 .buttonStyle(LPPillButtonStyle())
-                .disabled(!model.isConnected)
+                .disabled(model.isSessionActive && !model.isConnected)
             LPSegmented(selection: Binding(get: { model.settings.quality }, set: { model.setQuality($0) }),
                         options: [(FrameQuality.best, "Best"), (FrameQuality.fast, "Fast")], small: true)
             Spacer(minLength: LP.Space._2)
             Button("Connect to Address…") { model.sheet = .connect }
                 .buttonStyle(LPPillButtonStyle())
-            Button("Pair over USB") { model.pairSelected() }
+            Button("Pair") { model.pairSelected() }
                 .buttonStyle(LPPillButtonStyle(.primary))
                 .disabled(!model.canPairSelected)
         }
     }
 
     private var sidebar: some View {
-        let usb = model.pis.filter(\.isUSB), nearby = model.pis.filter { !$0.isUSB }, away = model.pairedOutOfView
+        let ready = model.readyToPair, nearby = model.pairedNearby, away = model.pairedOutOfView
         return LPSidebar {
-            if !usb.isEmpty {
-                LPSidebarHeader("On the cable")
-                ForEach(usb) { row($0) }
-            }
             if !nearby.isEmpty {
-                LPSidebarHeader("Nearby").padding(.top, usb.isEmpty ? 0 : LP.Space._3)
+                LPSidebarHeader("Nearby")
                 ForEach(nearby) { row($0) }
+            }
+            if !ready.isEmpty {
+                LPSidebarHeader("Ready to pair").padding(.top, nearby.isEmpty ? 0 : LP.Space._3)
+                ForEach(ready) { row($0) }
             }
             if !away.isEmpty {
                 LPSidebarHeader("Paired, not in view").padding(.top, model.pis.isEmpty ? 0 : LP.Space._3)
@@ -100,17 +100,18 @@ struct ViewerWindow: View {
         }
     }
 
-    private func row(_ pi: DiscoveredPi) -> some View {
+    private func row(_ pi: NearbyPi) -> some View {
         let selected = model.selectionID == pi.id
-        return LPSidebarRow(symbol: pi.isUSB ? "cable.connector" : "desktopcomputer", title: pi.name, selected: selected) {
+        return LPSidebarRow(symbol: "desktopcomputer", title: pi.name, selected: selected) {
             if model.isCurrent(pi) {
                 statusDot
-            } else if !model.isPaired(pi) {
+            } else if !pi.isPaired {
                 Text("Pair")
                     .font(.system(size: LP.Text.xs, weight: .medium))
                     .foregroundStyle((selected ? LP.Ink.onAccent : LP.Ink.tertiary).color)
             }
         }
+        .help("\(pi.host) · key \(pi.fingerprint.short)")
         .onTapGesture(count: 2) { model.select(pi); model.connectSelected() }
         .onTapGesture { model.select(pi) }
     }
@@ -141,8 +142,8 @@ struct ViewerWindow: View {
     @ViewBuilder private var sheet: some View {
         switch model.sheet {
         case let .pair(pi):
-            LPSheet(symbol: "cable.connector", title: "Pair with “\(pi.name)”?",
-                    message: "This Mac and the Pi will remember each other: over the cable now, and on the network after. The Pi announces the key \(pi.fingerprint?.display ?? "(none)"); `maryvncctl status` on the Pi shows its own.",
+            LPSheet(symbol: "link", title: "Pair with “\(pi.name)”?",
+                    message: "Its pairing window is open, and it offers the key \(pi.fingerprint.display); `maryvncctl status` on the Pi shows its own. This Mac and the Pi will remember each other, and MaryVNC will connect to it on its own from then on.",
                     actions: [.init("Pair", role: .primary) { model.confirmPair(pi) }, .init("Cancel", role: .cancel) { model.sheet = nil }])
         case .connect:
             ConnectSheet()
@@ -151,7 +152,7 @@ struct ViewerWindow: View {
                     actions: [.init("OK", role: .primary) { model.sheet = nil }])
         case let .forget(paired):
             LPSheet(symbol: "trash", title: "Forget “\(paired.name)”?",
-                    message: "This Mac will have to pair with it over the USB cable again. On the Pi, `maryvncctl forget` removes this Mac as well.",
+                    message: "To use it again, pair again: press the Pi’s power button, then click Pair. On the Pi, `maryvncctl forget` removes this Mac as well.",
                     actions: [.init("Forget", role: .primary) { model.forget(paired) }, .init("Cancel", role: .cancel) { model.sheet = nil }])
         case nil:
             EmptyView()
@@ -159,7 +160,8 @@ struct ViewerWindow: View {
     }
 }
 
-/// Connect to a Pi by address: resume with the most recent Pi's key, or pair when its window is open.
+/// Connect to a Pi by address, for a Pi Nearby cannot reach: resume with the most recent Pi's key, or pair when its
+/// window is open.
 struct ConnectSheet: View {
     @Environment(AppModel.self) private var model
     @State private var address = ""
@@ -167,9 +169,9 @@ struct ConnectSheet: View {
 
     var body: some View {
         LPSheet(symbol: "network", title: "Connect to a Pi by address",
-                message: "A name such as maryos.local or an address such as 10.0.0.72, with :port if it is not 5901.",
+                message: "For a Pi MaryVNC cannot find nearby: behind a router, or on a network that keeps its devices apart. An address such as 10.0.0.73, with :port if it is not 5901.",
                 actions: [.init("Connect", role: .primary) { submit() }, .init("Cancel", role: .cancel) { model.sheet = nil }]) {
-            LPWellField("maryos.local", text: $address)
+            LPWellField("10.0.0.73", text: $address)
                 .onSubmit { submit() }
             Toggle("Pair with it (its pairing window is open)", isOn: $pair)
                 .toggleStyle(.checkbox)

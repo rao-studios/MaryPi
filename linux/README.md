@@ -148,16 +148,21 @@ MaryVNC shows a MaryOS desktop on this Mac and sends it this Mac's pointer and k
 `maryvncd` ([maryos/docs/14-maryvnc.md](maryos/docs/14-maryvnc.md)); the viewer is here. `./vnc.sh` (or
 `make vnc`) builds and opens it; `make app-vnc` makes `dist/MaryVNC.app`.
 
-- **Finding Pis.** The sidebar lists every Pi announcing `_maryvnc._tcp`: those on the USB cable first (MaryOS
-  chapter 13), then those on the network. macOS asks once for Local Network access.
-- **Pairing.** Over the network, open a window on the Pi (`maryvncctl pair-window 300`), then choose Connect to
-  Address… with Pair ticked, or run `./vnc.sh --connect HOST --pair`. A Pi on the USB cable appears under On the
-  cable, and Pair over USB needs no window, but the cable must carry power and data: over USB-C-to-USB-C the Mac
-  powers a Pi 5 without connecting its data, and a USB-A port cannot power it. Either way, a paired Pi in view
-  then connects on its own, the one used last first.
+- **Finding Pis.** MaryVNC Nearby (`Sources/MaryVNCKit/Nearby`; the protocol is in maryos/docs/14-maryvnc.md):
+  the viewer calls on UDP 5901, to a multicast group on each interface and to the address each paired Pi last
+  answered from, and a Pi answers only a call carrying this Mac's tag, or any call while its pairing window is
+  open. Paired Pis that answer are listed under Nearby, Pis ready to pair under Ready to pair; nothing else on the
+  network can see a Pi. The viewer calls at start, when the network changes, when the Mac wakes and on Look Again,
+  then every 5 s for two minutes and every 15 s after, and not while connected. It never listens on a port: the
+  answers are replies. macOS asks once for Local Network access.
+- **Pairing.** A short press of the Pi's power button (or `maryvncctl pair-window 120`) opens its pairing window,
+  and the Pi appears under Ready to pair. Pair runs Noise XX expecting the key the Pi's answer offered, and the
+  window closes once this Mac has paired. `./vnc.sh --connect HOST --pair` pairs by address. A paired Pi that
+  answers then connects on its own, the one used last first, and a lost one is looked for and reached wherever it
+  answers from. A refusal never unpairs this Mac on its own: only the Pi's `bye` `forgotten`, or Forget This Pi….
 - **Keys.** This Mac's private key is in the login Keychain (service `com.maryos.MaryVNC`, this device only);
   after a rebuild macOS asks whether the new binary may read it: choose Always Allow. The paired Pis are in
-  `~/Library/Application Support/MaryVNC/pairs.json` (public keys only), with the settings beside it.
+  `~/Library/Application Support/MaryVNC/pairs.json` (public keys and last addresses), with the settings beside it.
 - **The keyboard.** ⌘ is Super on the Pi by default, so MaryOS's own chords work (⌘Space opens Spotlight, ⌘W
   closes a window); Settings switches it to Control for terminal programs. ⌘Q, ⌘H, ⌘⌥H, ⌘M and ⌘, stay with
   the Mac.
@@ -169,8 +174,8 @@ MaryVNC shows a MaryOS desktop on this Mac and sends it this Mac's pointer and k
   against a real `maryvncd` built on this Mac from MaryOS's `maryvnc/` (`make -C maryvnc all`, with Homebrew's
   openssl@3, jpeg-turbo and json-c). For the app, run `maryvncd --test-pattern 1280x800 --bind 127.0.0.1
   --pair-window 300`, then `./vnc.sh --test-profile /tmp/vnc --connect 127.0.0.1 --pair`: the test profile keeps
-  this Mac's key, the pairs and the settings in that directory instead of the Keychain, and browses for nothing,
-  so macOS asks for nothing.
+  this Mac's key, the pairs and the settings in that directory instead of the Keychain, and makes no Nearby calls
+  unless `--nearby` is added, so macOS asks for nothing.
 
 ## Development
 
@@ -190,11 +195,11 @@ Sources/MaryOSKit      Distro (config, paths), Build (runner, artifacts), VM (sp
                        controller, window), Disks, Flash, Shell, Model, Orchestration (doctor, coordinator)
 Sources/maryos         the CLI (swift-argument-parser); synchronous commands that pump the main run loop
 Sources/MaryOSApp      the SwiftUI app (product MaryOSApp; bundled as MaryOS.app)
-Sources/MaryVNCKit     MaryVNC's viewer side: Noise XX and IK, the wire, discovery, the session, pairing, the key map
+Sources/MaryVNCKit     MaryVNC's viewer side: Noise XX and IK, the wire, MaryVNC Nearby, the session, pairing, the key map
 Sources/LiquidPlatinum Liquid Platinum for SwiftUI: generated tokens, the brushed grain, surfaces and controls
 Sources/MaryVNCApp     the MaryVNC viewer (product MaryVNCApp; bundled as MaryVNC.app; vnc.sh runs it)
 Tests/MaryOSKitTests   unit tests and diskutil fixtures
-Tests/MaryVNCKitTests  the Noise vectors (the same fixture as MaryOS's maryvnc/), the wire, pairing, the session
+Tests/MaryVNCKitTests  the Noise and Nearby vectors (the same fixtures as MaryOS's maryvnc/), the wire, pairing, the session
 Tests/LiquidPlatinumTests  the tokens, the brush tile against maryui's, the gallery render
 scripts/               sign.sh, bundle.sh (MaryOS or MaryVNC), gen-lp-tokens.py
 ```

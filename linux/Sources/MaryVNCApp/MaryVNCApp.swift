@@ -58,16 +58,15 @@ struct ViewerCommands: Commands {
                 .keyboardShortcut("d")
                 .disabled(!model.isSessionActive)
             Divider()
-            Button("Pair over USB") { model.pairSelected() }
+            Button("Pair…") { model.pairSelected() }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
                 .disabled(!model.canPairSelected)
             Button("Forget This Pi…") { model.askToForgetSelected() }
                 .disabled(model.selectedPaired == nil)
         }
         CommandGroup(after: .toolbar) {
-            Button("Refresh Screen") { model.refresh() }
+            Button(model.isConnected ? "Refresh Screen" : "Look for Pis Again") { model.refresh() }
                 .keyboardShortcut("r")
-                .disabled(!model.isConnected)
             Picker("Quality", selection: Binding(get: { model.settings.quality }, set: { model.setQuality($0) })) {
                 Text("Best").tag(FrameQuality.best)
                 Text("Fast").tag(FrameQuality.fast)

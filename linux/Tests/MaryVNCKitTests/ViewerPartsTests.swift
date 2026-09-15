@@ -82,22 +82,3 @@ import Testing
         #expect(throws: MaryVNCError.self) { try Framebuffer(width: 0, height: 10) }
     }
 }
-
-@Suite struct DiscoveryTests {
-    @Test func theCablesNetworkIsTenTwelveOneNinetyFourSlashTwentyEight() {
-        #expect(USBLink.contains(0x0a0c_c201))   // 10.12.194.1, the Pi
-        #expect(USBLink.contains(0x0a0c_c20e))   // .14
-        #expect(!USBLink.contains(0x0a0c_c210))  // .16
-        #expect(!USBLink.contains(0x0a0c_c302))  // 10.12.195.2
-        #expect(!USBLink.contains(0xc0a8_0102))  // 192.168.1.2
-    }
-
-    @Test func theTXTRecordGivesTheClaimedKeyAndVersion() {
-        let id = String(repeating: "ab", count: 32)
-        let parsed = DiscoveredPi.parseTXT(["id": id, "v": "1"])
-        #expect(parsed.fingerprint?.hex == id)
-        #expect(parsed.version == 1)
-        #expect(DiscoveredPi.parseTXT(["id": "abc", "v": "one"]).fingerprint == nil)
-        #expect(DiscoveredPi.parseTXT([:]).version == nil)
-    }
-}

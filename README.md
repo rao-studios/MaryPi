@@ -44,31 +44,28 @@ make flash DISK=disk4                   # erase disk4 and write it (asks first)
 ## MaryVNC: a Pi's desktop on your Mac
 
 MaryVNC shows a MaryOS Pi's desktop in a Liquid Platinum window on the Mac and sends it your pointer and keys.
-A Pi answers only Macs it has paired with.
+A Pi answers only Macs it has paired with, and tells nothing else on the network that it is there.
 
-**Before you start:** a Pi running MaryOS with MaryVNC (MaryOS 6b87c54 or later, written with MaryOS's
-`./pi.sh flash`) on the same network as the Mac, and `ssh mary@maryos.local` working from Terminal.app.
+**Before you start:** a Pi running MaryOS with MaryVNC Nearby (MaryOS e3bf253 or later, written with MaryOS's
+`./pi.sh flash`) on the same network as the Mac.
 
-**1. Open the viewer.** From Terminal.app:
+**1. Open the viewer.**
 
 ```sh
 cd linux
 make app-vnc && open dist/MaryVNC.app
 ```
 
-Allow Local Network access when macOS asks. Pis on the network appear in the sidebar.
+Allow Local Network access when macOS asks: MaryVNC calls for Pis on your network.
 
-**2. Pair, once per Mac.** Let the Pi accept a new Mac for five minutes:
+**2. Pair, once per Mac.** Press the Pi's power button briefly. For two minutes it is ready to pair, and its green
+light blinks. It appears in the sidebar under **Ready to pair**: select it and click **Pair** (the sheet shows the
+key the Pi offers, which `maryvncctl status` on the Pi shows too). The desktop appears, and the Pi's window closes
+behind this Mac. On the Pi, `maryvncctl pairs` now lists this Mac by name. Without the button:
+`ssh mary@<the Pi's address> maryvncctl pair-window 120`.
 
-```sh
-ssh mary@maryos.local maryvncctl pair-window 300
-```
-
-Then in MaryVNC choose **Connect to Address…**, enter `maryos.local`, tick **Pair** and click **Connect**. The
-Pi's desktop appears. On the Pi, `maryvncctl pairs` now lists this Mac by name.
-
-**3. From then on it connects on its own.** Whenever a paired Pi is on the network, MaryVNC connects to it (the
-one used last, if several are), and it reconnects when the link drops.
+**3. From then on it connects on its own.** Whenever a paired Pi is nearby, MaryVNC finds it and connects (the one
+used last, if several are), and when the link drops it looks for the Pi again and reconnects wherever it is.
 
 **Using it**
 
@@ -77,7 +74,7 @@ one used last, if several are), and it reconnects when the link drops.
 | Pointer, clicks, scrolling | go to the Pi |
 | ⌘ | is the Pi's Super key: ⌘W closes a window, ⌘Space toggles Spotlight |
 | ⌘Q, ⌘H, ⌘M, ⌘, | stay with the Mac |
-| Toolbar | Disconnect, Refresh (redraw the whole desktop), Best or Fast picture |
+| Toolbar | Disconnect; Refresh (redraw the whole desktop) or, when not connected, Look Again; Best or Fast picture; Pair |
 | MaryVNC › Settings… | the accent (Blue or Graphite), ⌘ as Super or as Control (for terminal programs), the picture |
 | File › Forget This Pi… | unpairs on the Mac; `maryvncctl forget <fingerprint>` unpairs on the Pi |
 
@@ -85,18 +82,17 @@ one used last, if several are), and it reconnects when the link drops.
 
 | What you see | What to do |
 |---|---|
-| Nothing in the sidebar | Allow MaryVNC under System Settings › Privacy & Security › Local Network, and check the Pi: `ssh mary@maryos.local systemctl is-active maryvncd`. A viewer started from an editor's terminal gets the editor's network permission, which is often off; start it from Terminal.app or as the app. |
-| The Pi answers ssh but is not listed | Images before MaryOS 0f770b7 do not announce it. On the Pi: `sudo chmod 755 /etc/systemd/dnssd && sudo systemctl restart systemd-resolved`. Connect to Address… works either way. |
-| "did not accept pairing" | The pairing window closed; open it again (step 2). |
-| "does not know this Mac" | The Pi was reflashed or forgot this Mac; pair again. |
+| Nothing in the sidebar | Allow MaryVNC under System Settings › Privacy & Security › Local Network. A viewer started from an editor's terminal gets the editor's network permission, which is often off: open `dist/MaryVNC.app` instead. On the Pi, `maryvncctl status` shows where it answers (`nearby: UDP 5901 on wlan0`). |
+| A paired Pi never appears | Some networks keep their devices apart or drop multicast (guest Wi-Fi, some mesh routers). Use Connect to Address… once with the Pi's address; MaryVNC then calls that address directly. |
+| "did not accept pairing" | The pairing window closed: it lasts two minutes and closes when a Mac pairs. Press the power button again. |
+| "did not accept this Mac" | The Pi forgot this Mac or was reflashed, or another machine now has its old address. If `maryvncctl pairs` on the Pi does not list this Mac, choose File › Forget This Pi… and pair again. |
 | "Another Mac is watching" | A Pi shows its desktop to one Mac at a time; Connect takes it back. |
 | "Connecting…" never ends | On the Pi, `maryvncctl status` should say `desktop: 1280x800 (connected)`; if it does not, see `systemctl status maryos-desktop`. |
 | A Keychain prompt after a rebuild | Choose Always Allow: the viewer keeps this Mac's key in the Keychain. |
 
-**Over the USB cable.** A Pi on the Mac's USB cable appears under **On the cable**, and **Pair over USB** pairs it
-without a window. The cable has to carry power and data, and the obvious ones do not: over USB-C-to-USB-C the Mac
-powers a Pi 5 but never connects its USB data, and a USB-A port cannot power a Pi 5. A USB-C power/data splitter
-or a powered hub should do both; neither has been tried yet.
+**Nobody else sees the Pi.** MaryVNC Nearby (MaryOS docs/14) takes Bonjour's place: the viewer calls, and a Pi
+answers only a call carrying the tag of a Mac it is paired with, or any call while its pairing window is open. It
+announces nothing, so no other device on the network can list it.
 
 Building, testing and the files behind the viewer are in [linux/README.md](linux/README.md#maryvnc); how MaryVNC
 works and what keeps it private are in MaryOS's

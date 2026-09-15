@@ -23,29 +23,30 @@ struct MaryvncdInteropTests {
         let process: Process
         let directory: URL
         let port: UInt16
+        let nearbyPort: UInt16
         let control: String
 
         static func start(binary: String) throws -> Daemon {
             let directory = FileManager.default.temporaryDirectory.appending(path: "maryvncd-\(UUID().uuidString.prefix(8))")
             let state = directory.appending(path: "state"), runtime = directory.appending(path: "run")
             try FileManager.default.createDirectory(at: runtime, withIntermediateDirectories: true)
-            let dnssd = directory.appending(path: "maryvnc.dnssd").path
             let initialise = Process()
             initialise.executableURL = URL(fileURLWithPath: binary)
-            initialise.arguments = ["init", "--state", state.path, "--dnssd", dnssd]
+            initialise.arguments = ["init", "--state", state.path]
             initialise.standardError = FileHandle.nullDevice
             try initialise.run()
             initialise.waitUntilExit()
-            let port = UInt16.random(in: 30000...45000)
+            let port = UInt16.random(in: 30000...45000), nearbyPort = UInt16.random(in: 45001...60000)
             let process = Process()
             process.executableURL = URL(fileURLWithPath: binary)
             process.arguments = ["--state", state.path, "--runtime", runtime.path, "--port", "\(port)", "--bind", "127.0.0.1",
-                                 "--pair-window", "120", "--test-pattern", "320x200", "--dnssd", dnssd]
+                                 "--nearby-port", "\(nearbyPort)", "--pair-window", "120", "--test-pattern", "320x200"]
             let log = directory.appending(path: "maryvncd.log")
             FileManager.default.createFile(atPath: log.path, contents: nil)
             process.standardError = try FileHandle(forWritingTo: log)
             try process.run()
-            return Daemon(process: process, directory: directory, port: port, control: runtime.appending(path: "control.sock").path)
+            return Daemon(process: process, directory: directory, port: port, nearbyPort: nearbyPort,
+                          control: runtime.appending(path: "control.sock").path)
         }
 
         func waitUntilListening() async throws {
@@ -73,6 +74,17 @@ struct MaryvncdInteropTests {
         }
 
         var endpoint: NWEndpoint { .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!) }
+
+        /// maryvncctl from beside maryvncd, against this daemon's control socket; its exit status.
+        func control(_ arguments: [String], binary: String) throws -> Int32 {
+            let ctl = Process()
+            ctl.executableURL = URL(fileURLWithPath: binary).deletingLastPathComponent().appending(path: "maryvncctl")
+            ctl.arguments = ["--socket", control] + arguments
+            ctl.standardOutput = FileHandle.nullDevice
+            try ctl.run()
+            ctl.waitUntilExit()
+            return ctl.terminationStatus
+        }
     }
 
     struct Outcome {
@@ -142,22 +154,71 @@ struct MaryvncdInteropTests {
         #expect(resumed.frames >= 2, "ended \(String(describing: resumed.end)) after \(resumed.frames) frames")
         #expect(resumed.end == .byViewer)
 
-        // A pairing that announces another fingerprint is left before this Mac's key is sent.
+        // Pairing closed the window; open it again. A pairing that expects another fingerprint is left before this
+        // Mac's key is sent.
+        #expect(try daemon.control(["pair-window", "120"], binary: binary) == 0)
         let impostor = try await run(PiSession(endpoint: daemon.endpoint, identity: NoiseKeyPair.generate(),
                                                mode: .pair(displayName: "x", expected: Fingerprint(publicKey: NoiseKeyPair.generate().publicKey))), frames: 1)
         #expect(impostor.end == .wrongPi)
 
-        let ctl = Process()
-        ctl.executableURL = URL(fileURLWithPath: binary).deletingLastPathComponent().appending(path: "maryvncctl")
-        ctl.arguments = ["--socket", daemon.control, "pair-window", "0"]
-        ctl.standardOutput = FileHandle.nullDevice
-        try ctl.run()
-        ctl.waitUntilExit()
-        #expect(ctl.terminationStatus == 0)
+        #expect(try daemon.control(["pair-window", "0"], binary: binary) == 0)
 
         let stranger = try await run(PiSession(endpoint: daemon.endpoint, identity: NoiseKeyPair.generate(), mode: .pair(displayName: "x", expected: nil)), frames: 1)
         #expect(stranger.end == .pairingRefused)
         let unknown = try await run(PiSession(endpoint: daemon.endpoint, identity: NoiseKeyPair.generate(), mode: .resume(piPublicKey: piKey, displayName: "x")), frames: 1)
         #expect(unknown.end == .notPaired)
+    }
+
+    /// The next answer the scanner hears, or nil after `limit`.
+    func next(from scanner: NearbyScanner, within limit: Duration = .seconds(3)) async throws -> NearbyHeard? {
+        try await withThrowingTaskGroup(of: NearbyHeard?.self) { group in
+            group.addTask {
+                for await heard in scanner.heard { return heard }
+                return nil
+            }
+            group.addTask {
+                try await Task.sleep(for: limit)
+                return nil
+            }
+            let first = try await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    @Test func nearbyAnswersItsPairsAndAnOpenWindowAndNobodyElse() async throws {
+        let binary = ProcessInfo.processInfo.environment["MARYVNCD"]!
+        let daemon = try Daemon.start(binary: binary)
+        defer { daemon.stop() }
+        try await daemon.waitUntilListening()
+        let piKey = try [UInt8](Data(contentsOf: daemon.directory.appending(path: "state/identity.pub")))
+        let mac = NoiseKeyPair.generate()
+        let scanner = NearbyScanner(port: daemon.nearbyPort)
+        try scanner.start()
+        defer { scanner.stop() }
+
+        // The window is open: a Mac paired with nothing hears the Pi's key and name, and where maryvncd listens.
+        scanner.call(keys: [], addresses: ["127.0.0.1"], multicast: false)
+        let offer = try await next(from: scanner)
+        #expect(offer?.offer?.publicKey == piKey)
+        #expect(offer?.piPublicKey == nil)
+        #expect(offer?.port == daemon.port)
+        #expect(offer?.host == "127.0.0.1")
+
+        // It pairs with the key the offer carried, and that closes the window.
+        let paired = try await run(PiSession(endpoint: daemon.endpoint, identity: mac,
+                                             mode: .pair(displayName: "swift test", expected: Fingerprint(publicKey: piKey))), frames: 1)
+        #expect(paired.piKey == piKey)
+
+        // The paired Mac's call comes back with its tag and no offer (the Pi answers one address twice a second at most).
+        try await Task.sleep(for: .milliseconds(1100))
+        scanner.call(keys: [try NearbyKey(identity: mac, piPublicKey: piKey)], addresses: ["127.0.0.1"], multicast: false)
+        let tagged = try await next(from: scanner)
+        #expect(tagged?.piPublicKey == piKey)
+        #expect(tagged?.offer == nil)
+
+        // A Mac the Pi does not know gets nothing, even calling with the Pi's key.
+        scanner.call(keys: [try NearbyKey(identity: NoiseKeyPair.generate(), piPublicKey: piKey)], addresses: ["127.0.0.1"], multicast: false)
+        #expect(try await next(from: scanner, within: .milliseconds(800)) == nil)
     }
 }

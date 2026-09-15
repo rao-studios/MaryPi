@@ -7,18 +7,22 @@ public struct PairedPi: Codable, Equatable, Sendable, Identifiable {
     public var name: String
     public var paired: Date
     public var lastConnected: Date?
+    /// Where the Pi last answered or was reached: the first place a Nearby call goes, which also finds a Pi on a
+    /// network that drops multicast.
+    public var lastAddress: String?
 
     public var fingerprint: Fingerprint { Fingerprint(publicKey: publicKey) }
     public var id: String { fingerprint.hex }
 
-    public init(publicKey: [UInt8], name: String, paired: Date, lastConnected: Date? = nil) {
+    public init(publicKey: [UInt8], name: String, paired: Date, lastConnected: Date? = nil, lastAddress: String? = nil) {
         self.publicKey = publicKey
         self.name = name
         self.paired = paired
         self.lastConnected = lastConnected
+        self.lastAddress = lastAddress
     }
 
-    enum CodingKeys: String, CodingKey { case publicKey, name, paired, lastConnected }
+    enum CodingKeys: String, CodingKey { case publicKey, name, paired, lastConnected, lastAddress }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -30,6 +34,7 @@ public struct PairedPi: Codable, Equatable, Sendable, Identifiable {
         name = try c.decode(String.self, forKey: .name)
         paired = try c.decode(Date.self, forKey: .paired)
         lastConnected = try c.decodeIfPresent(Date.self, forKey: .lastConnected)
+        lastAddress = try c.decodeIfPresent(String.self, forKey: .lastAddress)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -38,6 +43,7 @@ public struct PairedPi: Codable, Equatable, Sendable, Identifiable {
         try c.encode(name, forKey: .name)
         try c.encode(paired, forKey: .paired)
         try c.encodeIfPresent(lastConnected, forKey: .lastConnected)
+        try c.encodeIfPresent(lastAddress, forKey: .lastAddress)
     }
 
     static func bytes(hex: String) -> [UInt8]? {
@@ -103,9 +109,18 @@ public struct PairingStore: Sendable {
         try save()
     }
 
-    public mutating func touch(_ fingerprint: Fingerprint, now: Date = Date()) throws {
+    /// A session reached the Pi, at `address` when it is known.
+    public mutating func touch(_ fingerprint: Fingerprint, address: String? = nil, now: Date = Date()) throws {
         guard let index = pis.firstIndex(where: { $0.fingerprint == fingerprint }) else { return }
         pis[index].lastConnected = now
+        if let address { pis[index].lastAddress = address }
+        try save()
+    }
+
+    /// The Pi answered a Nearby call from `address`, with its tag.
+    public mutating func remember(address: String, for fingerprint: Fingerprint) throws {
+        guard let index = pis.firstIndex(where: { $0.fingerprint == fingerprint }), pis[index].lastAddress != address else { return }
+        pis[index].lastAddress = address
         try save()
     }
 

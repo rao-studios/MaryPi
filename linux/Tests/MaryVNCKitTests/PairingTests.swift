@@ -90,3 +90,22 @@ import Testing
         #expect(throws: (any Error).self) { try PairingStore(url: url) }
     }
 }
+
+@Suite struct PairedPiAddressTests {
+    @Test func theLastAddressIsKeptAndAFileWithoutOneStillReads() throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "maryvnc-tests-\(UUID().uuidString)/pairs.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let key = NoiseKeyPair.generate().publicKey
+        let hex = key.map { String(format: "%02x", $0) }.joined()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"version": 1, "pis": [{"publicKey": "\#(hex)", "name": "maryos", "paired": "2026-09-14T20:00:00Z"}]}"#.utf8).write(to: url)
+        var store = try PairingStore(url: url)
+        #expect(store.pis.first?.lastAddress == nil)
+        try store.remember(address: "10.0.0.73", for: Fingerprint(publicKey: key))
+        #expect(try PairingStore(url: url).pis.first?.lastAddress == "10.0.0.73")
+        try store.touch(Fingerprint(publicKey: key), address: "fe80::8aa2:9eff:fede:9d3d%en0")
+        let reread = try PairingStore(url: url)
+        #expect(reread.pis.first?.lastAddress == "fe80::8aa2:9eff:fede:9d3d%en0")
+        #expect(reread.pis.first?.lastConnected != nil)
+    }
+}
