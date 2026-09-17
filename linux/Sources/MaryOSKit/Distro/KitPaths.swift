@@ -44,6 +44,13 @@ public struct KitPaths: Sendable, Equatable {
     /// Mary's compiled packages: a DESTDIR tree (`usr/bin/sewnd`, `usr/share/doc/mary/`) the `mary` stage writes.
     public var maryOutDirectory: URL { outDirectory.appending(path: "mary") }
     public var maryVersionFile: URL { maryOutDirectory.appending(path: "usr/share/doc/mary/mary.env") }
+    /// The application layer (the Swift package MaryFoundation, its wire) and the apps built on it: the kit's
+    /// `maryfoundation/` and `apps/`.
+    public var maryFoundationSource: URL { root.appending(path: "maryfoundation") }
+    public var appsSource: URL { root.appending(path: "apps") }
+    /// The built apps: a DESTDIR tree (`usr/lib/maryos/apps/`, `usr/share/maryos/apps/`) the `apps` stage writes.
+    public var appsOutDirectory: URL { outDirectory.appending(path: "apps") }
+    public var appsVersionFile: URL { appsOutDirectory.appending(path: "usr/share/maryos/apps.env") }
     public var maryUIMakefile: URL { maryUISource.appending(path: "Makefile") }
     public var hasMaryUISources: Bool { FileManager.default.fileExists(atPath: maryUIMakefile.path) }
 

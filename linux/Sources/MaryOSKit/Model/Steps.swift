@@ -18,7 +18,7 @@ public enum StepKind: String, CaseIterable, Sendable, Codable, Hashable {
         case .doctor: return "Check this Mac"
         case .buildRootfs: return "Build the base rootfs (Ubuntu Noble + MaryOS)"
         case .buildUI: return "Compile the desktop (MaryUI, Liquid Platinum)"
-        case .buildMary: return "Compile Mary (sewnd, threadd, maryd)"
+        case .buildMary: return "Compile Mary (sewnd, threadd, maryd), MaryVNC and the apps"
         case .buildTarget: return "Add the target's packages and boot files"
         case .buildImage: return "Assemble the disk image"
         case .verifyTarget: return "Verify target disk"

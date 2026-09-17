@@ -70,7 +70,7 @@ The CLI, once built and signed (`.build/debug/maryos`):
 ```
 maryos doctor                       what this Mac can do
 maryos config                       distro.conf, directories, built images
-maryos build [--target pi5|vm|both] [--stage rootfs|ui|mary|target|image|all] [--fresh] [--dry-run]
+maryos build [--target pi5|vm|both] [--stage rootfs|ui|mary|maryvnc|apps|target|image|all] [--fresh] [--dry-run]
 maryos list [--all]                 removable disks
 maryos flash --disk diskN [--image PATH] [--target pi5] [--build] [--yes]
 maryos vm run [--desktop [--dev]] [--headless] [--console] [--microphone] [--memory MiB] [--cpus N] [--share tag=/dir] [--fresh] [--disk-size GiB] [--dry-run]

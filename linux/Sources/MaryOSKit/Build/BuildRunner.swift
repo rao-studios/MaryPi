@@ -9,6 +9,8 @@ public enum BuildStage: Sendable, Equatable {
     case mary
     /// MaryVNC's server (maryvnc/) compiled into `out/maryvnc`.
     case maryvnc
+    /// The Swift apps (apps/, on maryfoundation/) built with the pinned toolchain into `out/apps`.
+    case apps
     case target(ImageTarget)
     case image(ImageTarget)
 }
@@ -31,6 +33,7 @@ public enum BuildLog {
         case "ui_build": return .ui
         case "mary_build": return .mary
         case "maryvnc_build": return .maryvnc
+        case "apps_build": return .apps
         case "target_build": return target.map(BuildStage.target)
         case "image_build": return target.map(BuildStage.image)
         default: return nil
@@ -70,7 +73,7 @@ public struct BuildRunner: Sendable {
     }
 
     /// Stages that take no target: they run once for every image.
-    public static let targetlessStages = ["rootfs", "ui", "mary", "maryvnc"]
+    public static let targetlessStages = ["rootfs", "ui", "mary", "maryvnc", "apps"]
 
     /// `build.sh all <target>` (or a single stage); throws when the builder fails.
     public func build(target: ImageTarget, stage: String = "all", fresh: Bool = false, keep: Bool = false, dryRun: Bool = false, log: @escaping Logger) async throws {
@@ -196,6 +199,47 @@ public struct MaryArtifacts: Sendable, Equatable {
         guard isBuilt else { return "not built yet (maryos build --stage mary)" }
         let list = programs
         return "mary \(gitSHA ?? "unknown"), built \(built ?? "?")" + (list.isEmpty ? "" : ": \(list.joined(separator: " "))")
+    }
+}
+
+/// What the builder's `apps` stage leaves in `out/apps`: the Swift apps built on MaryFoundation as a DESTDIR tree
+/// (`usr/lib/maryos/apps/<id>/<program>`, `usr/share/maryos/apps/<id>.json`), plus `usr/share/maryos/apps.env`
+/// naming the MaryOS commit, the Swift version and the apps.
+public struct AppsArtifacts: Sendable, Equatable {
+    public let directory: URL
+    public let manifests: URL
+    public let versionFile: URL
+
+    public static func locate(paths: KitPaths) -> AppsArtifacts {
+        AppsArtifacts(directory: paths.appsOutDirectory, manifests: paths.appsOutDirectory.appending(path: "usr/share/maryos/apps"),
+                      versionFile: paths.appsVersionFile)
+    }
+
+    public init(directory: URL, manifests: URL, versionFile: URL) {
+        self.directory = directory
+        self.manifests = manifests
+        self.versionFile = versionFile
+    }
+
+    /// The stage writes apps.env last, so its presence means the tree is whole.
+    public var isBuilt: Bool { FileManager.default.fileExists(atPath: versionFile.path) }
+
+    /// `APPS_GIT_SHA`, `SWIFT_VERSION`, `APPS`, `BUILT` from apps.env.
+    public var info: [String: String] {
+        guard let text = try? String(contentsOf: versionFile, encoding: .utf8) else { return [:] }
+        return (try? ConfParser.parse(text)) ?? [:]
+    }
+
+    public var gitSHA: String? { info["APPS_GIT_SHA"] }
+    public var swiftVersion: String? { info["SWIFT_VERSION"] }
+    public var built: String? { info["BUILT"] }
+    public var apps: [String] { (info["APPS"] ?? "").split(separator: " ").map(String.init) }
+
+    /// `apps abc123def456 (Swift 6.3.3), built 2026-09-16T20:00:00Z: weather` or `not built yet`.
+    public var summary: String {
+        guard isBuilt else { return "not built yet (maryos build --stage apps)" }
+        let list = apps
+        return "apps \(gitSHA ?? "unknown") (Swift \(swiftVersion ?? "?")), built \(built ?? "?")" + (list.isEmpty ? "" : ": \(list.joined(separator: " "))")
     }
 }
 

@@ -10,7 +10,7 @@ struct BuildCommand: ParsableCommand {
     @Option(name: .long, help: "pi5, vm or both (default vm).")
     var target: String = "vm"
 
-    @Option(name: .long, help: "rootfs, ui (compile the desktop, maryui/), mary (compile mary/), target, image or all (default all).")
+    @Option(name: .long, help: "rootfs, ui (compile the desktop, maryui/), mary (compile mary/), maryvnc, apps (build apps/ with Swift), target, image or all (default all).")
     var stage: String = "all"
 
     @Flag(name: .long, help: "Rebuild the base rootfs even when the cache matches distro/.")
@@ -32,13 +32,14 @@ struct BuildCommand: ParsableCommand {
             guard let one = ImageTarget(rawValue: target) else { throw ValidationError("--target must be pi5, vm or both") }
             targets = [one]
         }
-        guard ["rootfs", "ui", "mary", "maryvnc", "target", "image", "all"].contains(stage) else { throw ValidationError("--stage must be rootfs, ui, mary, maryvnc, target, image or all") }
+        guard ["rootfs", "ui", "mary", "maryvnc", "apps", "target", "image", "all"].contains(stage) else { throw ValidationError("--stage must be rootfs, ui, mary, maryvnc, apps, target, image or all") }
         let builder = BuildRunner(paths: paths)
         for one in targets {
             switch stage {
             case "ui": Output.line("maryos: compiling the desktop from \(paths.maryUISource.path) with \(paths.buildScript.path)")
             case "mary": Output.line("maryos: compiling Mary's packages from \(paths.marySource.path) with \(paths.buildScript.path)")
             case "maryvnc": Output.line("maryos: compiling MaryVNC's server (maryvnc/) with \(paths.buildScript.path)")
+            case "apps": Output.line("maryos: building the apps from \(paths.appsSource.path) (Swift, on MaryFoundation) with \(paths.buildScript.path)")
             default: Output.line("maryos: building \(config.imageName(for: one)) (\(stage)) with \(paths.buildScript.path)")
             }
             do {
@@ -57,6 +58,10 @@ struct BuildCommand: ParsableCommand {
         if !dryRun && (stage == "all" || stage == "mary") {
             let mary = MaryArtifacts.locate(paths: paths)
             Output.line(mary.isBuilt ? "maryos: \(mary.directory.path) (\(mary.summary))" : "maryos: warning, \(mary.versionFile.path) is missing after the build")
+        }
+        if !dryRun && (stage == "all" || stage == "apps") {
+            let apps = AppsArtifacts.locate(paths: paths)
+            Output.line(apps.isBuilt ? "maryos: \(apps.directory.path) (\(apps.summary))" : "maryos: warning, \(apps.versionFile.path) is missing after the build")
         }
         if !dryRun && (stage == "all" || stage == "image") {
             for one in targets {

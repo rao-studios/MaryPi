@@ -81,8 +81,8 @@ public final class PrepareCoordinator {
         case .ui:
             plan.set(.buildRootfs, .done)
             plan.set(.buildUI, .running)
-        case .mary, .maryvnc:
-            // MaryVNC's server compiles after Mary's packages and shows as part of that step.
+        case .mary, .maryvnc, .apps:
+            // MaryVNC's server and the Swift apps build after Mary's packages and show as part of that step.
             plan.set(.buildUI, .done)
             plan.set(.buildMary, .running)
         case .target:

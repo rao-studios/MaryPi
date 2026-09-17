@@ -8,6 +8,7 @@ import Testing
         #expect(BuildLog.stage(in: "==> stage: ui_build") == .ui)
         #expect(BuildLog.stage(in: "==> stage: mary_build") == .mary)
         #expect(BuildLog.stage(in: "==> stage: maryvnc_build") == .maryvnc)
+        #expect(BuildLog.stage(in: "==> stage: apps_build") == .apps)
         #expect(BuildLog.stage(in: "==> stage: target_build vm") == .target(.vm))
         #expect(BuildLog.stage(in: "\u{1B}[1;36m==> stage: image_build pi5\u{1B}[0m") == .image(.pi5))
         #expect(BuildLog.stage(in: "==> stage: target_build moon") == nil)
@@ -49,6 +50,29 @@ import Testing
         #expect(!mary.isBuilt)
         #expect(mary.summary.hasPrefix("not built yet"))
         #expect(BuildRunner.targetlessStages.contains("mary"))
+    }
+
+    @Test func appsArtifacts() throws {
+        let paths = KitPaths(root: URL(fileURLWithPath: "/kit"), isCheckout: true, outDirectory: URL(fileURLWithPath: "/kit/out"), stateRoot: URL(fileURLWithPath: "/kit/state"))
+        let apps = AppsArtifacts.locate(paths: paths)
+        #expect(paths.appsSource.path == "/kit/apps")
+        #expect(paths.maryFoundationSource.path == "/kit/maryfoundation")
+        #expect(apps.manifests.path == "/kit/out/apps/usr/share/maryos/apps")
+        #expect(apps.versionFile.path == "/kit/out/apps/usr/share/maryos/apps.env")
+        #expect(!apps.isBuilt)
+        #expect(apps.summary.hasPrefix("not built yet"))
+        #expect(BuildRunner.targetlessStages.contains("apps"))
+        // a built tree
+        let root = FileManager.default.temporaryDirectory.appending(path: "apps-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let built = KitPaths(root: root, isCheckout: true, outDirectory: root.appending(path: "out"), stateRoot: root.appending(path: "state"))
+        let env = AppsArtifacts.locate(paths: built).versionFile
+        try FileManager.default.createDirectory(at: env.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "APPS_GIT_SHA=abc123\nSWIFT_VERSION=6.3.3\nAPPS=weather\nBUILT=2026-09-16T20:00:00Z\n".write(to: env, atomically: true, encoding: .utf8)
+        let found = AppsArtifacts.locate(paths: built)
+        #expect(found.isBuilt)
+        #expect(found.apps == ["weather"])
+        #expect(found.summary == "apps abc123 (Swift 6.3.3), built 2026-09-16T20:00:00Z: weather")
     }
 
     @Test func bootInfoDecodes() throws {
