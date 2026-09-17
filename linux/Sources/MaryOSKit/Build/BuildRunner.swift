@@ -202,22 +202,22 @@ public struct MaryArtifacts: Sendable, Equatable {
     }
 }
 
-/// What the builder's `apps` stage leaves in `out/apps`: the Swift apps built on MaryFoundation as a DESTDIR tree
-/// (`usr/lib/maryos/apps/<id>/<program>`, `usr/share/maryos/apps/<id>.json`), plus `usr/share/maryos/apps.env`
-/// naming the MaryOS commit, the Swift version and the apps.
+/// What the builder's `apps` stage leaves in `out/apps`: the Swift apps built on MaryFoundation as bundles
+/// (`Applications/<Name>.app/<program>` and `manifest.json`, the image's `/Applications`), plus `apps.env` naming the
+/// MaryOS commit, the Swift version and the apps.
 public struct AppsArtifacts: Sendable, Equatable {
     public let directory: URL
-    public let manifests: URL
+    public let bundles: URL
     public let versionFile: URL
 
     public static func locate(paths: KitPaths) -> AppsArtifacts {
-        AppsArtifacts(directory: paths.appsOutDirectory, manifests: paths.appsOutDirectory.appending(path: "usr/share/maryos/apps"),
+        AppsArtifacts(directory: paths.appsOutDirectory, bundles: paths.appsOutDirectory.appending(path: "Applications"),
                       versionFile: paths.appsVersionFile)
     }
 
-    public init(directory: URL, manifests: URL, versionFile: URL) {
+    public init(directory: URL, bundles: URL, versionFile: URL) {
         self.directory = directory
-        self.manifests = manifests
+        self.bundles = bundles
         self.versionFile = versionFile
     }
 
