@@ -34,9 +34,11 @@ public struct KitPaths: Sendable, Equatable {
     public var builderDirectory: URL { root.appending(path: "builder") }
     public var buildScript: URL { builderDirectory.appending(path: "build.sh") }
     public var vmOutDirectory: URL { outDirectory.appending(path: "vm") }
-    /// The desktop's C sources: the toolkit, the kit's `maryui/` (libmaryui, maryui-desktop), whose Makefile also
-    /// builds the system apps from `apps/c/` and links them into the desktop.
+    /// The design system in C, the kit's `maryui/` (libmaryui): what the desktop and the apps are drawn with.
     public var maryUISource: URL { root.appending(path: "maryui") }
+    /// The desktop's C sources, the kit's `system/`: maryui-desktop, the desktop model and its services, and Mary's
+    /// side of the desktop. Its Makefile builds the design system and the system apps (`apps/c/`) on the way.
+    public var systemSource: URL { root.appending(path: "system") }
     /// The compiled desktop: a DESTDIR tree (`usr/bin/maryui-desktop`, `usr/share/maryui/`) the `ui` stage writes.
     public var uiOutDirectory: URL { outDirectory.appending(path: "ui") }
     public var uiBinary: URL { uiOutDirectory.appending(path: "usr/bin/maryui-desktop") }
@@ -56,6 +58,7 @@ public struct KitPaths: Sendable, Equatable {
     public var appsVersionFile: URL { appsOutDirectory.appending(path: "apps.env") }
     public var maryUIMakefile: URL { maryUISource.appending(path: "Makefile") }
     public var hasMaryUISources: Bool { FileManager.default.fileExists(atPath: maryUIMakefile.path) }
+    public var hasSystemSources: Bool { FileManager.default.fileExists(atPath: systemSource.appending(path: "Makefile").path) }
 
     static func hasKit(_ url: URL, fileManager: FileManager) -> Bool {
         fileManager.fileExists(atPath: url.appending(path: "distro/distro.conf").path)

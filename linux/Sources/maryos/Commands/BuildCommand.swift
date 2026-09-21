@@ -36,7 +36,7 @@ struct BuildCommand: ParsableCommand {
         let builder = BuildRunner(paths: paths)
         for one in targets {
             switch stage {
-            case "ui": Output.line("maryos: compiling the desktop from \(paths.maryUISource.path) with \(paths.buildScript.path)")
+            case "ui": Output.line("maryos: compiling the desktop from \(paths.systemSource.path), on \(paths.maryUISource.path), with \(paths.buildScript.path)")
             case "mary": Output.line("maryos: compiling Mary's packages from \(paths.marySource.path) with \(paths.buildScript.path)")
             case "maryvnc": Output.line("maryos: compiling MaryVNC's server (maryvnc/) with \(paths.buildScript.path)")
             case "apps": Output.line("maryos: building the apps from \(paths.appsSource.path) (Swift, on MaryFoundation) with \(paths.buildScript.path)")

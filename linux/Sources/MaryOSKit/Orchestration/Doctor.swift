@@ -75,6 +75,10 @@ public struct Doctor: Sendable {
             checks.append(DoctorCheck(name: "MaryUI sources", passed: sources, blocking: false,
                                       detail: sources ? paths.maryUISource.path
                                           : "\(paths.maryUISource.path) has no Makefile; the kit is not a complete MaryOS checkout (in MaryPi: git submodule update --init)"))
+            let system = paths.hasSystemSources
+            checks.append(DoctorCheck(name: "system sources", passed: system, blocking: false,
+                                      detail: system ? paths.systemSource.path
+                                          : "\(paths.systemSource.path) has no Makefile; the kit is not a complete MaryOS checkout (in MaryPi: git submodule update --init)"))
             let ui = UIArtifacts.locate(paths: paths)
             checks.append(DoctorCheck(name: "desktop build", passed: ui.isBuilt, blocking: false,
                                       detail: ui.isBuilt ? "\(ui.binary.path): \(ui.summary)" : ui.summary))
