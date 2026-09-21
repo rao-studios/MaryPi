@@ -115,8 +115,8 @@ public struct VMBootInfo: Codable, Sendable, Equatable {
 }
 
 /// What the builder's `ui` stage leaves in `out/ui`: the compiled desktop as a
-/// DESTDIR tree with PREFIX=/usr, plus `usr/share/maryui/maryui.env` naming the
-/// MaryUI commit it came from.
+/// DESTDIR tree with PREFIX=/usr, plus `usr/share/maryos/desktop.env` naming the
+/// MaryOS commit it came from.
 public struct UIArtifacts: Sendable, Equatable {
     public let directory: URL
     public let binary: URL
@@ -125,7 +125,7 @@ public struct UIArtifacts: Sendable, Equatable {
 
     public static func locate(paths: KitPaths) -> UIArtifacts {
         UIArtifacts(directory: paths.uiOutDirectory, binary: paths.uiBinary,
-                    versionFile: paths.uiOutDirectory.appending(path: "usr/share/maryui/maryui.env"),
+                    versionFile: paths.uiOutDirectory.appending(path: "usr/share/maryos/desktop.env"),
                     renders: paths.uiOutDirectory.appending(path: "renders"))
     }
 
@@ -138,13 +138,13 @@ public struct UIArtifacts: Sendable, Equatable {
 
     public var isBuilt: Bool { FileManager.default.isExecutableFile(atPath: binary.path) }
 
-    /// `MARYUI_GIT_SHA`, `SOURCE`, `BUILT` from maryui.env.
+    /// `DESKTOP_GIT_SHA`, `SOURCE`, `BUILT` from desktop.env.
     public var info: [String: String] {
         guard let text = try? String(contentsOf: versionFile, encoding: .utf8) else { return [:] }
         return (try? ConfParser.parse(text)) ?? [:]
     }
 
-    public var gitSHA: String? { info["MARYUI_GIT_SHA"] }
+    public var gitSHA: String? { info["DESKTOP_GIT_SHA"] }
     public var built: String? { info["BUILT"] }
 
     public var binaryDate: Date? {

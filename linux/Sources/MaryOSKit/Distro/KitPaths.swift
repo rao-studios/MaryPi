@@ -36,12 +36,12 @@ public struct KitPaths: Sendable, Equatable {
     public var vmOutDirectory: URL { outDirectory.appending(path: "vm") }
     /// The design system in C, the kit's `maryui/` (libmaryui): what the desktop and the apps are drawn with.
     public var maryUISource: URL { root.appending(path: "maryui") }
-    /// The desktop's C sources, the kit's `system/`: maryui-desktop, the desktop model and its services, and Mary's
+    /// The desktop's C sources, the kit's `system/`: maryos-desktop, the desktop model and its services, and Mary's
     /// side of the desktop. Its Makefile builds the design system and the system apps (`apps/c/`) on the way.
     public var systemSource: URL { root.appending(path: "system") }
-    /// The compiled desktop: a DESTDIR tree (`usr/bin/maryui-desktop`, `usr/share/maryui/`) the `ui` stage writes.
+    /// The compiled desktop: a DESTDIR tree (`usr/bin/maryos-desktop`, `usr/share/maryos/desktop.env`) the `ui` stage writes.
     public var uiOutDirectory: URL { outDirectory.appending(path: "ui") }
-    public var uiBinary: URL { uiOutDirectory.appending(path: "usr/bin/maryui-desktop") }
+    public var uiBinary: URL { uiOutDirectory.appending(path: "usr/bin/maryos-desktop") }
     /// Mary's C packages: the kit's `mary/`.
     public var marySource: URL { root.appending(path: "mary") }
     /// Mary's compiled packages: a DESTDIR tree (`usr/bin/sewnd`, `usr/share/doc/mary/`) the `mary` stage writes.

@@ -34,8 +34,8 @@ import Testing
     @Test func desktopArtifacts() {
         let paths = KitPaths(root: URL(fileURLWithPath: "/kit"), isCheckout: true, outDirectory: URL(fileURLWithPath: "/kit/out"), stateRoot: URL(fileURLWithPath: "/kit/state"))
         let ui = UIArtifacts.locate(paths: paths)
-        #expect(ui.binary.path == "/kit/out/ui/usr/bin/maryui-desktop")
-        #expect(ui.versionFile.path == "/kit/out/ui/usr/share/maryui/maryui.env")
+        #expect(ui.binary.path == "/kit/out/ui/usr/bin/maryos-desktop")
+        #expect(ui.versionFile.path == "/kit/out/ui/usr/share/maryos/desktop.env")
         #expect(!ui.isBuilt)
         #expect(ui.summary.hasPrefix("not built yet"))
         #expect(BuildRunner.targetlessStages.contains("ui") && !BuildRunner.targetlessStages.contains("image"))

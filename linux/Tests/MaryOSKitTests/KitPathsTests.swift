@@ -69,7 +69,7 @@ import Testing
         #expect(paths.systemSource.path == root.standardizedFileURL.appending(path: "system").path)
         #expect(paths.marySource.path == root.standardizedFileURL.appending(path: "mary").path)
         #expect(!paths.hasMaryUISources)
-        #expect(paths.uiBinary.path.hasSuffix("out/ui/usr/bin/maryui-desktop"))
+        #expect(paths.uiBinary.path.hasSuffix("out/ui/usr/bin/maryos-desktop"))
         try FileManager.default.createDirectory(at: root.appending(path: "maryui"), withIntermediateDirectories: true)
         try "all:\n".write(to: root.appending(path: "maryui/Makefile"), atomically: true, encoding: .utf8)
         #expect(paths.hasMaryUISources)
