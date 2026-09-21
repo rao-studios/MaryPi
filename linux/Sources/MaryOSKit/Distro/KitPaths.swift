@@ -34,7 +34,8 @@ public struct KitPaths: Sendable, Equatable {
     public var builderDirectory: URL { root.appending(path: "builder") }
     public var buildScript: URL { builderDirectory.appending(path: "build.sh") }
     public var vmOutDirectory: URL { outDirectory.appending(path: "vm") }
-    /// The desktop's C sources (libmaryui, maryui-desktop, the apps): the kit's `maryui/`.
+    /// The desktop's C sources: the toolkit, the kit's `maryui/` (libmaryui, maryui-desktop), whose Makefile also
+    /// builds the system apps from `apps/c/` and links them into the desktop.
     public var maryUISource: URL { root.appending(path: "maryui") }
     /// The compiled desktop: a DESTDIR tree (`usr/bin/maryui-desktop`, `usr/share/maryui/`) the `ui` stage writes.
     public var uiOutDirectory: URL { outDirectory.appending(path: "ui") }
@@ -45,10 +46,10 @@ public struct KitPaths: Sendable, Equatable {
     public var maryOutDirectory: URL { outDirectory.appending(path: "mary") }
     public var maryVersionFile: URL { maryOutDirectory.appending(path: "usr/share/doc/mary/mary.env") }
     /// The application layer (the Swift package MaryFoundation, its wire), the apps built on it, and the examples a
-    /// person builds on the device: the kit's `maryfoundation/`, `apps/` and `examples/`.
+    /// person builds on the device: the kit's `maryfoundation/`, `apps/swift/` and `apps/swift/examples/`.
     public var maryFoundationSource: URL { root.appending(path: "maryfoundation") }
-    public var appsSource: URL { root.appending(path: "apps") }
-    public var examplesSource: URL { root.appending(path: "examples") }
+    public var appsSource: URL { root.appending(path: "apps/swift") }
+    public var examplesSource: URL { root.appending(path: "apps/swift/examples") }
     /// The built apps: `Applications/<Name>.app` bundles (the image's `/Applications`) and `apps.env`, which the
     /// `apps` stage writes.
     public var appsOutDirectory: URL { outDirectory.appending(path: "apps") }

@@ -55,9 +55,9 @@ import Testing
     @Test func appsArtifacts() throws {
         let paths = KitPaths(root: URL(fileURLWithPath: "/kit"), isCheckout: true, outDirectory: URL(fileURLWithPath: "/kit/out"), stateRoot: URL(fileURLWithPath: "/kit/state"))
         let apps = AppsArtifacts.locate(paths: paths)
-        #expect(paths.appsSource.path == "/kit/apps")
+        #expect(paths.appsSource.path == "/kit/apps/swift")
         #expect(paths.maryFoundationSource.path == "/kit/maryfoundation")
-        #expect(paths.examplesSource.path == "/kit/examples")
+        #expect(paths.examplesSource.path == "/kit/apps/swift/examples")
         #expect(apps.bundles.path == "/kit/out/apps/Applications")
         #expect(apps.versionFile.path == "/kit/out/apps/apps.env")
         #expect(!apps.isBuilt)

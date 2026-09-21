@@ -7,10 +7,11 @@
 #   CONFIG=debug scripts/bundle.sh MaryVNCLight   a debug build instead (vnc-light.sh does this)
 #   open dist/MaryOS.app
 #
-# The kit (distro/, builder/, the desktop's maryui/, Mary's mary/ and MaryVNC's maryvnc/, from the MaryOS
-# submodule in maryos/) is copied into MaryOS.app so the app can build images outside a
-# checkout (output then goes to ~/Library/Caches/MaryOS), and the bundle is ad-hoc signed
-# with the Virtualization entitlement. The MaryVNC apps carry no kit and need no entitlement.
+# The kit (distro/, builder/, the desktop's maryui/, the applications' apps/ and the maryfoundation/ the Swift
+# ones build on, Mary's mary/ and MaryVNC's maryvnc/, from the MaryOS submodule in maryos/) is copied into
+# MaryOS.app so the app can build images outside a checkout (output then goes to ~/Library/Caches/MaryOS), and
+# the bundle is ad-hoc signed with the Virtualization entitlement. The MaryVNC apps carry no kit and need no
+# entitlement.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -45,8 +46,8 @@ if [ -d "$ICONSET" ]; then
 fi
 if [ "$APP_NAME" = MaryOS ]; then
     mkdir -p "$APP/Contents/Resources/kit"
-    for dir in distro builder maryui mary maryvnc; do
-        # maryvnc/ arrived in MaryOS after some of the commits this submodule may be pinned to.
+    for dir in distro builder maryui apps maryfoundation mary maryvnc; do
+        # Not every directory is in every commit this submodule may be pinned to (maryvnc/ came late).
         [ -d "maryos/$dir" ] && cp -R "maryos/$dir" "$APP/Contents/Resources/kit/"
     done
     codesign --force --sign - --entitlements Entitlements.plist "$APP"
